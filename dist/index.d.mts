@@ -329,25 +329,546 @@ declare const rememConfigSchema: z.ZodObject<{
     dbPath?: string | undefined;
 }>;
 type ReMEMConfig = z.infer<typeof rememConfigSchema>;
-declare const eventTypeSchema: z.ZodEnum<["memory.stored", "memory.queried", "memory.accessed", "memory.forgotten", "snapshot.created", "snapshot.restored"]>;
+declare const eventTypeSchema: z.ZodEnum<["memory.stored", "memory.queried", "memory.accessed", "memory.forgotten", "snapshot.created", "snapshot.restored", "identity.constitution_updated", "identity.drift_detected", "identity.drift_correction_injected"]>;
 type EventType = z.infer<typeof eventTypeSchema>;
 declare const memoryEventSchema: z.ZodObject<{
     id: z.ZodString;
-    type: z.ZodEnum<["memory.stored", "memory.queried", "memory.accessed", "memory.forgotten", "snapshot.created", "snapshot.restored"]>;
+    type: z.ZodEnum<["memory.stored", "memory.queried", "memory.accessed", "memory.forgotten", "snapshot.created", "snapshot.restored", "identity.constitution_updated", "identity.drift_detected", "identity.drift_correction_injected"]>;
     timestamp: z.ZodNumber;
     payload: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }, "strip", z.ZodTypeAny, {
-    type: "memory.stored" | "memory.queried" | "memory.accessed" | "memory.forgotten" | "snapshot.created" | "snapshot.restored";
+    type: "memory.stored" | "memory.queried" | "memory.accessed" | "memory.forgotten" | "snapshot.created" | "snapshot.restored" | "identity.constitution_updated" | "identity.drift_detected" | "identity.drift_correction_injected";
     id: string;
     timestamp: number;
     payload: Record<string, unknown>;
 }, {
-    type: "memory.stored" | "memory.queried" | "memory.accessed" | "memory.forgotten" | "snapshot.created" | "snapshot.restored";
+    type: "memory.stored" | "memory.queried" | "memory.accessed" | "memory.forgotten" | "snapshot.created" | "snapshot.restored" | "identity.constitution_updated" | "identity.drift_detected" | "identity.drift_correction_injected";
     id: string;
     timestamp: number;
     payload: Record<string, unknown>;
 }>;
 type MemoryEvent = z.infer<typeof memoryEventSchema>;
+declare const identityCategorySchema: z.ZodEnum<["values", "boundaries", "preferences", "goals"]>;
+type IdentityCategory = z.infer<typeof identityCategorySchema>;
+declare const constitutionStatementSchema: z.ZodObject<{
+    id: z.ZodString;
+    text: z.ZodString;
+    category: z.ZodEnum<["values", "boundaries", "preferences", "goals"]>;
+    weight: z.ZodDefault<z.ZodNumber>;
+    source: z.ZodOptional<z.ZodString>;
+    createdAt: z.ZodNumber;
+}, "strip", z.ZodTypeAny, {
+    id: string;
+    createdAt: number;
+    text: string;
+    category: "values" | "boundaries" | "preferences" | "goals";
+    weight: number;
+    source?: string | undefined;
+}, {
+    id: string;
+    createdAt: number;
+    text: string;
+    category: "values" | "boundaries" | "preferences" | "goals";
+    weight?: number | undefined;
+    source?: string | undefined;
+}>;
+type ConstitutionStatement = z.infer<typeof constitutionStatementSchema>;
+declare const constitutionSchema: z.ZodObject<{
+    statements: z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        text: z.ZodString;
+        category: z.ZodEnum<["values", "boundaries", "preferences", "goals"]>;
+        weight: z.ZodDefault<z.ZodNumber>;
+        source: z.ZodOptional<z.ZodString>;
+        createdAt: z.ZodNumber;
+    }, "strip", z.ZodTypeAny, {
+        id: string;
+        createdAt: number;
+        text: string;
+        category: "values" | "boundaries" | "preferences" | "goals";
+        weight: number;
+        source?: string | undefined;
+    }, {
+        id: string;
+        createdAt: number;
+        text: string;
+        category: "values" | "boundaries" | "preferences" | "goals";
+        weight?: number | undefined;
+        source?: string | undefined;
+    }>, "many">;
+    version: z.ZodDefault<z.ZodString>;
+    createdAt: z.ZodNumber;
+    updatedAt: z.ZodNumber;
+}, "strip", z.ZodTypeAny, {
+    createdAt: number;
+    statements: {
+        id: string;
+        createdAt: number;
+        text: string;
+        category: "values" | "boundaries" | "preferences" | "goals";
+        weight: number;
+        source?: string | undefined;
+    }[];
+    version: string;
+    updatedAt: number;
+}, {
+    createdAt: number;
+    statements: {
+        id: string;
+        createdAt: number;
+        text: string;
+        category: "values" | "boundaries" | "preferences" | "goals";
+        weight?: number | undefined;
+        source?: string | undefined;
+    }[];
+    updatedAt: number;
+    version?: string | undefined;
+}>;
+type Constitution = z.infer<typeof constitutionSchema>;
+declare const driftResultSchema: z.ZodObject<{
+    score: z.ZodNumber;
+    level: z.ZodEnum<["aligned", "minor", "moderate", "critical"]>;
+    violatingStatements: z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        text: z.ZodString;
+        category: z.ZodEnum<["values", "boundaries", "preferences", "goals"]>;
+        weight: z.ZodDefault<z.ZodNumber>;
+        source: z.ZodOptional<z.ZodString>;
+        createdAt: z.ZodNumber;
+    }, "strip", z.ZodTypeAny, {
+        id: string;
+        createdAt: number;
+        text: string;
+        category: "values" | "boundaries" | "preferences" | "goals";
+        weight: number;
+        source?: string | undefined;
+    }, {
+        id: string;
+        createdAt: number;
+        text: string;
+        category: "values" | "boundaries" | "preferences" | "goals";
+        weight?: number | undefined;
+        source?: string | undefined;
+    }>, "many">;
+    reasoning: z.ZodString;
+    detectedAt: z.ZodNumber;
+}, "strip", z.ZodTypeAny, {
+    score: number;
+    level: "aligned" | "minor" | "moderate" | "critical";
+    violatingStatements: {
+        id: string;
+        createdAt: number;
+        text: string;
+        category: "values" | "boundaries" | "preferences" | "goals";
+        weight: number;
+        source?: string | undefined;
+    }[];
+    reasoning: string;
+    detectedAt: number;
+}, {
+    score: number;
+    level: "aligned" | "minor" | "moderate" | "critical";
+    violatingStatements: {
+        id: string;
+        createdAt: number;
+        text: string;
+        category: "values" | "boundaries" | "preferences" | "goals";
+        weight?: number | undefined;
+        source?: string | undefined;
+    }[];
+    reasoning: string;
+    detectedAt: number;
+}>;
+type DriftResult = z.infer<typeof driftResultSchema>;
+declare const identityConfigSchema: z.ZodObject<{
+    constitution: z.ZodOptional<z.ZodObject<{
+        statements: z.ZodArray<z.ZodObject<{
+            id: z.ZodString;
+            text: z.ZodString;
+            category: z.ZodEnum<["values", "boundaries", "preferences", "goals"]>;
+            weight: z.ZodDefault<z.ZodNumber>;
+            source: z.ZodOptional<z.ZodString>;
+            createdAt: z.ZodNumber;
+        }, "strip", z.ZodTypeAny, {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight: number;
+            source?: string | undefined;
+        }, {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight?: number | undefined;
+            source?: string | undefined;
+        }>, "many">;
+        version: z.ZodDefault<z.ZodString>;
+        createdAt: z.ZodNumber;
+        updatedAt: z.ZodNumber;
+    }, "strip", z.ZodTypeAny, {
+        createdAt: number;
+        statements: {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight: number;
+            source?: string | undefined;
+        }[];
+        version: string;
+        updatedAt: number;
+    }, {
+        createdAt: number;
+        statements: {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight?: number | undefined;
+            source?: string | undefined;
+        }[];
+        updatedAt: number;
+        version?: string | undefined;
+    }>>;
+    driftThreshold: z.ZodDefault<z.ZodNumber>;
+    criticalThreshold: z.ZodDefault<z.ZodNumber>;
+    autoInject: z.ZodDefault<z.ZodBoolean>;
+    evalModel: z.ZodOptional<z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
+        type: z.ZodLiteral<"bankr">;
+        apiKey: z.ZodString;
+        baseUrl: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        type: "bankr";
+        apiKey: string;
+        baseUrl?: string | undefined;
+    }, {
+        type: "bankr";
+        apiKey: string;
+        baseUrl?: string | undefined;
+    }>, z.ZodObject<{
+        type: z.ZodLiteral<"openai">;
+        apiKey: z.ZodString;
+        model: z.ZodDefault<z.ZodOptional<z.ZodString>>;
+        baseUrl: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        type: "openai";
+        apiKey: string;
+        model: string;
+        baseUrl?: string | undefined;
+    }, {
+        type: "openai";
+        apiKey: string;
+        baseUrl?: string | undefined;
+        model?: string | undefined;
+    }>, z.ZodObject<{
+        type: z.ZodLiteral<"anthropic">;
+        apiKey: z.ZodString;
+        model: z.ZodDefault<z.ZodOptional<z.ZodString>>;
+        baseUrl: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        type: "anthropic";
+        apiKey: string;
+        model: string;
+        baseUrl?: string | undefined;
+    }, {
+        type: "anthropic";
+        apiKey: string;
+        baseUrl?: string | undefined;
+        model?: string | undefined;
+    }>, z.ZodObject<{
+        type: z.ZodLiteral<"ollama">;
+        baseUrl: z.ZodDefault<z.ZodString>;
+        model: z.ZodDefault<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        type: "ollama";
+        baseUrl: string;
+        model: string;
+    }, {
+        type: "ollama";
+        baseUrl?: string | undefined;
+        model?: string | undefined;
+    }>]>>;
+}, "strip", z.ZodTypeAny, {
+    driftThreshold: number;
+    criticalThreshold: number;
+    autoInject: boolean;
+    constitution?: {
+        createdAt: number;
+        statements: {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight: number;
+            source?: string | undefined;
+        }[];
+        version: string;
+        updatedAt: number;
+    } | undefined;
+    evalModel?: {
+        type: "bankr";
+        apiKey: string;
+        baseUrl?: string | undefined;
+    } | {
+        type: "openai";
+        apiKey: string;
+        model: string;
+        baseUrl?: string | undefined;
+    } | {
+        type: "anthropic";
+        apiKey: string;
+        model: string;
+        baseUrl?: string | undefined;
+    } | {
+        type: "ollama";
+        baseUrl: string;
+        model: string;
+    } | undefined;
+}, {
+    constitution?: {
+        createdAt: number;
+        statements: {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight?: number | undefined;
+            source?: string | undefined;
+        }[];
+        updatedAt: number;
+        version?: string | undefined;
+    } | undefined;
+    driftThreshold?: number | undefined;
+    criticalThreshold?: number | undefined;
+    autoInject?: boolean | undefined;
+    evalModel?: {
+        type: "bankr";
+        apiKey: string;
+        baseUrl?: string | undefined;
+    } | {
+        type: "openai";
+        apiKey: string;
+        baseUrl?: string | undefined;
+        model?: string | undefined;
+    } | {
+        type: "anthropic";
+        apiKey: string;
+        baseUrl?: string | undefined;
+        model?: string | undefined;
+    } | {
+        type: "ollama";
+        baseUrl?: string | undefined;
+        model?: string | undefined;
+    } | undefined;
+}>;
+type IdentityConfig = z.infer<typeof identityConfigSchema>;
+declare const memoryLayerSchema: z.ZodEnum<["episodic", "semantic", "identity"]>;
+type MemoryLayer = z.infer<typeof memoryLayerSchema>;
+declare const layerConfigSchema: z.ZodObject<{
+    episodic: z.ZodObject<{
+        ttlMs: z.ZodDefault<z.ZodNumber>;
+        maxEntries: z.ZodDefault<z.ZodNumber>;
+        weight: z.ZodDefault<z.ZodNumber>;
+    }, "strip", z.ZodTypeAny, {
+        weight: number;
+        ttlMs: number;
+        maxEntries: number;
+    }, {
+        weight?: number | undefined;
+        ttlMs?: number | undefined;
+        maxEntries?: number | undefined;
+    }>;
+    semantic: z.ZodObject<{
+        ttlMs: z.ZodDefault<z.ZodNumber>;
+        maxEntries: z.ZodDefault<z.ZodNumber>;
+        weight: z.ZodDefault<z.ZodNumber>;
+    }, "strip", z.ZodTypeAny, {
+        weight: number;
+        ttlMs: number;
+        maxEntries: number;
+    }, {
+        weight?: number | undefined;
+        ttlMs?: number | undefined;
+        maxEntries?: number | undefined;
+    }>;
+    identity: z.ZodObject<{
+        ttlMs: z.ZodDefault<z.ZodNumber>;
+        maxEntries: z.ZodDefault<z.ZodNumber>;
+        weight: z.ZodDefault<z.ZodNumber>;
+    }, "strip", z.ZodTypeAny, {
+        weight: number;
+        ttlMs: number;
+        maxEntries: number;
+    }, {
+        weight?: number | undefined;
+        ttlMs?: number | undefined;
+        maxEntries?: number | undefined;
+    }>;
+}, "strip", z.ZodTypeAny, {
+    episodic: {
+        weight: number;
+        ttlMs: number;
+        maxEntries: number;
+    };
+    semantic: {
+        weight: number;
+        ttlMs: number;
+        maxEntries: number;
+    };
+    identity: {
+        weight: number;
+        ttlMs: number;
+        maxEntries: number;
+    };
+}, {
+    episodic: {
+        weight?: number | undefined;
+        ttlMs?: number | undefined;
+        maxEntries?: number | undefined;
+    };
+    semantic: {
+        weight?: number | undefined;
+        ttlMs?: number | undefined;
+        maxEntries?: number | undefined;
+    };
+    identity: {
+        weight?: number | undefined;
+        ttlMs?: number | undefined;
+        maxEntries?: number | undefined;
+    };
+}>;
+type LayerConfig = z.infer<typeof layerConfigSchema>;
+declare const layeredMemoryEntrySchema: z.ZodObject<{
+    id: z.ZodString;
+    content: z.ZodString;
+    topics: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    metadata: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+    createdAt: z.ZodNumber;
+    accessedAt: z.ZodNumber;
+    accessCount: z.ZodDefault<z.ZodNumber>;
+} & {
+    layer: z.ZodDefault<z.ZodEnum<["episodic", "semantic", "identity"]>>;
+    expiresAt: z.ZodOptional<z.ZodNumber>;
+    importance: z.ZodDefault<z.ZodNumber>;
+}, "strip", z.ZodTypeAny, {
+    content: string;
+    topics: string[];
+    metadata: Record<string, unknown>;
+    id: string;
+    createdAt: number;
+    accessedAt: number;
+    accessCount: number;
+    layer: "episodic" | "semantic" | "identity";
+    importance: number;
+    expiresAt?: number | undefined;
+}, {
+    content: string;
+    id: string;
+    createdAt: number;
+    accessedAt: number;
+    topics?: string[] | undefined;
+    metadata?: Record<string, unknown> | undefined;
+    accessCount?: number | undefined;
+    layer?: "episodic" | "semantic" | "identity" | undefined;
+    expiresAt?: number | undefined;
+    importance?: number | undefined;
+}>;
+type LayeredMemoryEntry = z.infer<typeof layeredMemoryEntrySchema>;
+declare const driftEventSchema: z.ZodObject<{
+    driftResult: z.ZodObject<{
+        score: z.ZodNumber;
+        level: z.ZodEnum<["aligned", "minor", "moderate", "critical"]>;
+        violatingStatements: z.ZodArray<z.ZodObject<{
+            id: z.ZodString;
+            text: z.ZodString;
+            category: z.ZodEnum<["values", "boundaries", "preferences", "goals"]>;
+            weight: z.ZodDefault<z.ZodNumber>;
+            source: z.ZodOptional<z.ZodString>;
+            createdAt: z.ZodNumber;
+        }, "strip", z.ZodTypeAny, {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight: number;
+            source?: string | undefined;
+        }, {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight?: number | undefined;
+            source?: string | undefined;
+        }>, "many">;
+        reasoning: z.ZodString;
+        detectedAt: z.ZodNumber;
+    }, "strip", z.ZodTypeAny, {
+        score: number;
+        level: "aligned" | "minor" | "moderate" | "critical";
+        violatingStatements: {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight: number;
+            source?: string | undefined;
+        }[];
+        reasoning: string;
+        detectedAt: number;
+    }, {
+        score: number;
+        level: "aligned" | "minor" | "moderate" | "critical";
+        violatingStatements: {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight?: number | undefined;
+            source?: string | undefined;
+        }[];
+        reasoning: string;
+        detectedAt: number;
+    }>;
+    correctionInjected: z.ZodDefault<z.ZodBoolean>;
+    correctionText: z.ZodOptional<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    driftResult: {
+        score: number;
+        level: "aligned" | "minor" | "moderate" | "critical";
+        violatingStatements: {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight: number;
+            source?: string | undefined;
+        }[];
+        reasoning: string;
+        detectedAt: number;
+    };
+    correctionInjected: boolean;
+    correctionText?: string | undefined;
+}, {
+    driftResult: {
+        score: number;
+        level: "aligned" | "minor" | "moderate" | "critical";
+        violatingStatements: {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight?: number | undefined;
+            source?: string | undefined;
+        }[];
+        reasoning: string;
+        detectedAt: number;
+    };
+    correctionInjected?: boolean | undefined;
+    correctionText?: string | undefined;
+}>;
+type DriftEvent = z.infer<typeof driftEventSchema>;
 
 /**
  * ReMEM — MemoryStore
@@ -388,6 +909,7 @@ declare class MemoryStore {
 
 declare class ModelAbstraction {
     private client;
+    config: ModelConfig;
     constructor(config: ModelConfig);
     private createClient;
     chat(messages: LLMMessage[], options?: {
@@ -395,6 +917,73 @@ declare class ModelAbstraction {
         maxTokens?: number;
     }): Promise<LLMResponse>;
     name(): string;
+}
+
+/**
+ * ReMEM — Hierarchical Memory Layers
+ * Episodic / Semantic / Identity with TTL-based eviction and weighted retrieval
+ */
+
+declare const DEFAULT_LAYER_CONFIG: Required<LayerConfig>;
+declare class LayerManager {
+    private entries;
+    private config;
+    constructor(config?: Partial<LayerConfig>);
+    /**
+     * Store an entry in the appropriate layer.
+     * If layer is not specified, auto-assigns based on topics and content.
+     */
+    store(input: StoreMemoryInput, layer?: MemoryLayer): LayeredMemoryEntry;
+    /**
+     * Get an entry by ID.
+     */
+    get(id: string): LayeredMemoryEntry | null;
+    /**
+     * Query across all layers with weighted retrieval.
+     * Entries from higher-weight layers rank higher, but content match still matters.
+     */
+    query(text: string, options?: QueryOptions & {
+        layers?: MemoryLayer[];
+    }): {
+        results: QueryResult[];
+        totalAvailable: number;
+        layerBreakdown: Record<MemoryLayer, number>;
+    };
+    /**
+     * Get recent entries across all layers.
+     */
+    getRecent(n?: number, layers?: MemoryLayer[]): QueryResult[];
+    /**
+     * Get entries by topic across all layers.
+     */
+    getByTopic(topic: string, limit?: number): QueryResult[];
+    /**
+     * Forget an entry.
+     */
+    forget(id: string): boolean;
+    /**
+     * Evict entries from a specific layer if over maxEntries.
+     * Evicts oldest accessed entries first.
+     */
+    private evictIfNeeded;
+    /**
+     * Run TTL-based eviction. Call periodically (e.g., on init or query).
+     */
+    evictExpired(): number;
+    /**
+     * Auto-assign layer based on content analysis.
+     */
+    private autoAssignLayer;
+    /**
+     * Get stats for each layer.
+     */
+    getStats(): Record<MemoryLayer, {
+        count: number;
+        maxEntries: number;
+        ttlMs: number;
+        weight: number;
+    }>;
+    private simpleRelevance;
 }
 
 /**
@@ -454,6 +1043,87 @@ declare class QueryEngine {
 }
 
 /**
+ * ReMEM — Identity & Constitution
+ * RLM-style identity layer with drift detection and constitution injection
+ */
+
+declare class ConstitutionManager {
+    private constitution;
+    private config;
+    constructor(config?: Partial<IdentityConfig>);
+    /**
+     * Import statements from source text (e.g., SOUL.md, IDENTITY.md).
+     * Parses the text and extracts identity statements by category.
+     */
+    importFromText(text: string, source: string): number;
+    /**
+     * Add a single statement manually.
+     */
+    addStatement(text: string, category: ConstitutionStatement['category'], weight?: number, source?: string): ConstitutionStatement;
+    /**
+     * Get all statements, optionally filtered by category.
+     */
+    getStatements(category?: ConstitutionStatement['category']): ConstitutionStatement[];
+    /**
+     * Get the full constitution.
+     */
+    getConstitution(): Constitution;
+    /**
+     * Serialize constitution for injection into LLM context.
+     */
+    toInjectionBlock(): string;
+}
+declare class DriftDetector {
+    private constitution;
+    private evalModel?;
+    private threshold;
+    private criticalThreshold;
+    constructor(constitution: ConstitutionManager, config?: Partial<IdentityConfig>);
+    /**
+     * Detect drift using BOTH pattern matching and LLM self-evaluation.
+     * Returns a DriftResult with score, level, and violating statements.
+     */
+    detectDrift(sessionText: string, options?: {
+        method?: 'pattern' | 'llm' | 'both';
+        confidenceThreshold?: number;
+    }): Promise<DriftResult>;
+    /**
+     * Fast pattern-matching drift detection.
+     * Checks for negation patterns, value contradictions, and boundary violations.
+     */
+    private detectPatternDrift;
+    /**
+     * LLM-based drift evaluation using self-check.
+     * Asks the model: "Are you still aligned with these values?"
+     */
+    private detectLLMDrift;
+}
+declare class ConstitutionInjector {
+    private constitution;
+    private autoInject;
+    constructor(constitution: ConstitutionManager, autoInject?: boolean);
+    /**
+     * Generate a constitution injection block for the current drift result.
+     * Call this before sending messages to the LLM when drift is detected.
+     */
+    buildInjection(drift: DriftResult): string;
+    /**
+     * Get the auto-inject setting.
+     */
+    shouldAutoInject(): boolean;
+    /**
+     * Set the auto-inject setting.
+     */
+    setAutoInject(value: boolean): void;
+}
+interface IdentitySystem {
+    constitution: ConstitutionManager;
+    detector: DriftDetector;
+    injector: ConstitutionInjector;
+}
+declare function createIdentitySystem(config?: IdentityConfig): IdentitySystem;
+
+/**
  * ReMEM — Main Entry Point
  * Recursive Memory for AI Agents
  */
@@ -475,6 +1145,10 @@ declare class ReMEM {
     private _store;
     private model?;
     private engine;
+    private identity?;
+    private layers?;
+    private _identityEnabled;
+    private _layersEnabled;
     constructor(config: ReMEMConfig);
     /**
      * Initialize the memory store. Must be called before use.
@@ -504,6 +1178,68 @@ declare class ReMEM {
         memories: QueryResult[];
     }>;
     /**
+     * Enable identity layer with optional constitution import.
+     */
+    enableIdentity(config?: {
+        constitutionTexts?: Array<{
+            text: string;
+            source: string;
+        }>;
+        autoInject?: boolean;
+        evalModel?: ModelAbstraction['config'];
+    }): void;
+    /**
+     * Add an identity statement.
+     */
+    addIdentityStatement(text: string, category: ConstitutionStatement['category'], weight?: number): ConstitutionStatement | null;
+    /**
+     * Import identity constitution from text (e.g., SOUL.md content).
+     */
+    importConstitution(text: string, source: string): number;
+    /**
+     * Detect identity drift in the current session context.
+     */
+    detectDrift(sessionText: string): Promise<DriftResult>;
+    /**
+     * Get constitution injection block if drift is detected.
+     * Use this to prepend correction context to LLM messages.
+     */
+    getConstitutionInjection(drift: DriftResult): string;
+    /**
+     * Get all identity statements.
+     */
+    getIdentityStatements(category?: ConstitutionStatement['category']): ConstitutionStatement[];
+    /**
+     * Check if identity layer is enabled.
+     */
+    isIdentityEnabled(): boolean;
+    /**
+     * Enable hierarchical memory layers (episodic / semantic / identity).
+     */
+    enableLayers(config?: Partial<LayerConfig>): void;
+    /**
+     * Store in a specific layer.
+     */
+    storeInLayer(input: StoreMemoryInput, layer: MemoryLayer): QueryResult | null;
+    /**
+     * Query across layers with weighted retrieval.
+     */
+    queryLayers(query: string, options?: QueryOptions & {
+        layers?: MemoryLayer[];
+    }): ReturnType<LayerManager['query']> | null;
+    /**
+     * Get layer stats.
+     */
+    getLayerStats(): ReturnType<LayerManager['getStats']> | null;
+    /**
+     * Evict expired entries from all layers.
+     */
+    evictExpiredLayers(): number;
+    /**
+     * Check if layers are enabled.
+     */
+    isLayersEnabled(): boolean;
+    /**
      * Get the underlying MemoryStore for advanced operations.
      */
     getStore(): MemoryStore;
@@ -517,4 +1253,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type EventType, type LLMMessage, type LLMResponse, type MemoryEntry, type MemoryEvent, MemoryStore, ModelAbstraction, type ModelConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMConfig, type StoreMemoryInput, eventTypeSchema, memoryEntrySchema, memoryEventSchema, modelConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema };
+export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type EventType, type IdentityCategory, type IdentityConfig, type IdentitySystem, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryStore, ModelAbstraction, type ModelConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMConfig, type StoreMemoryInput, constitutionSchema, constitutionStatementSchema, createIdentitySystem, driftEventSchema, driftResultSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema };

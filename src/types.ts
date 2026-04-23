@@ -142,6 +142,9 @@ export const eventTypeSchema = z.enum([
   'memory.forgotten',
   'snapshot.created',
   'snapshot.restored',
+  'identity.constitution_updated',
+  'identity.drift_detected',
+  'identity.drift_correction_injected',
 ]);
 
 export type EventType = z.infer<typeof eventTypeSchema>;
@@ -154,3 +157,98 @@ export const memoryEventSchema = z.object({
 });
 
 export type MemoryEvent = z.infer<typeof memoryEventSchema>;
+
+// ============================================================================
+// Identity & Constitution Types
+// ============================================================================
+
+export const identityCategorySchema = z.enum(['values', 'boundaries', 'preferences', 'goals']);
+export type IdentityCategory = z.infer<typeof identityCategorySchema>;
+
+export const constitutionStatementSchema = z.object({
+  id: z.string().uuid(),
+  text: z.string().min(1),
+  category: identityCategorySchema,
+  weight: z.number().min(0).max(1).default(0.5),
+  source: z.string().optional(), // e.g. 'SOUL.md', 'IDENTITY.md', 'manual'
+  createdAt: z.number(),
+});
+
+export type ConstitutionStatement = z.infer<typeof constitutionStatementSchema>;
+
+export const constitutionSchema = z.object({
+  statements: z.array(constitutionStatementSchema),
+  version: z.string().default('1.0'),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export type Constitution = z.infer<typeof constitutionSchema>;
+
+export const driftResultSchema = z.object({
+  score: z.number().min(0).max(1),
+  level: z.enum(['aligned', 'minor', 'moderate', 'critical']),
+  violatingStatements: z.array(constitutionStatementSchema),
+  reasoning: z.string(),
+  detectedAt: z.number(),
+});
+
+export type DriftResult = z.infer<typeof driftResultSchema>;
+
+export const identityConfigSchema = z.object({
+  constitution: constitutionSchema.optional(),
+  driftThreshold: z.number().min(0).max(1).default(0.3),
+  criticalThreshold: z.number().min(0).max(1).default(0.7),
+  autoInject: z.boolean().default(true),
+  evalModel: modelConfigSchema.optional(), // separate eval model (local Ollama preferred for cost)
+});
+
+export type IdentityConfig = z.infer<typeof identityConfigSchema>;
+
+// ============================================================================
+// Hierarchical Memory Layer Types
+// ============================================================================
+
+export const memoryLayerSchema = z.enum(['episodic', 'semantic', 'identity']);
+export type MemoryLayer = z.infer<typeof memoryLayerSchema>;
+
+export const layerConfigSchema = z.object({
+  episodic: z.object({
+    ttlMs: z.number().default(3_600_000),    // 1 hour
+    maxEntries: z.number().default(1000),
+    weight: z.number().default(0.2),
+  }),
+  semantic: z.object({
+    ttlMs: z.number().default(604_800_000),  // 7 days
+    maxEntries: z.number().default(5000),
+    weight: z.number().default(0.3),
+  }),
+  identity: z.object({
+    ttlMs: z.number().default(2_592_000_000), // 30 days
+    maxEntries: z.number().default(500),
+    weight: z.number().default(0.5),
+  }),
+});
+
+export type LayerConfig = z.infer<typeof layerConfigSchema>;
+
+// Extended memory entry with layer info
+export const layeredMemoryEntrySchema = memoryEntrySchema.extend({
+  layer: memoryLayerSchema.default('episodic'),
+  expiresAt: z.number().optional(),
+  importance: z.number().min(0).max(1).default(0.5),
+});
+
+export type LayeredMemoryEntry = z.infer<typeof layeredMemoryEntrySchema>;
+
+// ============================================================================
+// Identity Drift Event (stored in event log)
+// ============================================================================
+
+export const driftEventSchema = z.object({
+  driftResult: driftResultSchema,
+  correctionInjected: z.boolean().default(false),
+  correctionText: z.string().optional(),
+});
+
+export type DriftEvent = z.infer<typeof driftEventSchema>;

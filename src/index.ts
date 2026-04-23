@@ -7,12 +7,20 @@ import { MemoryStore } from './store.js';
 import { ModelAbstraction } from './model.js';
 import { QueryEngine } from './query.js';
 import {
+  createIdentitySystem,
+  type IdentitySystem,
+} from './identity.js';
+import { LayerManager, DEFAULT_LAYER_CONFIG, type LayerConfig } from './layers.js';
+import {
   rememConfigSchema,
   type ReMEMConfig,
   type StoreMemoryInput,
   type QueryOptions,
   type QueryResponse,
   type QueryResult,
+  type ConstitutionStatement,
+  type DriftResult,
+  type MemoryLayer,
 } from './types.js';
 
 /**
@@ -32,6 +40,10 @@ export class ReMEM {
   private _store: MemoryStore;
   private model?: ModelAbstraction;
   private engine: QueryEngine;
+  private identity?: IdentitySystem;
+  private layers?: LayerManager;
+  private _identityEnabled: boolean = false;
+  private _layersEnabled: boolean = false;
 
   constructor(config: ReMEMConfig) {
     const validated = rememConfigSchema.parse(config);
@@ -97,6 +109,162 @@ export class ReMEM {
     return this.engine.recursiveQuery(initialQuery, maxDepth ?? 3);
   }
 
+  // ─── Identity Layer ───────────────────────────────────────────────────────
+
+  /**
+   * Enable identity layer with optional constitution import.
+   */
+  enableIdentity(config?: {
+    constitutionTexts?: Array<{ text: string; source: string }>;
+    autoInject?: boolean;
+    evalModel?: ModelAbstraction['config'];
+  }): void {
+    const identityConfig = {
+      autoInject: config?.autoInject ?? true,
+      evalModel: config?.evalModel ?? (this.model ? this.model.config : undefined),
+      driftThreshold: 0.3,
+      criticalThreshold: 0.7,
+    };
+
+    this.identity = createIdentitySystem(identityConfig);
+    this._identityEnabled = true;
+
+    // Import constitution texts
+    if (config?.constitutionTexts) {
+      for (const { text, source } of config.constitutionTexts) {
+        this.identity.constitution.importFromText(text, source);
+      }
+    }
+  }
+
+  /**
+   * Add an identity statement.
+   */
+  addIdentityStatement(
+    text: string,
+    category: ConstitutionStatement['category'],
+    weight?: number
+  ): ConstitutionStatement | null {
+    if (!this.identity) return null;
+    return this.identity.constitution.addStatement(text, category, weight);
+  }
+
+  /**
+   * Import identity constitution from text (e.g., SOUL.md content).
+   */
+  importConstitution(text: string, source: string): number {
+    if (!this.identity) {
+      this.enableIdentity();
+    }
+    return this.identity!.constitution.importFromText(text, source);
+  }
+
+  /**
+   * Detect identity drift in the current session context.
+   */
+  async detectDrift(sessionText: string): Promise<DriftResult> {
+    if (!this.identity) {
+      return {
+        score: 0,
+        level: 'aligned',
+        violatingStatements: [],
+        reasoning: 'Identity layer not enabled.',
+        detectedAt: Date.now(),
+      };
+    }
+    return this.identity.detector.detectDrift(sessionText, { method: 'both' });
+  }
+
+  /**
+   * Get constitution injection block if drift is detected.
+   * Use this to prepend correction context to LLM messages.
+   */
+  getConstitutionInjection(drift: DriftResult): string {
+    if (!this.identity) return '';
+    if (drift.level === 'aligned') return '';
+    return this.identity.injector.buildInjection(drift);
+  }
+
+  /**
+   * Get all identity statements.
+   */
+  getIdentityStatements(category?: ConstitutionStatement['category']): ConstitutionStatement[] {
+    if (!this.identity) return [];
+    return this.identity.constitution.getStatements(category);
+  }
+
+  /**
+   * Check if identity layer is enabled.
+   */
+  isIdentityEnabled(): boolean {
+    return this._identityEnabled;
+  }
+
+  // ─── Hierarchical Layers ─────────────────────────────────────────────────
+
+  /**
+   * Enable hierarchical memory layers (episodic / semantic / identity).
+   */
+  enableLayers(config?: Partial<LayerConfig>): void {
+    this.layers = new LayerManager(config ?? DEFAULT_LAYER_CONFIG);
+    this._layersEnabled = true;
+  }
+
+  /**
+   * Store in a specific layer.
+   */
+  storeInLayer(input: StoreMemoryInput, layer: MemoryLayer): QueryResult | null {
+    if (!this.layers) {
+      this.enableLayers();
+    }
+    const entry = this.layers!.store(input, layer);
+    return {
+      id: entry.id,
+      content: entry.content,
+      topics: entry.topics,
+      relevanceScore: entry.importance,
+      createdAt: entry.createdAt,
+      accessedAt: entry.accessedAt,
+      accessCount: entry.accessCount,
+    };
+  }
+
+  /**
+   * Query across layers with weighted retrieval.
+   */
+  queryLayers(
+    query: string,
+    options?: QueryOptions & { layers?: MemoryLayer[] }
+  ): ReturnType<LayerManager['query']> | null {
+    if (!this.layers) return null;
+    return this.layers.query(query, options);
+  }
+
+  /**
+   * Get layer stats.
+   */
+  getLayerStats(): ReturnType<LayerManager['getStats']> | null {
+    if (!this.layers) return null;
+    return this.layers.getStats();
+  }
+
+  /**
+   * Evict expired entries from all layers.
+   */
+  evictExpiredLayers(): number {
+    if (!this.layers) return 0;
+    return this.layers.evictExpired();
+  }
+
+  /**
+   * Check if layers are enabled.
+   */
+  isLayersEnabled(): boolean {
+    return this._layersEnabled;
+  }
+
+  // ─── Utilities ───────────────────────────────────────────────────────────
+
   /**
    * Get the underlying MemoryStore for advanced operations.
    */
@@ -124,3 +292,5 @@ export { MemoryStore } from './store.js';
 export { ModelAbstraction } from './model.js';
 export { QueryEngine } from './query.js';
 export * from './types.js';
+export * from './identity.js';
+export * from './layers.js';

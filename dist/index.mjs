@@ -88,13 +88,78 @@ var eventTypeSchema = z.enum([
   "memory.accessed",
   "memory.forgotten",
   "snapshot.created",
-  "snapshot.restored"
+  "snapshot.restored",
+  "identity.constitution_updated",
+  "identity.drift_detected",
+  "identity.drift_correction_injected"
 ]);
 var memoryEventSchema = z.object({
   id: z.string().uuid(),
   type: eventTypeSchema,
   timestamp: z.number(),
   payload: z.record(z.unknown())
+});
+var identityCategorySchema = z.enum(["values", "boundaries", "preferences", "goals"]);
+var constitutionStatementSchema = z.object({
+  id: z.string().uuid(),
+  text: z.string().min(1),
+  category: identityCategorySchema,
+  weight: z.number().min(0).max(1).default(0.5),
+  source: z.string().optional(),
+  // e.g. 'SOUL.md', 'IDENTITY.md', 'manual'
+  createdAt: z.number()
+});
+var constitutionSchema = z.object({
+  statements: z.array(constitutionStatementSchema),
+  version: z.string().default("1.0"),
+  createdAt: z.number(),
+  updatedAt: z.number()
+});
+var driftResultSchema = z.object({
+  score: z.number().min(0).max(1),
+  level: z.enum(["aligned", "minor", "moderate", "critical"]),
+  violatingStatements: z.array(constitutionStatementSchema),
+  reasoning: z.string(),
+  detectedAt: z.number()
+});
+var identityConfigSchema = z.object({
+  constitution: constitutionSchema.optional(),
+  driftThreshold: z.number().min(0).max(1).default(0.3),
+  criticalThreshold: z.number().min(0).max(1).default(0.7),
+  autoInject: z.boolean().default(true),
+  evalModel: modelConfigSchema.optional()
+  // separate eval model (local Ollama preferred for cost)
+});
+var memoryLayerSchema = z.enum(["episodic", "semantic", "identity"]);
+var layerConfigSchema = z.object({
+  episodic: z.object({
+    ttlMs: z.number().default(36e5),
+    // 1 hour
+    maxEntries: z.number().default(1e3),
+    weight: z.number().default(0.2)
+  }),
+  semantic: z.object({
+    ttlMs: z.number().default(6048e5),
+    // 7 days
+    maxEntries: z.number().default(5e3),
+    weight: z.number().default(0.3)
+  }),
+  identity: z.object({
+    ttlMs: z.number().default(2592e6),
+    // 30 days
+    maxEntries: z.number().default(500),
+    weight: z.number().default(0.5)
+  })
+});
+var layeredMemoryEntrySchema = memoryEntrySchema.extend({
+  layer: memoryLayerSchema.default("episodic"),
+  expiresAt: z.number().optional(),
+  importance: z.number().min(0).max(1).default(0.5)
+});
+var driftEventSchema = z.object({
+  driftResult: driftResultSchema,
+  correctionInjected: z.boolean().default(false),
+  correctionText: z.string().optional()
 });
 
 // src/store.ts
@@ -356,7 +421,9 @@ var MemoryStore = class {
 // src/model.ts
 var ModelAbstraction = class {
   client;
+  config;
   constructor(config) {
+    this.config = config;
     this.client = this.createClient(config);
   }
   createClient(config) {
@@ -717,11 +784,638 @@ ${contextParts.join("\n---\n")}`
   }
 };
 
+// src/identity.ts
+import { randomUUID as randomUUID2 } from "crypto";
+var ConstitutionManager = class {
+  constitution;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  config;
+  constructor(config = {}) {
+    const cfg = config;
+    this.config = {
+      driftThreshold: cfg.driftThreshold ?? 0.3,
+      criticalThreshold: cfg.criticalThreshold ?? 0.7,
+      autoInject: cfg.autoInject ?? true,
+      evalModel: cfg.evalModel,
+      constitution: cfg.constitution ?? {
+        statements: [],
+        version: "1.0",
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+    };
+    this.constitution = this.config.constitution;
+  }
+  /**
+   * Import statements from source text (e.g., SOUL.md, IDENTITY.md).
+   * Parses the text and extracts identity statements by category.
+   */
+  importFromText(text, source) {
+    const categoryPatterns = {
+      values: /(?:values?|core\s*truths?|principles?)[\s:]*\n([\s\S]*?)(?=\n##|\n#|$)/gi,
+      boundaries: /(?:boundaries?|limits?|rules?)[\s:]*\n([\s\S]*?)(?=\n##|\n#|$)/gi,
+      preferences: /(?:preferences?|likes?|style)[\s:]*\n([\s\S]*?)(?=\n##|\n#|$)/gi,
+      goals: /(?:goals?|objectives?|direction)[\s:]*\n([\s\S]*?)(?=\n##|\n#|$)/gi
+    };
+    let imported = 0;
+    const now = Date.now();
+    for (const [category, pattern] of Object.entries(categoryPatterns)) {
+      const matches = text.matchAll(pattern);
+      for (const match of matches) {
+        const content = match[1].trim();
+        if (!content) continue;
+        const lines = content.split(/\n|•|-|\*/).map((l) => l.trim()).filter((l) => l.length > 10);
+        for (const line of lines) {
+          const statement = {
+            id: randomUUID2(),
+            text: line,
+            category,
+            weight: 0.5,
+            source,
+            createdAt: now
+          };
+          const parsed = constitutionStatementSchema.safeParse(statement);
+          if (parsed.success) {
+            this.constitution.statements.push(parsed.data);
+            imported++;
+          }
+        }
+      }
+    }
+    if (imported === 0) {
+      const lines = text.split(/\n/).map((l) => l.replace(/^#+\s*/, "").trim()).filter((l) => l.length > 15 && !l.startsWith("["));
+      for (const line of lines.slice(0, 20)) {
+        const statement = {
+          id: randomUUID2(),
+          text: line,
+          category: "values",
+          weight: 0.3,
+          source,
+          createdAt: now
+        };
+        const parsed = constitutionStatementSchema.safeParse(statement);
+        if (parsed.success) {
+          this.constitution.statements.push(parsed.data);
+          imported++;
+        }
+      }
+    }
+    this.constitution.updatedAt = Date.now();
+    return imported;
+  }
+  /**
+   * Add a single statement manually.
+   */
+  addStatement(text, category, weight = 0.5, source) {
+    const statement = {
+      id: randomUUID2(),
+      text,
+      category,
+      weight,
+      source: source ?? "manual",
+      createdAt: Date.now()
+    };
+    const validated = constitutionStatementSchema.parse(statement);
+    this.constitution.statements.push(validated);
+    this.constitution.updatedAt = Date.now();
+    return validated;
+  }
+  /**
+   * Get all statements, optionally filtered by category.
+   */
+  getStatements(category) {
+    if (!category) return [...this.constitution.statements];
+    return this.constitution.statements.filter((s) => s.category === category);
+  }
+  /**
+   * Get the full constitution.
+   */
+  getConstitution() {
+    return { ...this.constitution };
+  }
+  /**
+   * Serialize constitution for injection into LLM context.
+   */
+  toInjectionBlock() {
+    const statements = this.constitution.statements;
+    if (statements.length === 0) return "";
+    const byCategory = statements.reduce(
+      (acc, s) => {
+        if (!acc[s.category]) acc[s.category] = [];
+        acc[s.category].push(s);
+        return acc;
+      },
+      {}
+    );
+    const parts = ["## Identity Constitution\n"];
+    for (const [category, stmts] of Object.entries(byCategory)) {
+      parts.push(`
+### ${category.charAt(0).toUpperCase() + category.slice(1)}
+`);
+      for (const s of stmts) {
+        parts.push(`- [${s.weight.toFixed(1)}] ${s.text}
+`);
+      }
+    }
+    return parts.join("");
+  }
+};
+var DriftDetector = class {
+  constitution;
+  evalModel;
+  threshold;
+  criticalThreshold;
+  constructor(constitution, config = {}) {
+    this.constitution = constitution;
+    if (config.evalModel) {
+      this.evalModel = new ModelAbstraction(config.evalModel);
+    }
+    this.threshold = config.driftThreshold ?? 0.3;
+    this.criticalThreshold = config.criticalThreshold ?? 0.7;
+  }
+  /**
+   * Detect drift using BOTH pattern matching and LLM self-evaluation.
+   * Returns a DriftResult with score, level, and violating statements.
+   */
+  async detectDrift(sessionText, options) {
+    const method = options?.method ?? "both";
+    let patternDrift = null;
+    let llmDrift = null;
+    if (method === "pattern" || method === "both") {
+      patternDrift = this.detectPatternDrift(sessionText);
+    }
+    if (method === "llm" || method === "both") {
+      llmDrift = await this.detectLLMDrift(sessionText);
+    }
+    const scores = [patternDrift?.score, llmDrift?.score].filter(
+      (s) => s !== null && s !== void 0
+    );
+    if (scores.length === 0) {
+      return {
+        score: 0,
+        level: "aligned",
+        violatingStatements: [],
+        reasoning: "No drift detected \u2014 no significant violations found.",
+        detectedAt: Date.now()
+      };
+    }
+    const maxScore = Math.max(...scores);
+    const allViolations = [
+      ...patternDrift?.violatingStatements ?? [],
+      ...llmDrift?.violatingStatements ?? []
+    ];
+    const seen = /* @__PURE__ */ new Set();
+    const uniqueViolations = allViolations.filter((v) => {
+      if (seen.has(v.id)) return false;
+      seen.add(v.id);
+      return true;
+    });
+    const level = maxScore >= this.criticalThreshold ? "critical" : maxScore >= this.threshold ? maxScore >= (this.threshold + this.criticalThreshold) / 2 ? "moderate" : "minor" : "aligned";
+    const reasoning = [
+      patternDrift && `Pattern matching: ${patternDrift.reasoning}`,
+      llmDrift && `LLM evaluation: ${llmDrift.reasoning}`
+    ].filter(Boolean).join(" | ");
+    return {
+      score: maxScore,
+      level,
+      violatingStatements: uniqueViolations,
+      reasoning,
+      detectedAt: Date.now()
+    };
+  }
+  /**
+   * Fast pattern-matching drift detection.
+   * Checks for negation patterns, value contradictions, and boundary violations.
+   */
+  detectPatternDrift(sessionText) {
+    const statements = this.constitution.getStatements();
+    const lowerText = sessionText.toLowerCase();
+    const negationPatterns = [
+      /\bnot\s+(?:a|I|me|my)\b/i,
+      /\bdon't\s+think\b/i,
+      /\bno\s+longer\b/i,
+      /\bchanged\s+my\s+mind\b/i,
+      /\bactually\b.*\b(not|no)\b/i
+    ];
+    const negationMatches = negationPatterns.filter((p) => p.test(lowerText));
+    const hasNegation = negationMatches.length > 0;
+    const violatingStatements = [];
+    for (const statement of statements) {
+      const statementLower = statement.text.toLowerCase();
+      const negationVariants = [
+        statementLower.replace(/^(i\s+|you\s+|we\s+)/i, "not $1"),
+        `not ${statementLower}`,
+        `i don't ${statementLower.replace(/^(i\s+)/, "")}`
+      ];
+      for (const variant of negationVariants) {
+        if (lowerText.includes(variant.slice(0, 50))) {
+          violatingStatements.push(statement);
+          break;
+        }
+      }
+    }
+    let score = 0;
+    const reasoningParts = [];
+    if (hasNegation) {
+      score += 0.15;
+      reasoningParts.push("negation patterns detected");
+    }
+    if (violatingStatements.length > 0) {
+      const weightedSum = violatingStatements.reduce((sum, s) => sum + s.weight, 0);
+      score += Math.min(weightedSum / Math.max(statements.length, 1), 0.5);
+      reasoningParts.push(`${violatingStatements.length} value contradictions`);
+    }
+    const level = score >= this.criticalThreshold ? "critical" : score >= this.threshold ? score >= (this.threshold + this.criticalThreshold) / 2 ? "moderate" : "minor" : "aligned";
+    return {
+      score: Math.min(score, 1),
+      level,
+      violatingStatements,
+      reasoning: reasoningParts.join("; ") || "no violations",
+      detectedAt: Date.now()
+    };
+  }
+  /**
+   * LLM-based drift evaluation using self-check.
+   * Asks the model: "Are you still aligned with these values?"
+   */
+  async detectLLMDrift(sessionText) {
+    if (!this.evalModel) {
+      return null;
+    }
+    const statements = this.constitution.getStatements();
+    if (statements.length === 0) return null;
+    const constitutionText = this.constitution.toInjectionBlock();
+    const messages = [
+      {
+        role: "system",
+        content: `You are an identity alignment checker. Evaluate whether the recent conversation shows drift from the stated identity.
+
+Rate drift on a 0-1 scale where:
+- 0.0-0.2: aligned (minor language variation only)
+- 0.3-0.5: minor drift (slight deviation from some values)
+- 0.6-0.8: moderate drift (significant value contradictions)
+- 0.9-1.0: critical drift (core values completely abandoned)
+
+Respond with ONLY valid JSON:
+{
+  "score": <number between 0 and 1>,
+  "reasoning": "<brief explanation>",
+  "violations": ["<list of specific violations>"]
+}
+
+Be strict. Better to say there is drift than to excuse it.`
+      },
+      {
+        role: "user",
+        content: `Identity Constitution:
+${constitutionText}
+
+Recent conversation:
+---
+${sessionText.slice(-4e3)}
+---
+
+Evaluate alignment. Return ONLY JSON.`
+      }
+    ];
+    try {
+      const response = await this.evalModel.chat(messages, {
+        temperature: 0.1,
+        maxTokens: 512
+      });
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return null;
+      }
+      const parsed = JSON.parse(jsonMatch[0]);
+      const score = typeof parsed.score === "number" ? parsed.score : 0;
+      const violatingStatements = [];
+      if (Array.isArray(parsed.violations)) {
+        for (const v of parsed.violations) {
+          const match = statements.find(
+            (s) => s.text.toLowerCase().includes(String(v).toLowerCase().slice(0, 20)) || String(v).toLowerCase().includes(s.text.toLowerCase().slice(0, 20))
+          );
+          if (match) violatingStatements.push(match);
+        }
+      }
+      return {
+        score: Math.min(Math.max(score, 0), 1),
+        level: score >= this.criticalThreshold ? "critical" : score >= this.threshold ? score >= (this.threshold + this.criticalThreshold) / 2 ? "moderate" : "minor" : "aligned",
+        violatingStatements,
+        reasoning: parsed.reasoning ?? "LLM evaluation complete",
+        detectedAt: Date.now()
+      };
+    } catch {
+      return null;
+    }
+  }
+};
+var ConstitutionInjector = class {
+  constitution;
+  autoInject;
+  constructor(constitution, autoInject = true) {
+    this.constitution = constitution;
+    this.autoInject = autoInject;
+  }
+  /**
+   * Generate a constitution injection block for the current drift result.
+   * Call this before sending messages to the LLM when drift is detected.
+   */
+  buildInjection(drift) {
+    const constitution = this.constitution.toInjectionBlock();
+    if (!constitution) return "";
+    const parts = [
+      "## \u26A0\uFE0F Identity Alignment Reminder\n",
+      `Drift detected: **${drift.level.toUpperCase()}** (score: ${drift.score.toFixed(2)})
+`,
+      drift.reasoning ? `${drift.reasoning}
+` : "",
+      "\nYour stated identity:\n",
+      constitution
+    ];
+    if (drift.violatingStatements.length > 0) {
+      parts.push("\n## Statements that may have been violated:\n");
+      for (const s of drift.violatingStatements) {
+        parts.push(`- ${s.text} [${s.category}] weight=${s.weight.toFixed(1)}
+`);
+      }
+    }
+    parts.push(
+      "\n## Corrective Instruction\n",
+      `Re-align with the above constitution. ${drift.level === "critical" ? "This is a critical violation \u2014 stop immediately and correct." : "Gently correct course."}
+`
+    );
+    return parts.join("");
+  }
+  /**
+   * Get the auto-inject setting.
+   */
+  shouldAutoInject() {
+    return this.autoInject;
+  }
+  /**
+   * Set the auto-inject setting.
+   */
+  setAutoInject(value) {
+    this.autoInject = value;
+  }
+};
+function createIdentitySystem(config) {
+  const constitution = new ConstitutionManager(config);
+  const detector = new DriftDetector(constitution, config);
+  const injector = new ConstitutionInjector(constitution, config?.autoInject ?? true);
+  return { constitution, detector, injector };
+}
+
+// src/layers.ts
+import { randomUUID as randomUUID3 } from "crypto";
+var DEFAULT_LAYER_CONFIG = {
+  episodic: { ttlMs: 36e5, maxEntries: 1e3, weight: 0.2 },
+  // 1 hour
+  semantic: { ttlMs: 6048e5, maxEntries: 5e3, weight: 0.3 },
+  // 7 days
+  identity: { ttlMs: 2592e6, maxEntries: 500, weight: 0.5 }
+  // 30 days
+};
+var LayerManager = class {
+  entries = /* @__PURE__ */ new Map();
+  config;
+  constructor(config) {
+    const merged = {
+      episodic: { ...DEFAULT_LAYER_CONFIG.episodic, ...config?.episodic },
+      semantic: { ...DEFAULT_LAYER_CONFIG.semantic, ...config?.semantic },
+      identity: { ...DEFAULT_LAYER_CONFIG.identity, ...config?.identity }
+    };
+    this.config = layerConfigSchema.parse(merged);
+  }
+  /**
+   * Store an entry in the appropriate layer.
+   * If layer is not specified, auto-assigns based on topics and content.
+   */
+  store(input, layer) {
+    const assignedLayer = layer ?? this.autoAssignLayer(input);
+    const now = Date.now();
+    const layerCfg = this.config[assignedLayer];
+    const entry = {
+      id: randomUUID3(),
+      content: input.content,
+      topics: input.topics ?? [],
+      metadata: input.metadata ?? {},
+      createdAt: now,
+      accessedAt: now,
+      accessCount: 0,
+      layer: assignedLayer,
+      expiresAt: now + layerCfg.ttlMs,
+      importance: input.metadata?.importance ?? 0.5
+    };
+    this.evictIfNeeded(assignedLayer);
+    this.entries.set(entry.id, entry);
+    return entry;
+  }
+  /**
+   * Get an entry by ID.
+   */
+  get(id) {
+    const entry = this.entries.get(id);
+    if (!entry) return null;
+    if (entry.expiresAt && Date.now() > entry.expiresAt) {
+      this.entries.delete(id);
+      return null;
+    }
+    entry.accessedAt = Date.now();
+    entry.accessCount++;
+    return entry;
+  }
+  /**
+   * Query across all layers with weighted retrieval.
+   * Entries from higher-weight layers rank higher, but content match still matters.
+   */
+  query(text, options) {
+    const layers = options?.layers ?? ["episodic", "semantic", "identity"];
+    const now = Date.now();
+    let allEntries = [];
+    for (const layer of layers) {
+      const layerCfg = this.config[layer];
+      for (const entry of this.entries.values()) {
+        if (entry.layer !== layer) continue;
+        if (entry.expiresAt && now > entry.expiresAt) {
+          this.entries.delete(entry.id);
+          continue;
+        }
+        if (options?.topics && options.topics.length > 0) {
+          const hasTopic = options.topics.some(
+            (t) => entry.topics.some((et) => et.toLowerCase().includes(t.toLowerCase()))
+          );
+          if (!hasTopic) continue;
+        }
+        if (options?.since && entry.createdAt < options.since) continue;
+        if (options?.until && entry.createdAt > options.until) continue;
+        if (options?.minAccessCount && entry.accessCount < options.minAccessCount) continue;
+        const contentScore = this.simpleRelevance(entry.content, text);
+        const weightedScore = layerCfg.weight * contentScore * (0.5 + entry.importance);
+        allEntries.push({ ...entry, weightedScore });
+      }
+    }
+    allEntries.sort((a, b) => b.weightedScore - a.weightedScore);
+    const layerBreakdown = {
+      episodic: 0,
+      semantic: 0,
+      identity: 0
+    };
+    for (const entry of allEntries) {
+      layerBreakdown[entry.layer]++;
+    }
+    const limit = options?.limit ?? 10;
+    const results = allEntries.slice(0, limit).map((entry) => ({
+      id: entry.id,
+      content: entry.content,
+      topics: entry.topics,
+      relevanceScore: entry.weightedScore,
+      createdAt: entry.createdAt,
+      accessedAt: entry.accessedAt,
+      accessCount: entry.accessCount
+    }));
+    return {
+      results,
+      totalAvailable: allEntries.length,
+      layerBreakdown
+    };
+  }
+  /**
+   * Get recent entries across all layers.
+   */
+  getRecent(n = 10, layers) {
+    const targetLayers = layers ?? ["episodic", "semantic", "identity"];
+    const now = Date.now();
+    const entries = [];
+    for (const entry of this.entries.values()) {
+      if (!targetLayers.includes(entry.layer)) continue;
+      if (entry.expiresAt && now > entry.expiresAt) {
+        this.entries.delete(entry.id);
+        continue;
+      }
+      const layerWeight = this.config[entry.layer].weight;
+      const weightedScore = layerWeight * (entry.accessCount + 1);
+      entries.push({ ...entry, weightedScore });
+    }
+    entries.sort((a, b) => b.weightedScore - a.weightedScore);
+    return entries.slice(0, n).map((entry) => ({
+      id: entry.id,
+      content: entry.content,
+      topics: entry.topics,
+      relevanceScore: entry.weightedScore,
+      createdAt: entry.createdAt,
+      accessedAt: entry.accessedAt,
+      accessCount: entry.accessCount
+    }));
+  }
+  /**
+   * Get entries by topic across all layers.
+   */
+  getByTopic(topic, limit = 20) {
+    const now = Date.now();
+    const results = [];
+    for (const entry of this.entries.values()) {
+      if (entry.layer === "episodic") continue;
+      if (entry.expiresAt && now > entry.expiresAt) {
+        this.entries.delete(entry.id);
+        continue;
+      }
+      if (!entry.topics.some((t) => t.toLowerCase().includes(topic.toLowerCase()))) continue;
+      const layerWeight = this.config[entry.layer].weight;
+      results.push({
+        id: entry.id,
+        content: entry.content,
+        topics: entry.topics,
+        relevanceScore: layerWeight * (entry.accessCount + 1),
+        createdAt: entry.createdAt,
+        accessedAt: entry.accessedAt,
+        accessCount: entry.accessCount,
+        weightedScore: layerWeight
+      });
+    }
+    results.sort((a, b) => b.weightedScore - a.weightedScore);
+    return results.slice(0, limit).map(({ weightedScore, ...r }) => r);
+  }
+  /**
+   * Forget an entry.
+   */
+  forget(id) {
+    return this.entries.delete(id);
+  }
+  /**
+   * Evict entries from a specific layer if over maxEntries.
+   * Evicts oldest accessed entries first.
+   */
+  evictIfNeeded(layer) {
+    const cfg = this.config[layer];
+    const layerEntries = [...this.entries.values()].filter((e) => e.layer === layer);
+    if (layerEntries.length >= cfg.maxEntries) {
+      layerEntries.sort((a, b) => a.accessedAt - b.accessedAt);
+      const toRemove = layerEntries.slice(0, Math.ceil(cfg.maxEntries * 0.1));
+      for (const entry of toRemove) {
+        this.entries.delete(entry.id);
+      }
+    }
+  }
+  /**
+   * Run TTL-based eviction. Call periodically (e.g., on init or query).
+   */
+  evictExpired() {
+    const now = Date.now();
+    let evicted = 0;
+    for (const [id, entry] of this.entries.entries()) {
+      if (entry.expiresAt && now > entry.expiresAt) {
+        this.entries.delete(id);
+        evicted++;
+      }
+    }
+    return evicted;
+  }
+  /**
+   * Auto-assign layer based on content analysis.
+   */
+  autoAssignLayer(input) {
+    const text = `${input.content} ${(input.topics ?? []).join(" ")}`.toLowerCase();
+    const identityKeywords = ["i am", "i prefer", "my values", "my goals", "my boundaries", "i always", "i never"];
+    if (identityKeywords.some((k) => text.includes(k))) return "identity";
+    const semanticKeywords = ["project", "decision", "agreed", "remember", "context", "learned", "figured out"];
+    if (semanticKeywords.some((k) => text.includes(k))) return "semantic";
+    return "episodic";
+  }
+  /**
+   * Get stats for each layer.
+   */
+  getStats() {
+    const now = Date.now();
+    const counts = { episodic: 0, semantic: 0, identity: 0 };
+    for (const entry of this.entries.values()) {
+      if (entry.expiresAt && now > entry.expiresAt) continue;
+      counts[entry.layer]++;
+    }
+    return {
+      episodic: { count: counts.episodic, ...this.config.episodic },
+      semantic: { count: counts.semantic, ...this.config.semantic },
+      identity: { count: counts.identity, ...this.config.identity }
+    };
+  }
+  simpleRelevance(content, query) {
+    const lower = content.toLowerCase();
+    const terms = query.toLowerCase().split(/\s+/);
+    const matches = terms.filter((t) => lower.includes(t)).length;
+    return matches / Math.max(terms.length, 1);
+  }
+};
+
 // src/index.ts
 var ReMEM = class {
   _store;
   model;
   engine;
+  identity;
+  layers;
+  _identityEnabled = false;
+  _layersEnabled = false;
   constructor(config) {
     const validated = rememConfigSchema.parse(config);
     const dbPath = validated.dbPath ?? ":memory:";
@@ -770,6 +1464,132 @@ var ReMEM = class {
   async recursiveQuery(initialQuery, maxDepth) {
     return this.engine.recursiveQuery(initialQuery, maxDepth ?? 3);
   }
+  // ─── Identity Layer ───────────────────────────────────────────────────────
+  /**
+   * Enable identity layer with optional constitution import.
+   */
+  enableIdentity(config) {
+    const identityConfig = {
+      autoInject: config?.autoInject ?? true,
+      evalModel: config?.evalModel ?? (this.model ? this.model.config : void 0),
+      driftThreshold: 0.3,
+      criticalThreshold: 0.7
+    };
+    this.identity = createIdentitySystem(identityConfig);
+    this._identityEnabled = true;
+    if (config?.constitutionTexts) {
+      for (const { text, source } of config.constitutionTexts) {
+        this.identity.constitution.importFromText(text, source);
+      }
+    }
+  }
+  /**
+   * Add an identity statement.
+   */
+  addIdentityStatement(text, category, weight) {
+    if (!this.identity) return null;
+    return this.identity.constitution.addStatement(text, category, weight);
+  }
+  /**
+   * Import identity constitution from text (e.g., SOUL.md content).
+   */
+  importConstitution(text, source) {
+    if (!this.identity) {
+      this.enableIdentity();
+    }
+    return this.identity.constitution.importFromText(text, source);
+  }
+  /**
+   * Detect identity drift in the current session context.
+   */
+  async detectDrift(sessionText) {
+    if (!this.identity) {
+      return {
+        score: 0,
+        level: "aligned",
+        violatingStatements: [],
+        reasoning: "Identity layer not enabled.",
+        detectedAt: Date.now()
+      };
+    }
+    return this.identity.detector.detectDrift(sessionText, { method: "both" });
+  }
+  /**
+   * Get constitution injection block if drift is detected.
+   * Use this to prepend correction context to LLM messages.
+   */
+  getConstitutionInjection(drift) {
+    if (!this.identity) return "";
+    if (drift.level === "aligned") return "";
+    return this.identity.injector.buildInjection(drift);
+  }
+  /**
+   * Get all identity statements.
+   */
+  getIdentityStatements(category) {
+    if (!this.identity) return [];
+    return this.identity.constitution.getStatements(category);
+  }
+  /**
+   * Check if identity layer is enabled.
+   */
+  isIdentityEnabled() {
+    return this._identityEnabled;
+  }
+  // ─── Hierarchical Layers ─────────────────────────────────────────────────
+  /**
+   * Enable hierarchical memory layers (episodic / semantic / identity).
+   */
+  enableLayers(config) {
+    this.layers = new LayerManager(config ?? DEFAULT_LAYER_CONFIG);
+    this._layersEnabled = true;
+  }
+  /**
+   * Store in a specific layer.
+   */
+  storeInLayer(input, layer) {
+    if (!this.layers) {
+      this.enableLayers();
+    }
+    const entry = this.layers.store(input, layer);
+    return {
+      id: entry.id,
+      content: entry.content,
+      topics: entry.topics,
+      relevanceScore: entry.importance,
+      createdAt: entry.createdAt,
+      accessedAt: entry.accessedAt,
+      accessCount: entry.accessCount
+    };
+  }
+  /**
+   * Query across layers with weighted retrieval.
+   */
+  queryLayers(query, options) {
+    if (!this.layers) return null;
+    return this.layers.query(query, options);
+  }
+  /**
+   * Get layer stats.
+   */
+  getLayerStats() {
+    if (!this.layers) return null;
+    return this.layers.getStats();
+  }
+  /**
+   * Evict expired entries from all layers.
+   */
+  evictExpiredLayers() {
+    if (!this.layers) return 0;
+    return this.layers.evictExpired();
+  }
+  /**
+   * Check if layers are enabled.
+   */
+  isLayersEnabled() {
+    return this._layersEnabled;
+  }
+  // ─── Utilities ───────────────────────────────────────────────────────────
   /**
    * Get the underlying MemoryStore for advanced operations.
    */
@@ -790,13 +1610,28 @@ var ReMEM = class {
   }
 };
 export {
+  ConstitutionInjector,
+  ConstitutionManager,
+  DEFAULT_LAYER_CONFIG,
+  DriftDetector,
+  LayerManager,
   MemoryStore,
   ModelAbstraction,
   QueryEngine,
   ReMEM,
+  constitutionSchema,
+  constitutionStatementSchema,
+  createIdentitySystem,
+  driftEventSchema,
+  driftResultSchema,
   eventTypeSchema,
+  identityCategorySchema,
+  identityConfigSchema,
+  layerConfigSchema,
+  layeredMemoryEntrySchema,
   memoryEntrySchema,
   memoryEventSchema,
+  memoryLayerSchema,
   modelConfigSchema,
   queryOptionsSchema,
   queryResponseSchema,

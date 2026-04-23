@@ -1,5 +1,7 @@
 # ReMEM — Recursive Memory for AI Agents
 
+> ⚠️ **IN TESTING** — This project is under active development. API surface may change.
+
 > **Recursively extend any LLM's context window by treating memory as an external, queryable environment.**
 
 ReMEM is a lightweight, framework-agnostic memory substrate for AI agents. It applies the core insight from [Recursive Language Models (RLMs)](https://arxiv.org/pdf/2512.24601) — that prompts should be external environment variables, not direct context — to the problem of persistent, queryable agent memory.

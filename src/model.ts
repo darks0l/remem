@@ -12,8 +12,10 @@ export interface ModelClient {
 
 export class ModelAbstraction {
   private client: ModelClient;
+  config: ModelConfig;
 
   constructor(config: ModelConfig) {
+    this.config = config;
     this.client = this.createClient(config);
   }
 
