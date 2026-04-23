@@ -1,0 +1,48 @@
+{
+  "name": "@darksol/remem",
+  "version": "0.1.0",
+  "description": "Recursive Memory for AI Agents — RLM-style queryable memory substrate",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "memory",
+    "agent",
+    "rlm",
+    "context",
+    "ai",
+    "llm",
+    "bankr",
+    "recursive-memory"
+  ],
+  "author": "DARKSOL",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.2.0"
+  },
+  "dependencies": {
+    "sql.js": "^1.10.0",
+    "zod": "^3.22.0"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  }
+}
