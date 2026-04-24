@@ -213,6 +213,16 @@ var MemoryStore = class {
         this.db = new SQL.Database();
       }
     }
+    if (this.db) {
+      try {
+        this.db.run("PRAGMA journal_mode=WAL");
+      } catch {
+      }
+      try {
+        this.db.run("PRAGMA synchronous=NORMAL");
+      } catch {
+      }
+    }
     this.initTables();
     this.initialized = true;
   }
@@ -226,11 +236,54 @@ var MemoryStore = class {
         metadata TEXT NOT NULL DEFAULT '{}',
         created_at INTEGER NOT NULL,
         accessed_at INTEGER NOT NULL,
-        access_count INTEGER NOT NULL DEFAULT 0
+        access_count INTEGER NOT NULL DEFAULT 0,
+        agent_id TEXT,
+        user_id TEXT
       )
     `);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_created_at ON memory(created_at DESC)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_accessed_at ON memory(accessed_at DESC)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_agent ON memory(agent_id)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_user ON memory(user_id)`);
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS layered_memories (
+        id TEXT PRIMARY KEY,
+        content TEXT NOT NULL,
+        topics TEXT NOT NULL DEFAULT '[]',
+        metadata TEXT NOT NULL DEFAULT '{}',
+        layer TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        accessed_at INTEGER NOT NULL,
+        access_count INTEGER NOT NULL DEFAULT 0,
+        expires_at INTEGER,
+        importance REAL NOT NULL DEFAULT 0.5,
+        valid_from INTEGER,
+        valid_until INTEGER,
+        supersedes TEXT,
+        superseded_by TEXT,
+        agent_id TEXT,
+        user_id TEXT,
+        created_ts INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
+      )
+    `);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_lm_layer ON layered_memories(layer)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_lm_expires ON layered_memories(expires_at)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_lm_agent ON layered_memories(agent_id)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_lm_supersedes ON layered_memories(supersedes)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_lm_superseded_by ON layered_memories(superseded_by)`);
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS snapshots (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL DEFAULT '',
+        snapshot_data TEXT NOT NULL,
+        memory_count INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        agent_id TEXT,
+        user_id TEXT
+      )
+    `);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_snap_agent ON snapshots(agent_id)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_snap_created ON snapshots(created_at DESC)`);
     this.db.run(`
       CREATE TABLE IF NOT EXISTS events (
         id TEXT PRIMARY KEY,
@@ -244,7 +297,7 @@ var MemoryStore = class {
   ensureInitialized() {
     if (!this.db) throw new Error("MemoryStore not initialized. Call await memoryStore.init() first.");
   }
-  async store(input) {
+  async store(input, opts) {
     this.ensureInitialized();
     const now = Date.now();
     const entry = {
@@ -258,8 +311,8 @@ var MemoryStore = class {
     };
     const validated = memoryEntrySchema.parse(entry);
     this.db.run(
-      `INSERT INTO memory (id, content, topics, metadata, created_at, accessed_at, access_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO memory (id, content, topics, metadata, created_at, accessed_at, access_count, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         validated.id,
         validated.content,
@@ -267,7 +320,9 @@ var MemoryStore = class {
         JSON.stringify(validated.metadata),
         validated.createdAt,
         validated.accessedAt,
-        validated.accessCount
+        validated.accessCount,
+        opts?.agentId ?? null,
+        opts?.userId ?? null
       ]
     );
     this.logEvent("memory.stored", { entry: validated });
@@ -378,16 +433,234 @@ var MemoryStore = class {
     }
     return false;
   }
+  // ─── Layered Memory Persistence (v0.3.1) ─────────────────────────────────
+  /**
+   * Persist a LayerManager entry to SQLite.
+   * This is what makes layers survive process restarts.
+   */
+  async persistLayerEntry(entry, opts) {
+    this.ensureInitialized();
+    this.db.run(
+      `INSERT OR REPLACE INTO layered_memories
+       (id, content, topics, metadata, layer, created_at, accessed_at, access_count,
+        expires_at, importance, valid_from, valid_until, supersedes, superseded_by, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        entry.id,
+        entry.content,
+        JSON.stringify(entry.topics),
+        JSON.stringify(entry.metadata),
+        entry.layer,
+        entry.createdAt,
+        entry.accessedAt,
+        entry.accessCount,
+        entry.expiresAt ?? null,
+        entry.importance,
+        entry.validFrom ?? null,
+        entry.validUntil ?? null,
+        entry.supersedes ?? null,
+        entry.supersededBy ?? null,
+        opts?.agentId ?? null,
+        opts?.userId ?? null
+      ]
+    );
+    this.persist();
+  }
+  /**
+   * Load all persisted layer entries from SQLite.
+   * Called on ReMEM.init() to restore layer state.
+   */
+  async loadAllLayerEntries(opts) {
+    this.ensureInitialized();
+    let sql = "SELECT * FROM layered_memories WHERE 1=1";
+    const params = [];
+    if (opts?.agentId) {
+      sql += " AND (agent_id = ? OR agent_id IS NULL)";
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(opts.userId);
+    }
+    sql += " ORDER BY created_at DESC";
+    const result = this.db.exec(sql, params);
+    if (result.length === 0) return [];
+    return result[0].values.map((v) => {
+      const obj = this.rowToObject(result[0].columns, v);
+      return {
+        id: obj["id"],
+        content: obj["content"],
+        topics: typeof obj["topics"] === "string" ? JSON.parse(obj["topics"]) : obj["topics"],
+        metadata: typeof obj["metadata"] === "string" ? JSON.parse(obj["metadata"]) : obj["metadata"],
+        layer: obj["layer"],
+        createdAt: obj["createdAt"],
+        accessedAt: obj["accessedAt"],
+        accessCount: obj["accessCount"],
+        expiresAt: obj["expiresAt"],
+        importance: obj["importance"] ?? 0.5,
+        validFrom: obj["validFrom"],
+        validUntil: obj["validUntil"],
+        supersedes: obj["supersedes"],
+        supersededBy: obj["supersededBy"]
+      };
+    });
+  }
+  /**
+   * Delete a layered memory entry.
+   */
+  async forgetLayerEntry(id) {
+    this.ensureInitialized();
+    this.db.run("DELETE FROM layered_memories WHERE id = ?", [id]);
+    const changes = this.db.getRowsModified();
+    if (changes > 0) this.persist();
+    return changes > 0;
+  }
+  /**
+   * Create a named snapshot of current memory state.
+   * For long-running agents — take a snapshot before restarts or major operations.
+   * @param label Human-readable label for this snapshot
+   * @param opts Agent/user scope
+   */
+  async createSnapshot(label, opts) {
+    this.ensureInitialized();
+    const now = Date.now();
+    const id = randomUUID();
+    const layerEntries = await this.loadAllLayerEntries(opts);
+    const coreEntries = await this.query("", { limit: 1e4 });
+    const snapshotData = {
+      version: "0.3.1",
+      createdAt: now,
+      layerEntries,
+      coreEntries: coreEntries.results,
+      eventCount: this.eventLog.length
+    };
+    const layerCounts = { episodic: 0, semantic: 0, identity: 0, procedural: 0 };
+    for (const e of layerEntries) {
+      if (e.layer in layerCounts) layerCounts[e.layer]++;
+    }
+    this.db.run(
+      `INSERT INTO snapshots (id, label, snapshot_data, memory_count, created_at, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        label,
+        JSON.stringify(snapshotData),
+        layerEntries.length,
+        now,
+        opts?.agentId ?? null,
+        opts?.userId ?? null
+      ]
+    );
+    this.logEvent("snapshot.created", { id, label, memoryCount: layerEntries.length });
+    this.persist();
+    return {
+      id,
+      label,
+      createdAt: now,
+      memoryCount: layerEntries.length,
+      layerCounts,
+      agentId: opts?.agentId ?? null,
+      userId: opts?.userId ?? null
+    };
+  }
+  /**
+   * Restore from a snapshot by ID.
+   * Overwrites current layer state with snapshot state.
+   * @returns Number of entries restored
+   */
+  async restoreSnapshot(snapshotId, opts) {
+    this.ensureInitialized();
+    const result = this.db.exec("SELECT snapshot_data, agent_id, user_id FROM snapshots WHERE id = ?", [snapshotId]);
+    if (result.length === 0 || result[0].values.length === 0) {
+      throw new Error(`Snapshot not found: ${snapshotId}`);
+    }
+    const row = this.rowToObject(result[0].columns, result[0].values[0]);
+    const data = JSON.parse(row["snapshot_data"]);
+    const scopedEntries = data.layerEntries.filter((e) => {
+      if (opts?.agentId && e.metadata?.agentId !== opts.agentId) return false;
+      if (opts?.userId && e.metadata?.userId !== opts.userId) return false;
+      return true;
+    });
+    if (opts?.agentId || opts?.userId) {
+      const conditions = [];
+      const params = [];
+      if (opts.agentId) {
+        conditions.push("agent_id = ?");
+        params.push(opts.agentId);
+      }
+      if (opts.userId) {
+        conditions.push("user_id = ?");
+        params.push(opts.userId);
+      }
+      this.db.run(`DELETE FROM layered_memories WHERE ${conditions.join(" AND ")}`, params);
+    } else {
+      this.db.run("DELETE FROM layered_memories");
+    }
+    let restored = 0;
+    for (const entry of scopedEntries) {
+      await this.persistLayerEntry(entry, {
+        agentId: opts?.agentId,
+        userId: opts?.userId
+      });
+      restored++;
+    }
+    this.logEvent("snapshot.restored", { snapshotId, restored });
+    this.persist();
+    return restored;
+  }
+  /**
+   * List available snapshots.
+   */
+  async listSnapshots(opts) {
+    this.ensureInitialized();
+    let sql = "SELECT id, label, memory_count, created_at, agent_id, user_id FROM snapshots WHERE 1=1";
+    const params = [];
+    if (opts?.agentId) {
+      sql += " AND (agent_id = ? OR agent_id IS NULL)";
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(opts.userId);
+    }
+    sql += " ORDER BY created_at DESC";
+    const result = this.db.exec(sql, params);
+    if (result.length === 0) return [];
+    return result[0].values.map((v) => {
+      const obj = this.rowToObject(result[0].columns, v);
+      return {
+        id: obj["id"],
+        label: obj["label"],
+        createdAt: obj["createdAt"],
+        memoryCount: obj["memory_count"],
+        layerCounts: { episodic: 0, semantic: 0, identity: 0, procedural: 0 },
+        agentId: obj["agent_id"],
+        userId: obj["user_id"]
+      };
+    });
+  }
+  /**
+   * Delete a snapshot.
+   */
+  async deleteSnapshot(snapshotId) {
+    this.ensureInitialized();
+    this.db.run("DELETE FROM snapshots WHERE id = ?", [snapshotId]);
+    const changes = this.db.getRowsModified();
+    if (changes > 0) this.persist();
+    return changes > 0;
+  }
   getEventLog(limit = 100) {
     return this.eventLog.slice(0, limit);
   }
   persist() {
     if (!this.db || this.dbPath === ":memory:") return;
     try {
-      const { writeFileSync } = __require("fs");
+      const { writeFileSync, renameSync } = __require("fs");
       const data = this.db.export();
       const buffer = Buffer.from(data);
-      writeFileSync(this.dbPath, buffer);
+      const tmpPath = `${this.dbPath}.tmp`;
+      writeFileSync(tmpPath, buffer);
+      renameSync(tmpPath, this.dbPath);
     } catch {
     }
   }
@@ -1451,6 +1724,15 @@ var LayerManager = class {
     return this.entries.delete(id);
   }
   /**
+   * Restore a LayeredMemoryEntry directly into the store.
+   * Used by ReMEM.init() to restore persisted layer entries from SQLite.
+   * Does NOT re-assign layer — uses the entry's existing layer field.
+   */
+  restoreEntry(entry) {
+    if (entry.expiresAt && Date.now() > entry.expiresAt) return;
+    this.entries.set(entry.id, entry);
+  }
+  /**
    * Evict entries from a specific layer if over maxEntries.
    * Evicts oldest accessed entries first.
    */
@@ -1526,10 +1808,15 @@ var ReMEM = class {
   layers;
   _identityEnabled = false;
   _layersEnabled = false;
+  _agentId;
+  _userId;
   constructor(config) {
     const validated = rememConfigSchema.parse(config);
-    const dbPath = validated.dbPath ?? ":memory:";
+    const storage = validated.storage ?? "sqlite";
+    const dbPath = validated.dbPath ?? (storage === "memory" ? ":memory:" : "./remem.db");
     this._store = new MemoryStore(dbPath);
+    this._agentId = validated.storageConfig?.agentId;
+    this._userId = validated.storageConfig?.userId;
     if (validated.llm) {
       this.model = new ModelAbstraction(validated.llm);
     }
@@ -1540,15 +1827,34 @@ var ReMEM = class {
   }
   /**
    * Initialize the memory store. Must be called before use.
+   * Also restores persisted layer state from SQLite if layers are enabled.
    */
   async init() {
     await this._store.init();
+    if (this._layersEnabled && this.layers) {
+      const storeOpts = { agentId: this._agentId, userId: this._userId };
+      const persisted = await this._store.loadAllLayerEntries(storeOpts);
+      for (const entry of persisted) {
+        this.layers.restoreEntry(entry);
+      }
+      if (persisted.length > 0) {
+        console.log(`[ReMEM] Restored ${persisted.length} persisted layer entries from SQLite`);
+      }
+    }
   }
   /**
    * Store a new memory entry.
+   * If layers are enabled, also persists to the appropriate layer in SQLite.
    */
   async store(input) {
     await this.engine.store(input);
+    if (this._layersEnabled && this.layers) {
+      const result = this.layers.store(input);
+      await this._store.persistLayerEntry(result, {
+        agentId: this._agentId,
+        userId: this._userId
+      });
+    }
   }
   /**
    * Query memory using natural language.
@@ -1649,19 +1955,37 @@ var ReMEM = class {
   // ─── Hierarchical Layers ─────────────────────────────────────────────────
   /**
    * Enable hierarchical memory layers (episodic / semantic / identity).
+   * Layers are persisted to SQLite — they survive process restarts.
    */
-  enableLayers(config) {
+  async enableLayers(config) {
     this.layers = new LayerManager(config ?? DEFAULT_LAYER_CONFIG);
     this._layersEnabled = true;
+    if (this._store) {
+      try {
+        const storeOpts = { agentId: this._agentId, userId: this._userId };
+        const persisted = await this._store.loadAllLayerEntries(storeOpts);
+        for (const entry of persisted) {
+          this.layers.restoreEntry(entry);
+        }
+        if (persisted.length > 0) {
+          console.log(`[ReMEM] Restored ${persisted.length} persisted layer entries from SQLite`);
+        }
+      } catch {
+      }
+    }
   }
   /**
    * Store in a specific layer.
    */
-  storeInLayer(input, layer) {
+  async storeInLayer(input, layer) {
     if (!this.layers) {
-      this.enableLayers();
+      await this.enableLayers();
     }
     const entry = this.layers.store(input, layer);
+    await this._store.persistLayerEntry(entry, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
     return {
       id: entry.id,
       content: entry.content,
@@ -1697,11 +2021,15 @@ var ReMEM = class {
    * Store a procedural memory — a behavior/rule triggered by a keyword.
    * Use when you learn a rule like "when X happens, always do Y".
    */
-  storeProcedural(input, trigger) {
+  async storeProcedural(input, trigger) {
     if (!this.layers) {
-      this.enableLayers();
+      await this.enableLayers();
     }
     const entry = this.layers.storeProcedural(input, trigger);
+    await this._store.persistLayerEntry(entry, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
     return {
       id: entry.id,
       content: entry.content,
@@ -1758,6 +2086,51 @@ var ReMEM = class {
    */
   isLayersEnabled() {
     return this._layersEnabled;
+  }
+  // ─── Snapshots (for long-running agent persistence) ───────────────────────
+  /**
+   * Create a named snapshot of current memory state.
+   * Essential for long-running agents — take a snapshot before restarts.
+   * @param label Human-readable label for this snapshot
+   */
+  async createSnapshot(label) {
+    const meta = await this._store.createSnapshot(label, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
+    return meta;
+  }
+  /**
+   * Restore from a snapshot by ID.
+   * Restores layer entries from the snapshot into the current store.
+   * @returns Number of entries restored
+   */
+  async restoreSnapshot(snapshotId) {
+    return this._store.restoreSnapshot(snapshotId, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
+  }
+  /**
+   * List available snapshots.
+   */
+  async listSnapshots() {
+    const snapshots = await this._store.listSnapshots({
+      agentId: this._agentId,
+      userId: this._userId
+    });
+    return snapshots.map((s) => ({
+      id: s.id,
+      label: s.label,
+      createdAt: s.createdAt,
+      memoryCount: s.memoryCount
+    }));
+  }
+  /**
+   * Delete a snapshot.
+   */
+  async deleteSnapshot(snapshotId) {
+    return this._store.deleteSnapshot(snapshotId);
   }
   // ─── Utilities ───────────────────────────────────────────────────────────
   /**

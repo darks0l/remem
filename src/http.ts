@@ -42,8 +42,8 @@ export class HttpAdapter {
 
       // CORS headers
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
       if (method === 'OPTIONS') {
         res.writeHead(204);
@@ -52,7 +52,7 @@ export class HttpAdapter {
       }
 
       try {
-        const result = await this.handleRequest(method, url);
+        const result = await this.handleRequest(method, url, req);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(result));
       } catch (err) {
@@ -75,12 +75,14 @@ export class HttpAdapter {
     });
   }
 
-  private async handleRequest(method: string, url: URL): Promise<unknown> {
+  private async handleRequest(method: string, url: URL, req?: import('http').IncomingMessage): Promise<unknown> {
     const path = url.pathname;
 
     // POST /memory — store a new entry
     if (method === 'POST' && path === '/memory') {
-      const body = await this.readBody(url);
+      if (!req) return { error: 'Request body unavailable' };
+      const body = await this.readBody(req);
+      if (!body) return { error: 'Empty request body' };
       const input = JSON.parse(body) as StoreMemoryInput;
       await this.engine.store(input);
       return { ok: true, message: 'Memory stored' };
@@ -147,9 +149,12 @@ export class HttpAdapter {
     return { error: 'Not found', path, method };
   }
 
-  private async readBody(url: URL): Promise<string> {
-    // In a real implementation, read from the request stream
-    // For now, return empty body (body will be read via fetch in actual use)
-    return '';
+  private async readBody(req: import('http').IncomingMessage): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      req.on('error', reject);
+    });
   }
 }

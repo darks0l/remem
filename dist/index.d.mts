@@ -14,16 +14,16 @@ declare const memoryEntrySchema: z.ZodObject<{
     accessedAt: z.ZodNumber;
     accessCount: z.ZodDefault<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
+    id: string;
     content: string;
     topics: string[];
     metadata: Record<string, unknown>;
-    id: string;
     createdAt: number;
     accessedAt: number;
     accessCount: number;
 }, {
-    content: string;
     id: string;
+    content: string;
     createdAt: number;
     accessedAt: number;
     topics?: string[] | undefined;
@@ -74,17 +74,17 @@ declare const queryResultSchema: z.ZodObject<{
     accessedAt: z.ZodNumber;
     accessCount: z.ZodNumber;
 }, "strip", z.ZodTypeAny, {
+    id: string;
     content: string;
     topics: string[];
-    id: string;
     createdAt: number;
     accessedAt: number;
     accessCount: number;
     relevanceScore?: number | undefined;
 }, {
+    id: string;
     content: string;
     topics: string[];
-    id: string;
     createdAt: number;
     accessedAt: number;
     accessCount: number;
@@ -101,17 +101,17 @@ declare const queryResponseSchema: z.ZodObject<{
         accessedAt: z.ZodNumber;
         accessCount: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
+        id: string;
         content: string;
         topics: string[];
-        id: string;
         createdAt: number;
         accessedAt: number;
         accessCount: number;
         relevanceScore?: number | undefined;
     }, {
+        id: string;
         content: string;
         topics: string[];
-        id: string;
         createdAt: number;
         accessedAt: number;
         accessCount: number;
@@ -122,9 +122,9 @@ declare const queryResponseSchema: z.ZodObject<{
     tookMs: z.ZodNumber;
 }, "strip", z.ZodTypeAny, {
     results: {
+        id: string;
         content: string;
         topics: string[];
-        id: string;
         createdAt: number;
         accessedAt: number;
         accessCount: number;
@@ -135,9 +135,9 @@ declare const queryResponseSchema: z.ZodObject<{
     tookMs: number;
 }, {
     results: {
+        id: string;
         content: string;
         topics: string[];
-        id: string;
         createdAt: number;
         accessedAt: number;
         accessCount: number;
@@ -795,10 +795,10 @@ declare const layeredMemoryEntrySchema: z.ZodObject<{
     supersedes: z.ZodOptional<z.ZodString>;
     supersededBy: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
+    id: string;
     content: string;
     topics: string[];
     metadata: Record<string, unknown>;
-    id: string;
     createdAt: number;
     accessedAt: number;
     accessCount: number;
@@ -810,8 +810,8 @@ declare const layeredMemoryEntrySchema: z.ZodObject<{
     supersedes?: string | undefined;
     supersededBy?: string | undefined;
 }, {
-    content: string;
     id: string;
+    content: string;
     createdAt: number;
     accessedAt: number;
     topics?: string[] | undefined;
@@ -924,8 +924,28 @@ type DriftEvent = z.infer<typeof driftEventSchema>;
  * ReMEM — MemoryStore
  * SQLite-backed persistent memory store with event sourcing
  * Uses sql.js (WebAssembly) for cross-platform SQLite without native compilation
+ *
+ * v0.3.1 adds:
+ * - layered_memories table (persists LayerManager entries to SQLite)
+ * - snapshots table (snapshot/restore for long-running agents)
+ * - agent_id/user_id scoping (multi-agent support)
+ * - WAL mode for better concurrent write handling
+ * - Atomic persist with rename
  */
 
+interface SnapshotMeta {
+    id: string;
+    label: string;
+    createdAt: number;
+    memoryCount: number;
+    layerCounts: Record<MemoryLayer, number>;
+    agentId: string | null;
+    userId: string | null;
+}
+interface StoreMemoryOptions {
+    agentId?: string;
+    userId?: string;
+}
 declare class MemoryStore {
     private db;
     private eventLog;
@@ -935,7 +955,7 @@ declare class MemoryStore {
     init(): Promise<void>;
     private initTables;
     private ensureInitialized;
-    store(input: StoreMemoryInput): Promise<MemoryEntry>;
+    store(input: StoreMemoryInput, opts?: StoreMemoryOptions): Promise<MemoryEntry>;
     get(id: string): Promise<MemoryEntry | null>;
     query(text: string, options?: QueryOptions): Promise<{
         results: QueryResult[];
@@ -944,6 +964,41 @@ declare class MemoryStore {
     getRecent(n?: number): Promise<QueryResult[]>;
     getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
     forget(id: string): Promise<boolean>;
+    /**
+     * Persist a LayerManager entry to SQLite.
+     * This is what makes layers survive process restarts.
+     */
+    persistLayerEntry(entry: LayeredMemoryEntry, opts?: StoreMemoryOptions): Promise<void>;
+    /**
+     * Load all persisted layer entries from SQLite.
+     * Called on ReMEM.init() to restore layer state.
+     */
+    loadAllLayerEntries(opts?: StoreMemoryOptions): Promise<LayeredMemoryEntry[]>;
+    /**
+     * Delete a layered memory entry.
+     */
+    forgetLayerEntry(id: string): Promise<boolean>;
+    /**
+     * Create a named snapshot of current memory state.
+     * For long-running agents — take a snapshot before restarts or major operations.
+     * @param label Human-readable label for this snapshot
+     * @param opts Agent/user scope
+     */
+    createSnapshot(label: string, opts?: StoreMemoryOptions): Promise<SnapshotMeta>;
+    /**
+     * Restore from a snapshot by ID.
+     * Overwrites current layer state with snapshot state.
+     * @returns Number of entries restored
+     */
+    restoreSnapshot(snapshotId: string, opts?: StoreMemoryOptions): Promise<number>;
+    /**
+     * List available snapshots.
+     */
+    listSnapshots(opts?: StoreMemoryOptions): Promise<SnapshotMeta[]>;
+    /**
+     * Delete a snapshot.
+     */
+    deleteSnapshot(snapshotId: string): Promise<boolean>;
     getEventLog(limit?: number): MemoryEvent[];
     persist(): void;
     close(): void;
@@ -1036,6 +1091,12 @@ declare class LayerManager {
      * Forget an entry.
      */
     forget(id: string): boolean;
+    /**
+     * Restore a LayeredMemoryEntry directly into the store.
+     * Used by ReMEM.init() to restore persisted layer entries from SQLite.
+     * Does NOT re-assign layer — uses the entry's existing layer field.
+     */
+    restoreEntry(entry: LayeredMemoryEntry): void;
     /**
      * Evict entries from a specific layer if over maxEntries.
      * Evicts oldest accessed entries first.
@@ -1224,13 +1285,17 @@ declare class ReMEM {
     private layers?;
     private _identityEnabled;
     private _layersEnabled;
+    private _agentId?;
+    private _userId?;
     constructor(config: ReMEMConfig);
     /**
      * Initialize the memory store. Must be called before use.
+     * Also restores persisted layer state from SQLite if layers are enabled.
      */
     init(): Promise<void>;
     /**
      * Store a new memory entry.
+     * If layers are enabled, also persists to the appropriate layer in SQLite.
      */
     store(input: StoreMemoryInput): Promise<void>;
     /**
@@ -1290,12 +1355,13 @@ declare class ReMEM {
     isIdentityEnabled(): boolean;
     /**
      * Enable hierarchical memory layers (episodic / semantic / identity).
+     * Layers are persisted to SQLite — they survive process restarts.
      */
-    enableLayers(config?: Partial<LayerConfig>): void;
+    enableLayers(config?: Partial<LayerConfig>): Promise<void>;
     /**
      * Store in a specific layer.
      */
-    storeInLayer(input: StoreMemoryInput, layer: MemoryLayer): QueryResult | null;
+    storeInLayer(input: StoreMemoryInput, layer: MemoryLayer): Promise<QueryResult | null>;
     /**
      * Query across layers with weighted retrieval.
      */
@@ -1314,7 +1380,7 @@ declare class ReMEM {
      * Store a procedural memory — a behavior/rule triggered by a keyword.
      * Use when you learn a rule like "when X happens, always do Y".
      */
-    storeProcedural(input: StoreMemoryInput, trigger: string): QueryResult | null;
+    storeProcedural(input: StoreMemoryInput, trigger: string): Promise<QueryResult | null>;
     /**
      * Fire procedural rules matching the given context.
      * Returns rules whose trigger keyword appears in the context.
@@ -1329,6 +1395,37 @@ declare class ReMEM {
      * Check if layers are enabled.
      */
     isLayersEnabled(): boolean;
+    /**
+     * Create a named snapshot of current memory state.
+     * Essential for long-running agents — take a snapshot before restarts.
+     * @param label Human-readable label for this snapshot
+     */
+    createSnapshot(label: string): Promise<{
+        id: string;
+        label: string;
+        createdAt: number;
+        memoryCount: number;
+        layerCounts: Record<string, number>;
+    }>;
+    /**
+     * Restore from a snapshot by ID.
+     * Restores layer entries from the snapshot into the current store.
+     * @returns Number of entries restored
+     */
+    restoreSnapshot(snapshotId: string): Promise<number>;
+    /**
+     * List available snapshots.
+     */
+    listSnapshots(): Promise<Array<{
+        id: string;
+        label: string;
+        createdAt: number;
+        memoryCount: number;
+    }>>;
+    /**
+     * Delete a snapshot.
+     */
+    deleteSnapshot(snapshotId: string): Promise<boolean>;
     /**
      * Get the underlying MemoryStore for advanced operations.
      */

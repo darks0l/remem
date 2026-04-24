@@ -44,13 +44,20 @@ export class ReMEM {
   private layers?: LayerManager;
   private _identityEnabled: boolean = false;
   private _layersEnabled: boolean = false;
+  private _agentId?: string;
+  private _userId?: string;
 
   constructor(config: ReMEMConfig) {
     const validated = rememConfigSchema.parse(config);
 
-    // Initialize storage
-    const dbPath = validated.dbPath ?? ':memory:';
+    // Initialize storage — default to SQLite if not specified
+    const storage = validated.storage ?? 'sqlite';
+    const dbPath = validated.dbPath ?? (storage === 'memory' ? ':memory:' : './remem.db');
     this._store = new MemoryStore(dbPath);
+
+    // Agent/user scoping for multi-agent support
+    this._agentId = validated.storageConfig?.agentId as string | undefined;
+    this._userId = validated.storageConfig?.userId as string | undefined;
 
     // Initialize model if provided
     if (validated.llm) {
@@ -66,16 +73,39 @@ export class ReMEM {
 
   /**
    * Initialize the memory store. Must be called before use.
+   * Also restores persisted layer state from SQLite if layers are enabled.
    */
   async init(): Promise<void> {
     await this._store.init();
+
+    // Restore persisted layer entries from SQLite
+    if (this._layersEnabled && this.layers) {
+      const storeOpts = { agentId: this._agentId, userId: this._userId };
+      const persisted = await this._store.loadAllLayerEntries(storeOpts);
+      for (const entry of persisted) {
+        this.layers.restoreEntry(entry);
+      }
+      if (persisted.length > 0) {
+        console.log(`[ReMEM] Restored ${persisted.length} persisted layer entries from SQLite`);
+      }
+    }
   }
 
   /**
    * Store a new memory entry.
+   * If layers are enabled, also persists to the appropriate layer in SQLite.
    */
   async store(input: StoreMemoryInput): Promise<void> {
     await this.engine.store(input);
+
+    // Also store in layers if enabled (layers are persisted to SQLite)
+    if (this._layersEnabled && this.layers) {
+      const result = this.layers.store(input);
+      await this._store.persistLayerEntry(result, {
+        agentId: this._agentId,
+        userId: this._userId,
+      });
+    }
   }
 
   /**
@@ -204,20 +234,41 @@ export class ReMEM {
 
   /**
    * Enable hierarchical memory layers (episodic / semantic / identity).
+   * Layers are persisted to SQLite — they survive process restarts.
    */
-  enableLayers(config?: Partial<LayerConfig>): void {
+  async enableLayers(config?: Partial<LayerConfig>): Promise<void> {
     this.layers = new LayerManager(config ?? DEFAULT_LAYER_CONFIG);
     this._layersEnabled = true;
+
+    // Restore persisted layer entries from SQLite after init
+    if (this._store) {
+      try {
+        const storeOpts = { agentId: this._agentId, userId: this._userId };
+        const persisted = await this._store.loadAllLayerEntries(storeOpts);
+        for (const entry of persisted) {
+          this.layers.restoreEntry(entry);
+        }
+        if (persisted.length > 0) {
+          console.log(`[ReMEM] Restored ${persisted.length} persisted layer entries from SQLite`);
+        }
+      } catch {
+        // Layer restore is best-effort — don't fail init if it breaks
+      }
+    }
   }
 
   /**
    * Store in a specific layer.
    */
-  storeInLayer(input: StoreMemoryInput, layer: MemoryLayer): QueryResult | null {
+  async storeInLayer(input: StoreMemoryInput, layer: MemoryLayer): Promise<QueryResult | null> {
     if (!this.layers) {
-      this.enableLayers();
+      await this.enableLayers();
     }
     const entry = this.layers!.store(input, layer);
+    await this._store.persistLayerEntry(entry, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
     return {
       id: entry.id,
       content: entry.content,
@@ -260,11 +311,15 @@ export class ReMEM {
    * Store a procedural memory — a behavior/rule triggered by a keyword.
    * Use when you learn a rule like "when X happens, always do Y".
    */
-  storeProcedural(input: StoreMemoryInput, trigger: string): QueryResult | null {
+  async storeProcedural(input: StoreMemoryInput, trigger: string): Promise<QueryResult | null> {
     if (!this.layers) {
-      this.enableLayers();
+      await this.enableLayers();
     }
     const entry = this.layers!.storeProcedural(input, trigger);
+    await this._store.persistLayerEntry(entry, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
     return {
       id: entry.id,
       content: entry.content,
@@ -329,6 +384,67 @@ export class ReMEM {
    */
   isLayersEnabled(): boolean {
     return this._layersEnabled;
+  }
+
+  // ─── Snapshots (for long-running agent persistence) ───────────────────────
+
+  /**
+   * Create a named snapshot of current memory state.
+   * Essential for long-running agents — take a snapshot before restarts.
+   * @param label Human-readable label for this snapshot
+   */
+  async createSnapshot(label: string): Promise<{
+    id: string;
+    label: string;
+    createdAt: number;
+    memoryCount: number;
+    layerCounts: Record<string, number>;
+  }> {
+    const meta = await this._store.createSnapshot(label, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
+    return meta;
+  }
+
+  /**
+   * Restore from a snapshot by ID.
+   * Restores layer entries from the snapshot into the current store.
+   * @returns Number of entries restored
+   */
+  async restoreSnapshot(snapshotId: string): Promise<number> {
+    return this._store.restoreSnapshot(snapshotId, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
+  }
+
+  /**
+   * List available snapshots.
+   */
+  async listSnapshots(): Promise<Array<{
+    id: string;
+    label: string;
+    createdAt: number;
+    memoryCount: number;
+  }>> {
+    const snapshots = await this._store.listSnapshots({
+      agentId: this._agentId,
+      userId: this._userId,
+    });
+    return snapshots.map((s) => ({
+      id: s.id,
+      label: s.label,
+      createdAt: s.createdAt,
+      memoryCount: s.memoryCount,
+    }));
+  }
+
+  /**
+   * Delete a snapshot.
+   */
+  async deleteSnapshot(snapshotId: string): Promise<boolean> {
+    return this._store.deleteSnapshot(snapshotId);
   }
 
   // ─── Utilities ───────────────────────────────────────────────────────────

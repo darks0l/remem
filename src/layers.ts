@@ -357,6 +357,17 @@ export class LayerManager {
   }
 
   /**
+   * Restore a LayeredMemoryEntry directly into the store.
+   * Used by ReMEM.init() to restore persisted layer entries from SQLite.
+   * Does NOT re-assign layer — uses the entry's existing layer field.
+   */
+  restoreEntry(entry: LayeredMemoryEntry): void {
+    // Skip expired entries
+    if (entry.expiresAt && Date.now() > entry.expiresAt) return;
+    this.entries.set(entry.id, entry);
+  }
+
+  /**
    * Evict entries from a specific layer if over maxEntries.
    * Evicts oldest accessed entries first.
    */
