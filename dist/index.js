@@ -44,6 +44,7 @@ __export(index_exports, {
   createIdentitySystem: () => createIdentitySystem,
   driftEventSchema: () => driftEventSchema,
   driftResultSchema: () => driftResultSchema,
+  embeddingConfigSchema: () => embeddingConfigSchema,
   eventTypeSchema: () => eventTypeSchema,
   identityCategorySchema: () => identityCategorySchema,
   identityConfigSchema: () => identityConfigSchema,
@@ -63,7 +64,7 @@ module.exports = __toCommonJS(index_exports);
 
 // src/store.ts
 var import_sql = __toESM(require("sql.js"));
-var import_crypto = require("crypto");
+var import_crypto2 = require("crypto");
 
 // src/types.ts
 var import_zod = require("zod");
@@ -130,13 +131,26 @@ var modelConfigSchema = import_zod.z.discriminatedUnion("type", [
     model: import_zod.z.string().default("llama3")
   })
 ]);
+var embeddingConfigSchema = import_zod.z.object({
+  /** Enable vector embeddings for semantic search (default: false) */
+  enabled: import_zod.z.boolean().default(false),
+  /** Ollama base URL (e.g. http://192.168.68.73:11434) */
+  baseUrl: import_zod.z.string().default("http://localhost:11434"),
+  /** Embedding model to use (e.g. 'nomic-embed-text', 'mxbai-embed-large') */
+  model: import_zod.z.string().default("nomic-embed-text"),
+  /** Embedding dimension (auto-detected on first embed if not set) */
+  dimension: import_zod.z.number().optional(),
+  /** Whether to generate embeddings async in background (non-blocking store) */
+  asyncEmbed: import_zod.z.boolean().default(true)
+});
 var rememConfigSchema = import_zod.z.object({
   storage: import_zod.z.enum(["sqlite", "postgres", "memory"]).default("sqlite"),
   storageConfig: import_zod.z.record(import_zod.z.unknown()).optional(),
   llm: modelConfigSchema.optional(),
   adapter: import_zod.z.string().optional(),
-  dbPath: import_zod.z.string().optional()
+  dbPath: import_zod.z.string().optional(),
   // for sqlite
+  embeddings: embeddingConfigSchema.optional()
 });
 var eventTypeSchema = import_zod.z.enum([
   "memory.stored",
@@ -242,6 +256,116 @@ var driftEventSchema = import_zod.z.object({
   correctionText: import_zod.z.string().optional()
 });
 
+// src/embeddings.ts
+var import_crypto = require("crypto");
+var OLLAMA_EMBED_URL = "/api/embeddings";
+var EmbeddingService = class _EmbeddingService {
+  config;
+  detectedDimension = null;
+  httpFetch;
+  constructor(config, httpFetch = fetch) {
+    this.config = { dimension: 768, ...config };
+    this.detectedDimension = config.dimension ?? null;
+    this.httpFetch = httpFetch;
+  }
+  get baseUrl() {
+    return this.config.baseUrl;
+  }
+  get model() {
+    return this.config.model;
+  }
+  get isConfigured() {
+    return Boolean(this.config.baseUrl && this.config.model);
+  }
+  /**
+   * Generate embedding for a single text.
+   * Uses Ollama's /api/embeddings endpoint.
+   */
+  async embed(text) {
+    const url = `${this.config.baseUrl.replace(/\/$/, "")}${OLLAMA_EMBED_URL}`;
+    const response = await this.httpFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: this.config.model,
+        prompt: text
+      })
+    });
+    if (!response.ok) {
+      const err = await response.text().catch(() => response.statusText);
+      throw new Error(`Embedding failed (${response.status}): ${err}`);
+    }
+    const data = await response.json();
+    if (!data.embedding || !Array.isArray(data.embedding)) {
+      throw new Error(`Invalid embedding response: ${JSON.stringify(data)}`);
+    }
+    if (this.detectedDimension === null) {
+      this.detectedDimension = data.embedding.length;
+    }
+    return data.embedding;
+  }
+  /**
+   * Generate embeddings for multiple texts in batch.
+   * Calls embed() sequentially — Ollama doesn't have a batch endpoint.
+   */
+  async embedBatch(texts, signal) {
+    const vectors = [];
+    for (const text of texts) {
+      if (signal?.aborted) break;
+      vectors.push(await this.embed(text));
+    }
+    return vectors;
+  }
+  /**
+   * Encode a float32 vector to base64url.
+   * Uses Buffer.from with a Uint8Array view of the Float32Array buffer.
+   */
+  static encodeVector(vec) {
+    const floatArr = new Float32Array(vec);
+    const byteArr = new Uint8Array(floatArr.buffer);
+    return Buffer.from(byteArr).toString("base64url");
+  }
+  /**
+   * Decode a base64url string back to a float32 vector.
+   */
+  static decodeVector(base64, dimension) {
+    const byteArr = Buffer.from(base64, "base64url");
+    const floatArr = new Float32Array(byteArr.buffer, byteArr.byteOffset, dimension);
+    return Array.from(floatArr);
+  }
+  /**
+   * Compute cosine similarity between two vectors.
+   * Returns a value between -1 (opposite) and 1 (identical).
+   */
+  static cosineSimilarity(a, b) {
+    if (a.length !== b.length) throw new Error("Vector dimension mismatch");
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    const denom = Math.sqrt(normA) * Math.sqrt(normB);
+    return denom === 0 ? 0 : dot / denom;
+  }
+  /**
+   * Generate and package an embedding vector for storage.
+   */
+  async generateEmbedding(memoryId, text) {
+    const vector = await this.embed(text);
+    return {
+      id: (0, import_crypto.randomUUID)(),
+      memoryId,
+      vector,
+      base64: _EmbeddingService.encodeVector(vector),
+      model: this.config.model,
+      createdAt: Date.now()
+    };
+  }
+};
+
 // src/store.ts
 var MemoryStore = class {
   db = null;
@@ -341,6 +465,19 @@ var MemoryStore = class {
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_snap_agent ON snapshots(agent_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_snap_created ON snapshots(created_at DESC)`);
     this.db.run(`
+      CREATE TABLE IF NOT EXISTS embeddings (
+        id TEXT PRIMARY KEY,
+        memory_id TEXT NOT NULL,
+        vector_base64 TEXT NOT NULL,
+        dimension INTEGER NOT NULL,
+        model TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        embedding_type TEXT NOT NULL DEFAULT 'memory'
+      )
+    `);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_emb_memory ON embeddings(memory_id)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_emb_type ON embeddings(embedding_type)`);
+    this.db.run(`
       CREATE TABLE IF NOT EXISTS events (
         id TEXT PRIMARY KEY,
         type TEXT NOT NULL,
@@ -357,7 +494,7 @@ var MemoryStore = class {
     this.ensureInitialized();
     const now = Date.now();
     const entry = {
-      id: (0, import_crypto.randomUUID)(),
+      id: (0, import_crypto2.randomUUID)(),
       content: input.content,
       topics: input.topics ?? [],
       metadata: input.metadata ?? {},
@@ -580,7 +717,7 @@ var MemoryStore = class {
   async createSnapshot(label, opts) {
     this.ensureInitialized();
     const now = Date.now();
-    const id = (0, import_crypto.randomUUID)();
+    const id = (0, import_crypto2.randomUUID)();
     const layerEntries = await this.loadAllLayerEntries(opts);
     const coreEntries = await this.query("", { limit: 1e4 });
     const snapshotData = {
@@ -705,6 +842,108 @@ var MemoryStore = class {
     if (changes > 0) this.persist();
     return changes > 0;
   }
+  // ─── Embeddings (v0.3.2) ───────────────────────────────────────────────────
+  /**
+   * Store a vector embedding for a memory entry.
+   * Called after MemoryStore.store() when embeddings are enabled.
+   */
+  async storeEmbedding(memoryId, base64, dimension, model, type = "memory") {
+    this.ensureInitialized();
+    const id = (0, import_crypto2.randomUUID)();
+    this.db.run(
+      `INSERT OR REPLACE INTO embeddings (id, memory_id, vector_base64, dimension, model, created_at, embedding_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, memoryId, base64, dimension, model, Date.now(), type]
+    );
+    this.persist();
+  }
+  /**
+   * Get embedding for a memory entry.
+   */
+  async getEmbedding(memoryId) {
+    this.ensureInitialized();
+    const result = this.db.exec(
+      "SELECT vector_base64, dimension FROM embeddings WHERE memory_id = ?",
+      [memoryId]
+    );
+    if (result.length === 0 || result[0].values.length === 0) return null;
+    return {
+      base64: result[0].values[0][0],
+      dimension: result[0].values[0][1]
+    };
+  }
+  /**
+   * Delete embedding for a memory entry.
+   */
+  async deleteEmbedding(memoryId) {
+    this.ensureInitialized();
+    this.db.run("DELETE FROM embeddings WHERE memory_id = ?", [memoryId]);
+    this.persist();
+  }
+  /**
+   * Hybrid semantic search: cosine similarity over embeddings + keyword fallback.
+   *
+   * Strategy:
+   * 1. If Ollama is available and we have stored embeddings: compute cosine similarity
+   * 2. Fall back to keyword + access_count scoring when no embeddings exist
+   *
+   * @param queryText     The search query
+   * @param queryVector   Pre-computed embedding of the query (if available)
+   * @param opts          Query options (limit, topics, etc.)
+   * @returns             Top results scored by semantic similarity
+   */
+  async semanticQuery(queryText, queryVector, opts) {
+    this.ensureInitialized();
+    const limit = opts?.limit ?? 10;
+    let sql = "SELECT id, content, topics, created_at, accessed_at, access_count FROM memory m";
+    const params = [];
+    if (opts?.topics && opts.topics.length > 0) {
+      const topicConditions = opts.topics.map(() => "m.topics LIKE ?").join(" OR ");
+      sql += ` WHERE (${topicConditions})`;
+      params.push(...opts.topics.map((t) => `%${t}%`));
+    }
+    if (opts?.since) {
+      sql += params.length ? " AND m.created_at >= ?" : " WHERE m.created_at >= ?";
+      params.push(opts.since);
+    }
+    if (opts?.until) {
+      sql += params.length ? " AND m.created_at <= ?" : " WHERE m.created_at <= ?";
+      params.push(opts.until);
+    }
+    const result = this.db.exec(sql, params);
+    if (result.length === 0) return { results: [], totalAvailable: 0 };
+    const rows = result[0].values;
+    const scoredResults = [];
+    for (const row of rows) {
+      const [id, content, topics, createdAt, accessedAt, accessCount] = row;
+      const topicArr = typeof topics === "string" ? JSON.parse(topics) : topics;
+      const emb = await this.getEmbedding(id);
+      let relevanceScore;
+      if (queryVector && emb) {
+        try {
+          const vector = EmbeddingService.decodeVector(emb.base64, emb.dimension);
+          relevanceScore = EmbeddingService.cosineSimilarity(queryVector, vector);
+        } catch {
+          relevanceScore = this.simpleRelevance(content, queryText);
+        }
+      } else {
+        relevanceScore = this.simpleRelevance(content, queryText);
+      }
+      scoredResults.push({
+        id,
+        content,
+        topics: topicArr,
+        relevanceScore,
+        createdAt,
+        accessedAt,
+        accessCount
+      });
+    }
+    scoredResults.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+    const totalAvailable = scoredResults.length;
+    const limited = scoredResults.slice(0, limit);
+    return { results: limited, totalAvailable };
+  }
   getEventLog(limit = 100) {
     return this.eventLog.slice(0, limit);
   }
@@ -729,7 +968,7 @@ var MemoryStore = class {
   }
   logEvent(type, payload) {
     const event = {
-      id: (0, import_crypto.randomUUID)(),
+      id: (0, import_crypto2.randomUUID)(),
       type,
       timestamp: Date.now(),
       payload
@@ -1138,7 +1377,7 @@ ${contextParts.join("\n---\n")}`
 };
 
 // src/identity.ts
-var import_crypto2 = require("crypto");
+var import_crypto3 = require("crypto");
 var ConstitutionManager = class {
   constitution;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1180,7 +1419,7 @@ var ConstitutionManager = class {
         const lines = content.split(/\n|•|-|\*/).map((l) => l.trim()).filter((l) => l.length > 10);
         for (const line of lines) {
           const statement = {
-            id: (0, import_crypto2.randomUUID)(),
+            id: (0, import_crypto3.randomUUID)(),
             text: line,
             category,
             weight: 0.5,
@@ -1199,7 +1438,7 @@ var ConstitutionManager = class {
       const lines = text.split(/\n/).map((l) => l.replace(/^#+\s*/, "").trim()).filter((l) => l.length > 15 && !l.startsWith("["));
       for (const line of lines.slice(0, 20)) {
         const statement = {
-          id: (0, import_crypto2.randomUUID)(),
+          id: (0, import_crypto3.randomUUID)(),
           text: line,
           category: "values",
           weight: 0.3,
@@ -1221,7 +1460,7 @@ var ConstitutionManager = class {
    */
   addStatement(text, category, weight = 0.5, source) {
     const statement = {
-      id: (0, import_crypto2.randomUUID)(),
+      id: (0, import_crypto3.randomUUID)(),
       text,
       category,
       weight,
@@ -1521,7 +1760,7 @@ function createIdentitySystem(config) {
 }
 
 // src/layers.ts
-var import_crypto3 = require("crypto");
+var import_crypto4 = require("crypto");
 var DEFAULT_LAYER_CONFIG = {
   episodic: { ttlMs: 36e5, maxEntries: 1e3, weight: 0.2 },
   // 1 hour
@@ -1566,7 +1805,7 @@ var LayerManager = class {
       }
     }
     const entry = {
-      id: (0, import_crypto3.randomUUID)(),
+      id: (0, import_crypto4.randomUUID)(),
       content: input.content,
       topics: input.topics ?? [],
       metadata: input.metadata ?? {},
@@ -1862,6 +2101,8 @@ var ReMEM = class {
   engine;
   identity;
   layers;
+  embeddingService;
+  _embeddingEnabled = false;
   _identityEnabled = false;
   _layersEnabled = false;
   _agentId;
@@ -1875,6 +2116,15 @@ var ReMEM = class {
     this._userId = validated.storageConfig?.userId;
     if (validated.llm) {
       this.model = new ModelAbstraction(validated.llm);
+    }
+    if (validated.embeddings?.enabled) {
+      const embConfig = {
+        baseUrl: validated.embeddings.baseUrl ?? "http://localhost:11434",
+        model: validated.embeddings.model ?? "nomic-embed-text",
+        dimension: validated.embeddings.dimension
+      };
+      this.embeddingService = new EmbeddingService(embConfig);
+      this._embeddingEnabled = true;
     }
     this.engine = new QueryEngine({
       store: this._store,
@@ -1901,9 +2151,13 @@ var ReMEM = class {
   /**
    * Store a new memory entry.
    * If layers are enabled, also persists to the appropriate layer in SQLite.
+   * If embeddings are enabled, generates a vector embedding in the background.
    */
   async store(input) {
-    await this.engine.store(input);
+    const stored = await this._store.store(input, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
     if (this._layersEnabled && this.layers) {
       const result = this.layers.store(input);
       await this._store.persistLayerEntry(result, {
@@ -1911,12 +2165,55 @@ var ReMEM = class {
         userId: this._userId
       });
     }
+    if (this._embeddingEnabled && this.embeddingService) {
+      const contentToEmbed = input.topics.length > 0 ? `[${input.topics.join(", ")}] ${input.content}` : input.content;
+      if (input.metadata?.asyncEmbed === false) {
+        try {
+          const emb = await this.embeddingService.generateEmbedding(stored.id, contentToEmbed);
+          await this._store.storeEmbedding(stored.id, emb.base64, emb.vector.length, emb.model);
+        } catch (err) {
+          console.warn(`[ReMEM] Embedding failed for ${stored.id}: ${err}`);
+        }
+      } else {
+        this.embeddingService.generateEmbedding(stored.id, contentToEmbed).then((emb) => {
+          return this._store.storeEmbedding(stored.id, emb.base64, emb.vector.length, emb.model);
+        }).catch((err) => console.warn(`[ReMEM] Async embed failed for ${stored.id}: ${err}`));
+      }
+    }
   }
   /**
    * Query memory using natural language.
+   * Uses semantic search (cosine similarity) when embeddings are enabled,
+   * falls back to keyword + access_count scoring otherwise.
    */
   async query(query, options) {
+    const start = Date.now();
+    if (this._embeddingEnabled && this.embeddingService) {
+      try {
+        const queryVector = await this.embeddingService.embed(query);
+        const { results, totalAvailable } = await this._store.semanticQuery(
+          query,
+          queryVector,
+          options
+        );
+        return { results, totalAvailable, query, tookMs: Date.now() - start };
+      } catch (err) {
+        console.warn(`[ReMEM] Semantic query failed, falling back to keyword: ${err}`);
+      }
+    }
     return this.engine.query(query, options);
+  }
+  /**
+   * Returns true if semantic embeddings are enabled and configured.
+   */
+  isEmbeddingEnabled() {
+    return this._embeddingEnabled;
+  }
+  /**
+   * Returns the embedding service instance (if enabled).
+   */
+  getEmbeddingService() {
+    return this.embeddingService;
   }
   /**
    * Get recent memory entries.
@@ -2224,6 +2521,7 @@ var ReMEM = class {
   createIdentitySystem,
   driftEventSchema,
   driftResultSchema,
+  embeddingConfigSchema,
   eventTypeSchema,
   identityCategorySchema,
   identityConfigSchema,

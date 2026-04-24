@@ -4,6 +4,30 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.2] — 2026-04-24
+
+### Added
+
+- **Semantic Search with Vector Embeddings** — `EmbeddingService` generates embeddings via Ollama's `/api/embeddings` endpoint (default: `nomic-embed-text`). Vectors stored as base64url-encoded float32 in new `embeddings` SQLite table.
+- **`semanticQuery()` in MemoryStore** — Hybrid search: cosine similarity when embeddings exist, falls back to keyword + access_count scoring when they don't.
+- **`EmbeddingConfig` in ReMEM config** — `embeddings: { enabled, baseUrl, model, dimension?, asyncEmbed }` in constructor config.
+- **`isEmbeddingEnabled()` and `getEmbeddingService()`** — Public API to inspect embedding configuration.
+- **`EmbeddingService.encodeVector()` / `decodeVector()`** — Float32 ↔ base64url encoding for compact SQLite storage.
+- **`EmbeddingService.cosineSimilarity()`** — Static method for computing semantic similarity between vectors.
+
+### Changed
+
+- **`query()` now uses semantic search** when embeddings are enabled — queries Ollama for a query vector, then computes cosine similarity against all stored memory vectors.
+- **`store()` is now async on embedding** — when `asyncEmbed: true` (default), embedding computation is fire-and-forget (non-blocking). Set `asyncEmbed: false` to block until the vector is stored.
+
+### Technical
+
+- New `embeddings` table with `memory_id`, `vector_base64`, `dimension`, `model`, `embedding_type` columns.
+- `embeddings` table indices on `memory_id` and `embedding_type`.
+- Auto-detects embedding dimension on first embed call if not explicitly configured.
+
+---
+
 ## [0.3.1] — 2026-04-24
 
 ### Fixed

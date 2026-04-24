@@ -9,6 +9,10 @@
  * - agent_id/user_id scoping (multi-agent support)
  * - WAL mode for better concurrent write handling
  * - Atomic persist with rename
+ *
+ * v0.3.2 adds:
+ * - embeddings table (vector storage for semantic search)
+ * - semanticQuery() for cosine similarity search
  */
 
 import initSqlJs, { type Database as SqlJsDatabase } from 'sql.js';
@@ -24,6 +28,7 @@ import {
   memoryEntrySchema,
   queryOptionsSchema,
 } from './types.js';
+import { EmbeddingService } from './embeddings.js';
 
 interface SnapshotMeta {
   id: string;
@@ -147,6 +152,22 @@ export class MemoryStore {
     `);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_snap_agent ON snapshots(agent_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_snap_created ON snapshots(created_at DESC)`);
+
+    // Embeddings table — vector embeddings for semantic memory search (v0.3.2)
+    // Stores base64-encoded float32 vectors linked to memory entries
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS embeddings (
+        id TEXT PRIMARY KEY,
+        memory_id TEXT NOT NULL,
+        vector_base64 TEXT NOT NULL,
+        dimension INTEGER NOT NULL,
+        model TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        embedding_type TEXT NOT NULL DEFAULT 'memory'
+      )
+    `);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_emb_memory ON embeddings(memory_id)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_emb_type ON embeddings(embedding_type)`);
 
     // Event log
     this.db.run(`
@@ -579,6 +600,144 @@ export class MemoryStore {
     const changes = this.db!.getRowsModified();
     if (changes > 0) this.persist();
     return changes > 0;
+  }
+
+  // ─── Embeddings (v0.3.2) ───────────────────────────────────────────────────
+
+  /**
+   * Store a vector embedding for a memory entry.
+   * Called after MemoryStore.store() when embeddings are enabled.
+   */
+  async storeEmbedding(
+    memoryId: string,
+    base64: string,
+    dimension: number,
+    model: string,
+    type: 'memory' | 'layered' = 'memory'
+  ): Promise<void> {
+    this.ensureInitialized();
+    const id = randomUUID();
+    this.db!.run(
+      `INSERT OR REPLACE INTO embeddings (id, memory_id, vector_base64, dimension, model, created_at, embedding_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, memoryId, base64, dimension, model, Date.now(), type]
+    );
+    this.persist();
+  }
+
+  /**
+   * Get embedding for a memory entry.
+   */
+  async getEmbedding(memoryId: string): Promise<{ base64: string; dimension: number } | null> {
+    this.ensureInitialized();
+    const result = this.db!.exec(
+      'SELECT vector_base64, dimension FROM embeddings WHERE memory_id = ?',
+      [memoryId]
+    );
+    if (result.length === 0 || result[0].values.length === 0) return null;
+    return {
+      base64: result[0].values[0][0] as string,
+      dimension: result[0].values[0][1] as number,
+    };
+  }
+
+  /**
+   * Delete embedding for a memory entry.
+   */
+  async deleteEmbedding(memoryId: string): Promise<void> {
+    this.ensureInitialized();
+    this.db!.run('DELETE FROM embeddings WHERE memory_id = ?', [memoryId]);
+    this.persist();
+  }
+
+  /**
+   * Hybrid semantic search: cosine similarity over embeddings + keyword fallback.
+   *
+   * Strategy:
+   * 1. If Ollama is available and we have stored embeddings: compute cosine similarity
+   * 2. Fall back to keyword + access_count scoring when no embeddings exist
+   *
+   * @param queryText     The search query
+   * @param queryVector   Pre-computed embedding of the query (if available)
+   * @param opts          Query options (limit, topics, etc.)
+   * @returns             Top results scored by semantic similarity
+   */
+  async semanticQuery(
+    queryText: string,
+    queryVector: number[] | null,
+    opts?: QueryOptions
+  ): Promise<{ results: QueryResult[]; totalAvailable: number }> {
+    this.ensureInitialized();
+    const limit = opts?.limit ?? 10;
+
+    // Fetch all memory entries with embeddings
+    // We load them in memory and compute cosine similarity here
+    // (SQLite doesn't have vector indexes; for large datasets consider pgvector/faiss separately)
+    let sql = 'SELECT id, content, topics, created_at, accessed_at, access_count FROM memory m';
+    const params: (string | number)[] = [];
+
+    if (opts?.topics && opts.topics.length > 0) {
+      const topicConditions = opts.topics.map(() => 'm.topics LIKE ?').join(' OR ');
+      sql += ` WHERE (${topicConditions})`;
+      params.push(...opts.topics.map((t) => `%${t}%`));
+    }
+
+    if (opts?.since) {
+      sql += params.length ? ' AND m.created_at >= ?' : ' WHERE m.created_at >= ?';
+      params.push(opts.since);
+    }
+    if (opts?.until) {
+      sql += params.length ? ' AND m.created_at <= ?' : ' WHERE m.created_at <= ?';
+      params.push(opts.until);
+    }
+
+    const result = this.db!.exec(sql, params);
+    if (result.length === 0) return { results: [], totalAvailable: 0 };
+
+    const rows = result[0].values as unknown[][];
+    const scoredResults: QueryResult[] = [];
+
+    for (const row of rows) {
+      const [id, content, topics, createdAt, accessedAt, accessCount] = row;
+      const topicArr: string[] = typeof topics === 'string' ? JSON.parse(topics) : (topics as string[]);
+
+      // Try to get embedding for this entry
+      const emb = await this.getEmbedding(id as string);
+
+      let relevanceScore: number;
+
+      if (queryVector && emb) {
+        // Semantic: cosine similarity
+        try {
+          const vector = EmbeddingService.decodeVector(emb.base64, emb.dimension);
+          relevanceScore = EmbeddingService.cosineSimilarity(queryVector, vector);
+        } catch {
+          // Fall back to keyword scoring if decode fails
+          relevanceScore = this.simpleRelevance(content as string, queryText);
+        }
+      } else {
+        // Keyword-based fallback (no embeddings available)
+        relevanceScore = this.simpleRelevance(content as string, queryText);
+      }
+
+      scoredResults.push({
+        id: id as string,
+        content: content as string,
+        topics: topicArr,
+        relevanceScore,
+        createdAt: createdAt as number,
+        accessedAt: accessedAt as number,
+        accessCount: accessCount as number,
+      });
+    }
+
+    // Sort by relevance score descending
+    scoredResults.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+
+    const totalAvailable = scoredResults.length;
+    const limited = scoredResults.slice(0, limit);
+
+    return { results: limited, totalAvailable };
   }
 
   getEventLog(limit: number = 100): MemoryEvent[] {

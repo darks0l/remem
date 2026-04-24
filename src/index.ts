@@ -11,6 +11,7 @@ import {
   type IdentitySystem,
 } from './identity.js';
 import { LayerManager, DEFAULT_LAYER_CONFIG, type LayerConfig } from './layers.js';
+import { EmbeddingService, type EmbeddingConfig as EmbedServiceConfig } from './embeddings.js';
 import {
   rememConfigSchema,
   type ReMEMConfig,
@@ -42,6 +43,8 @@ export class ReMEM {
   private engine: QueryEngine;
   private identity?: IdentitySystem;
   private layers?: LayerManager;
+  private embeddingService?: EmbeddingService;
+  private _embeddingEnabled: boolean = false;
   private _identityEnabled: boolean = false;
   private _layersEnabled: boolean = false;
   private _agentId?: string;
@@ -62,6 +65,17 @@ export class ReMEM {
     // Initialize model if provided
     if (validated.llm) {
       this.model = new ModelAbstraction(validated.llm);
+    }
+
+    // Initialize embedding service if enabled (v0.3.2)
+    if (validated.embeddings?.enabled) {
+      const embConfig: EmbedServiceConfig = {
+        baseUrl: validated.embeddings.baseUrl ?? 'http://localhost:11434',
+        model: validated.embeddings.model ?? 'nomic-embed-text',
+        dimension: validated.embeddings.dimension,
+      };
+      this.embeddingService = new EmbeddingService(embConfig);
+      this._embeddingEnabled = true;
     }
 
     // Initialize query engine (store initialized in init())
@@ -94,9 +108,14 @@ export class ReMEM {
   /**
    * Store a new memory entry.
    * If layers are enabled, also persists to the appropriate layer in SQLite.
+   * If embeddings are enabled, generates a vector embedding in the background.
    */
   async store(input: StoreMemoryInput): Promise<void> {
-    await this.engine.store(input);
+    // Store in the underlying SQLite store to get the entry ID for embedding
+    const stored = await this._store.store(input, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
 
     // Also store in layers if enabled (layers are persisted to SQLite)
     if (this._layersEnabled && this.layers) {
@@ -106,13 +125,73 @@ export class ReMEM {
         userId: this._userId,
       });
     }
+
+    // Generate embedding (sync or async) if enabled
+    if (this._embeddingEnabled && this.embeddingService) {
+      const contentToEmbed = input.topics.length > 0
+        ? `[${input.topics.join(', ')}] ${input.content}`
+        : input.content;
+
+      if (input.metadata?.asyncEmbed === false) {
+        // Synchronous: block until embedding is computed and stored
+        try {
+          const emb = await this.embeddingService.generateEmbedding(stored.id, contentToEmbed);
+          await this._store.storeEmbedding(stored.id, emb.base64, emb.vector.length, emb.model);
+        } catch (err) {
+          console.warn(`[ReMEM] Embedding failed for ${stored.id}: ${err}`);
+        }
+      } else {
+        // Async: fire and forget
+        this.embeddingService
+          .generateEmbedding(stored.id, contentToEmbed)
+          .then((emb) => {
+            return this._store.storeEmbedding(stored.id, emb.base64, emb.vector.length, emb.model);
+          })
+          .catch((err) => console.warn(`[ReMEM] Async embed failed for ${stored.id}: ${err}`));
+      }
+    }
   }
 
   /**
    * Query memory using natural language.
+   * Uses semantic search (cosine similarity) when embeddings are enabled,
+   * falls back to keyword + access_count scoring otherwise.
    */
   async query(query: string, options?: QueryOptions): Promise<QueryResponse> {
+    const start = Date.now();
+
+    // If embeddings are enabled and Ollama is reachable, use semantic search
+    if (this._embeddingEnabled && this.embeddingService) {
+      try {
+        const queryVector = await this.embeddingService.embed(query);
+        const { results, totalAvailable } = await this._store.semanticQuery(
+          query,
+          queryVector,
+          options
+        );
+        return { results, totalAvailable, query, tookMs: Date.now() - start };
+      } catch (err) {
+        // Embedding failed — fall back to keyword search
+        console.warn(`[ReMEM] Semantic query failed, falling back to keyword: ${err}`);
+      }
+    }
+
+    // Fallback: standard keyword + access_count query
     return this.engine.query(query, options);
+  }
+
+  /**
+   * Returns true if semantic embeddings are enabled and configured.
+   */
+  isEmbeddingEnabled(): boolean {
+    return this._embeddingEnabled;
+  }
+
+  /**
+   * Returns the embedding service instance (if enabled).
+   */
+  getEmbeddingService(): EmbeddingService | undefined {
+    return this.embeddingService;
   }
 
   /**

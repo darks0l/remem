@@ -121,12 +121,28 @@ export interface Adapter {
 // ReMEM Config
 // ============================================================================
 
+export const embeddingConfigSchema = z.object({
+  /** Enable vector embeddings for semantic search (default: false) */
+  enabled: z.boolean().default(false),
+  /** Ollama base URL (e.g. http://192.168.68.73:11434) */
+  baseUrl: z.string().default('http://localhost:11434'),
+  /** Embedding model to use (e.g. 'nomic-embed-text', 'mxbai-embed-large') */
+  model: z.string().default('nomic-embed-text'),
+  /** Embedding dimension (auto-detected on first embed if not set) */
+  dimension: z.number().optional(),
+  /** Whether to generate embeddings async in background (non-blocking store) */
+  asyncEmbed: z.boolean().default(true),
+});
+
+export type EmbeddingConfig = z.infer<typeof embeddingConfigSchema>;
+
 export const rememConfigSchema = z.object({
   storage: z.enum(['sqlite', 'postgres', 'memory']).default('sqlite'),
   storageConfig: z.record(z.unknown()).optional(),
   llm: modelConfigSchema.optional(),
   adapter: z.string().optional(),
   dbPath: z.string().optional(), // for sqlite
+  embeddings: embeddingConfigSchema.optional(),
 });
 
 export type ReMEMConfig = z.infer<typeof rememConfigSchema>;

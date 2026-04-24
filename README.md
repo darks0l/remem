@@ -30,6 +30,7 @@ LLMs are limited by their context window. Retrieval-Augmented Generation (RAG) h
 ReMEM does something different:
 
 - **A proper memory store** — SQLite-backed, event-sourced, with atomic crash-safe writes
+- **Semantic search with vector embeddings** — cosine similarity via Ollama (`nomic-embed-text`), falls back to keyword + access_count scoring
 - **Persistent hierarchical layers** — episodic, semantic, identity, and procedural tiers that survive restarts
 - **An LLM-native query interface** — Describe what you want in plain English; the query engine recursively refines
 - **Temporal validity** — Tracks when facts were true, not just that they exist. Auto-supersedes outdated information
@@ -112,9 +113,12 @@ const snapshots = await memory.listSnapshots();
 │  ReMEM (public API)                                         │
 │    ├─> QueryEngine (RLM-style REPL)                         │
 │    │     └─> ModelAbstraction (Bankr, OpenAI, Anthropic, Ollama) │
+│    ├─> EmbeddingService (Ollama /api/embeddings, v0.3.2)    │
+│    │     └─> Vector storage in SQLite (base64url float32)  │
 │    ├─> MemoryStore (SQLite/sql.js)                          │
 │    │     ├─> memory table (core entries)                    │
 │    │     ├─> layered_memories table (persistent layers)     │
+│    │     ├─> embeddings table (vector store)               │
 │    │     ├─> snapshots table (named snapshots)              │
 │    │     └─> events table (append-only log)                │
 │    ├─> LayerManager (4-tier hierarchy, in-memory + SQLite)  │
@@ -180,6 +184,42 @@ await memory.restoreSnapshot(snap.id);
 const snapshots = await memory.listSnapshots();
 // → [{ id: '...', label: 'checkpoint-before-update', memoryCount: 47, createdAt: 1745532000 }]
 ```
+
+### Semantic Search with Vector Embeddings
+
+Enable Ollama-powered vector embeddings for semantic memory search — cosine similarity instead of fragile keyword matching:
+
+```typescript
+const memory = new ReMEM({
+  dbPath: './remem.db',
+  embeddings: {
+    enabled: true,                    // enable vector embeddings (v0.3.2)
+    baseUrl: 'http://192.168.68.73:11434',  // your Ollama instance
+    model: 'nomic-embed-text',       // embedding model (or mxbai-embed-large)
+    asyncEmbed: true,                // generate embeddings in background (non-blocking store)
+  },
+});
+
+await memory.init();
+
+// Store — embedding is computed async in background
+await memory.store({
+  content: 'Meta prefers dark mode UI and vibe-based communication',
+  topics: ['preferences', 'ui'],
+});
+
+// Query — uses cosine similarity when embeddings exist, falls back to keyword
+const { results } = await memory.query('what UI style does Meta like?');
+// → semantic match: "Meta prefers dark mode UI and vibe-based communication"
+```
+
+**How it works:**
+- On `store()`, text is embedded via Ollama's `/api/embeddings` endpoint
+- Vector stored as base64url-encoded float32 in `embeddings` SQLite table
+- On `query()`, the query text is embedded and cosine similarity is computed against all stored vectors
+- Falls back to keyword + access_count scoring when embeddings are unavailable or Ollama is unreachable
+- Embedding is computed in background by default (`asyncEmbed: true`), non-blocking
+- Set `asyncEmbed: false` for synchronous embedding (blocks until vector is stored)
 
 ### Procedural Memory
 

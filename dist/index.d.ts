@@ -219,6 +219,31 @@ interface Adapter {
     getRecent(n?: number): Promise<QueryResult[]>;
     getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
 }
+declare const embeddingConfigSchema: z.ZodObject<{
+    /** Enable vector embeddings for semantic search (default: false) */
+    enabled: z.ZodDefault<z.ZodBoolean>;
+    /** Ollama base URL (e.g. http://192.168.68.73:11434) */
+    baseUrl: z.ZodDefault<z.ZodString>;
+    /** Embedding model to use (e.g. 'nomic-embed-text', 'mxbai-embed-large') */
+    model: z.ZodDefault<z.ZodString>;
+    /** Embedding dimension (auto-detected on first embed if not set) */
+    dimension: z.ZodOptional<z.ZodNumber>;
+    /** Whether to generate embeddings async in background (non-blocking store) */
+    asyncEmbed: z.ZodDefault<z.ZodBoolean>;
+}, "strip", z.ZodTypeAny, {
+    baseUrl: string;
+    model: string;
+    enabled: boolean;
+    asyncEmbed: boolean;
+    dimension?: number | undefined;
+}, {
+    baseUrl?: string | undefined;
+    model?: string | undefined;
+    enabled?: boolean | undefined;
+    dimension?: number | undefined;
+    asyncEmbed?: boolean | undefined;
+}>;
+type EmbeddingConfig$1 = z.infer<typeof embeddingConfigSchema>;
 declare const rememConfigSchema: z.ZodObject<{
     storage: z.ZodDefault<z.ZodEnum<["sqlite", "postgres", "memory"]>>;
     storageConfig: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
@@ -279,6 +304,30 @@ declare const rememConfigSchema: z.ZodObject<{
     }>]>>;
     adapter: z.ZodOptional<z.ZodString>;
     dbPath: z.ZodOptional<z.ZodString>;
+    embeddings: z.ZodOptional<z.ZodObject<{
+        /** Enable vector embeddings for semantic search (default: false) */
+        enabled: z.ZodDefault<z.ZodBoolean>;
+        /** Ollama base URL (e.g. http://192.168.68.73:11434) */
+        baseUrl: z.ZodDefault<z.ZodString>;
+        /** Embedding model to use (e.g. 'nomic-embed-text', 'mxbai-embed-large') */
+        model: z.ZodDefault<z.ZodString>;
+        /** Embedding dimension (auto-detected on first embed if not set) */
+        dimension: z.ZodOptional<z.ZodNumber>;
+        /** Whether to generate embeddings async in background (non-blocking store) */
+        asyncEmbed: z.ZodDefault<z.ZodBoolean>;
+    }, "strip", z.ZodTypeAny, {
+        baseUrl: string;
+        model: string;
+        enabled: boolean;
+        asyncEmbed: boolean;
+        dimension?: number | undefined;
+    }, {
+        baseUrl?: string | undefined;
+        model?: string | undefined;
+        enabled?: boolean | undefined;
+        dimension?: number | undefined;
+        asyncEmbed?: boolean | undefined;
+    }>>;
 }, "strip", z.ZodTypeAny, {
     storage: "sqlite" | "postgres" | "memory";
     storageConfig?: Record<string, unknown> | undefined;
@@ -303,6 +352,13 @@ declare const rememConfigSchema: z.ZodObject<{
     } | undefined;
     adapter?: string | undefined;
     dbPath?: string | undefined;
+    embeddings?: {
+        baseUrl: string;
+        model: string;
+        enabled: boolean;
+        asyncEmbed: boolean;
+        dimension?: number | undefined;
+    } | undefined;
 }, {
     storage?: "sqlite" | "postgres" | "memory" | undefined;
     storageConfig?: Record<string, unknown> | undefined;
@@ -327,6 +383,13 @@ declare const rememConfigSchema: z.ZodObject<{
     } | undefined;
     adapter?: string | undefined;
     dbPath?: string | undefined;
+    embeddings?: {
+        baseUrl?: string | undefined;
+        model?: string | undefined;
+        enabled?: boolean | undefined;
+        dimension?: number | undefined;
+        asyncEmbed?: boolean | undefined;
+    } | undefined;
 }>;
 type ReMEMConfig = z.infer<typeof rememConfigSchema>;
 declare const eventTypeSchema: z.ZodEnum<["memory.stored", "memory.queried", "memory.accessed", "memory.forgotten", "memory.superseded", "snapshot.created", "snapshot.restored", "identity.constitution_updated", "identity.drift_detected", "identity.drift_correction_injected"]>;
@@ -931,6 +994,10 @@ type DriftEvent = z.infer<typeof driftEventSchema>;
  * - agent_id/user_id scoping (multi-agent support)
  * - WAL mode for better concurrent write handling
  * - Atomic persist with rename
+ *
+ * v0.3.2 adds:
+ * - embeddings table (vector storage for semantic search)
+ * - semanticQuery() for cosine similarity search
  */
 
 interface SnapshotMeta {
@@ -999,6 +1066,38 @@ declare class MemoryStore {
      * Delete a snapshot.
      */
     deleteSnapshot(snapshotId: string): Promise<boolean>;
+    /**
+     * Store a vector embedding for a memory entry.
+     * Called after MemoryStore.store() when embeddings are enabled.
+     */
+    storeEmbedding(memoryId: string, base64: string, dimension: number, model: string, type?: 'memory' | 'layered'): Promise<void>;
+    /**
+     * Get embedding for a memory entry.
+     */
+    getEmbedding(memoryId: string): Promise<{
+        base64: string;
+        dimension: number;
+    } | null>;
+    /**
+     * Delete embedding for a memory entry.
+     */
+    deleteEmbedding(memoryId: string): Promise<void>;
+    /**
+     * Hybrid semantic search: cosine similarity over embeddings + keyword fallback.
+     *
+     * Strategy:
+     * 1. If Ollama is available and we have stored embeddings: compute cosine similarity
+     * 2. Fall back to keyword + access_count scoring when no embeddings exist
+     *
+     * @param queryText     The search query
+     * @param queryVector   Pre-computed embedding of the query (if available)
+     * @param opts          Query options (limit, topics, etc.)
+     * @returns             Top results scored by semantic similarity
+     */
+    semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions): Promise<{
+        results: QueryResult[];
+        totalAvailable: number;
+    }>;
     getEventLog(limit?: number): MemoryEvent[];
     persist(): void;
     close(): void;
@@ -1120,6 +1219,69 @@ declare class LayerManager {
         weight: number;
     }>;
     private simpleRelevance;
+}
+
+/**
+ * ReMEM — Embedding Service
+ * Generates and stores vector embeddings for semantic memory search.
+ *
+ * Uses Ollama's /api/embeddings endpoint (or any compatible OpenAI-style embeddings API).
+ * Stores embeddings in SQLite as base64-encoded float32 arrays.
+ *
+ * v0.3.2: Added for semantic search — cosine similarity replaces keyword-only matching.
+ */
+interface EmbeddingConfig {
+    /** Ollama base URL (e.g. http://192.168.68.73:11434) */
+    baseUrl: string;
+    /** Model to use for embeddings (e.g. 'nomic-embed-text', 'mxbai-embed-large') */
+    model: string;
+    /** Dimension of the embedding vectors (auto-detected on first run, or set explicitly) */
+    dimension?: number;
+}
+interface EmbeddingVector {
+    id: string;
+    memoryId: string;
+    vector: number[];
+    base64: string;
+    model: string;
+    createdAt: number;
+}
+declare class EmbeddingService {
+    private config;
+    private detectedDimension;
+    private httpFetch;
+    constructor(config: EmbeddingConfig, httpFetch?: typeof fetch);
+    get baseUrl(): string;
+    get model(): string;
+    get isConfigured(): boolean;
+    /**
+     * Generate embedding for a single text.
+     * Uses Ollama's /api/embeddings endpoint.
+     */
+    embed(text: string): Promise<number[]>;
+    /**
+     * Generate embeddings for multiple texts in batch.
+     * Calls embed() sequentially — Ollama doesn't have a batch endpoint.
+     */
+    embedBatch(texts: string[], signal?: AbortSignal): Promise<number[][]>;
+    /**
+     * Encode a float32 vector to base64url.
+     * Uses Buffer.from with a Uint8Array view of the Float32Array buffer.
+     */
+    static encodeVector(vec: number[]): string;
+    /**
+     * Decode a base64url string back to a float32 vector.
+     */
+    static decodeVector(base64: string, dimension: number): number[];
+    /**
+     * Compute cosine similarity between two vectors.
+     * Returns a value between -1 (opposite) and 1 (identical).
+     */
+    static cosineSimilarity(a: number[], b: number[]): number;
+    /**
+     * Generate and package an embedding vector for storage.
+     */
+    generateEmbedding(memoryId: string, text: string): Promise<EmbeddingVector>;
 }
 
 /**
@@ -1283,6 +1445,8 @@ declare class ReMEM {
     private engine;
     private identity?;
     private layers?;
+    private embeddingService?;
+    private _embeddingEnabled;
     private _identityEnabled;
     private _layersEnabled;
     private _agentId?;
@@ -1296,12 +1460,23 @@ declare class ReMEM {
     /**
      * Store a new memory entry.
      * If layers are enabled, also persists to the appropriate layer in SQLite.
+     * If embeddings are enabled, generates a vector embedding in the background.
      */
     store(input: StoreMemoryInput): Promise<void>;
     /**
      * Query memory using natural language.
+     * Uses semantic search (cosine similarity) when embeddings are enabled,
+     * falls back to keyword + access_count scoring otherwise.
      */
     query(query: string, options?: QueryOptions): Promise<QueryResponse>;
+    /**
+     * Returns true if semantic embeddings are enabled and configured.
+     */
+    isEmbeddingEnabled(): boolean;
+    /**
+     * Returns the embedding service instance (if enabled).
+     */
+    getEmbeddingService(): EmbeddingService | undefined;
     /**
      * Get recent memory entries.
      */
@@ -1440,4 +1615,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type EventType, type IdentityCategory, type IdentityConfig, type IdentitySystem, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryStore, ModelAbstraction, type ModelConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMConfig, type StoreMemoryInput, type SupersessionResult, constitutionSchema, constitutionStatementSchema, createIdentitySystem, driftEventSchema, driftResultSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema };
+export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type EmbeddingConfig$1 as EmbeddingConfig, type EventType, type IdentityCategory, type IdentityConfig, type IdentitySystem, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryStore, ModelAbstraction, type ModelConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMConfig, type StoreMemoryInput, type SupersessionResult, constitutionSchema, constitutionStatementSchema, createIdentitySystem, driftEventSchema, driftResultSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema };
