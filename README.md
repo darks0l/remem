@@ -18,7 +18,7 @@ ReMEM does something different. It gives you:
 
 - **A proper memory store** — SQLite-backed, with event-sourced writes and full-text search
 - **An LLM-native query interface** — Describe what you want in plain English; the query engine recursively refines
-- **Hierarchical memory** — episodic, semantic, and identity layers with weighted retrieval
+- **Hierarchical memory** — episodic, semantic, identity, and procedural layers with weighted retrieval
 - **Plug-and-play LLM abstraction** — Bankr, OpenAI, Anthropic, Ollama — swap without changing your code
 - **Framework-agnostic** — Works as a library (Node.js/Deno), CLI tool, or HTTP service
 
@@ -69,13 +69,46 @@ console.log(results[0].content);
 
 ### Memory Layers
 
-ReMEM maintains three weighted retrieval layers:
+ReMEM maintains four weighted retrieval layers:
 
 | Layer | TTL | Weight | Purpose |
 |-------|-----|--------|---------|
-| **Episodic** | 1 hour | 0.5 | Recent, raw interactions |
+| **Episodic** | 1 hour | 0.2 | Recent, raw interactions |
 | **Semantic** | 7 days | 0.3 | Synthesized facts and preferences |
-| **Identity** | 30 days | 0.2 | Core identity signals |
+| **Identity** | 30 days | 0.5 | Core identity signals |
+| **Procedural** | 30 days | 0.4 | Learned behaviors and rules |
+
+### Temporal Validity (Semantic Layer)
+
+Semantic layer entries carry `validFrom`/`validUntil` timestamps. When you correct a fact, the old entry gets marked as superseded with a `validUntil` — ReMEM tracks the full history without losing it.
+
+```typescript
+// Self-edit mode: contradictions auto-supersede
+memory.enableLayers({ semantic: { selfEdit: true, temporalValidity: true } });
+
+// Store an update — old "dark mode" fact gets superseded automatically
+await memory.store({ content: 'Meta prefers light mode now', topics: ['preferences'] });
+
+// Query returns the newest valid entry
+const { results } = await memory.queryLayers('Meta UI preferences');
+// → "Meta prefers light mode now" (old "dark mode" entry marked superseded)
+```
+
+### Procedural Memory
+
+Procedural entries store learned behaviors/rules triggered by keywords:
+
+```typescript
+// Store a procedural rule
+memory.storeProcedural(
+  { content: 'When user mentions Solana, always check Raydium pools first', topics: ['solana', 'rule'] },
+  'solana'
+);
+
+// Fire rules matching context
+const triggered = memory.fireProcedural('User is asking about Solana DeFi');
+// → ["When user mentions Solana, always check Raydium pools first"]
+```
 
 ### Query-Time Recursive Refinement
 

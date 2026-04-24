@@ -143,6 +143,7 @@ var eventTypeSchema = import_zod.z.enum([
   "memory.queried",
   "memory.accessed",
   "memory.forgotten",
+  "memory.superseded",
   "snapshot.created",
   "snapshot.restored",
   "identity.constitution_updated",
@@ -186,7 +187,7 @@ var identityConfigSchema = import_zod.z.object({
   evalModel: modelConfigSchema.optional()
   // separate eval model (local Ollama preferred for cost)
 });
-var memoryLayerSchema = import_zod.z.enum(["episodic", "semantic", "identity"]);
+var memoryLayerSchema = import_zod.z.enum(["episodic", "semantic", "identity", "procedural"]);
 var layerConfigSchema = import_zod.z.object({
   episodic: import_zod.z.object({
     ttlMs: import_zod.z.number().default(36e5),
@@ -198,19 +199,42 @@ var layerConfigSchema = import_zod.z.object({
     ttlMs: import_zod.z.number().default(6048e5),
     // 7 days
     maxEntries: import_zod.z.number().default(5e3),
-    weight: import_zod.z.number().default(0.3)
+    weight: import_zod.z.number().default(0.3),
+    // Temporal self-edit options
+    selfEdit: import_zod.z.boolean().default(false),
+    // auto-supersede conflicting entries
+    temporalValidity: import_zod.z.boolean().default(true)
+    // track validFrom/validUntil
   }),
   identity: import_zod.z.object({
     ttlMs: import_zod.z.number().default(2592e6),
     // 30 days
     maxEntries: import_zod.z.number().default(500),
     weight: import_zod.z.number().default(0.5)
+  }),
+  procedural: import_zod.z.object({
+    ttlMs: import_zod.z.number().default(2592e6),
+    // 30 days (long-term rules)
+    maxEntries: import_zod.z.number().default(500),
+    weight: import_zod.z.number().default(0.4),
+    trigger: import_zod.z.string().optional()
+    // keyword that fires this rule
   })
 });
 var layeredMemoryEntrySchema = memoryEntrySchema.extend({
   layer: memoryLayerSchema.default("episodic"),
   expiresAt: import_zod.z.number().optional(),
-  importance: import_zod.z.number().min(0).max(1).default(0.5)
+  importance: import_zod.z.number().min(0).max(1).default(0.5),
+  // Temporal validity (semantic layer)
+  validFrom: import_zod.z.number().optional(),
+  // when this fact became true
+  validUntil: import_zod.z.number().optional(),
+  // when this fact stopped being true (null = still valid)
+  // Self-edit supersession chain
+  supersedes: import_zod.z.string().optional(),
+  // id of the entry this one supersedes (older version)
+  supersededBy: import_zod.z.string().optional()
+  // id of the entry that supersedes this one
 });
 var driftEventSchema = import_zod.z.object({
   driftResult: driftResultSchema,
@@ -1228,9 +1252,11 @@ var import_crypto3 = require("crypto");
 var DEFAULT_LAYER_CONFIG = {
   episodic: { ttlMs: 36e5, maxEntries: 1e3, weight: 0.2 },
   // 1 hour
-  semantic: { ttlMs: 6048e5, maxEntries: 5e3, weight: 0.3 },
+  semantic: { ttlMs: 6048e5, maxEntries: 5e3, weight: 0.3, selfEdit: false, temporalValidity: true },
   // 7 days
-  identity: { ttlMs: 2592e6, maxEntries: 500, weight: 0.5 }
+  identity: { ttlMs: 2592e6, maxEntries: 500, weight: 0.5 },
+  // 30 days
+  procedural: { ttlMs: 2592e6, maxEntries: 500, weight: 0.4 }
   // 30 days
 };
 var LayerManager = class {
@@ -1240,18 +1266,32 @@ var LayerManager = class {
     const merged = {
       episodic: { ...DEFAULT_LAYER_CONFIG.episodic, ...config?.episodic },
       semantic: { ...DEFAULT_LAYER_CONFIG.semantic, ...config?.semantic },
-      identity: { ...DEFAULT_LAYER_CONFIG.identity, ...config?.identity }
+      identity: { ...DEFAULT_LAYER_CONFIG.identity, ...config?.identity },
+      procedural: { ...DEFAULT_LAYER_CONFIG.procedural, ...config?.procedural }
     };
     this.config = layerConfigSchema.parse(merged);
   }
   /**
    * Store an entry in the appropriate layer.
    * If layer is not specified, auto-assigns based on topics and content.
+   * For semantic layer with selfEdit=true, detects contradictions and auto-supersedes.
    */
   store(input, layer) {
     const assignedLayer = layer ?? this.autoAssignLayer(input);
     const now = Date.now();
     const layerCfg = this.config[assignedLayer];
+    let supersedesId;
+    if (assignedLayer === "semantic" && layerCfg.selfEdit) {
+      const result = this.checkSupersession(input, assignedLayer);
+      if (result.superseded && result.supersededEntryId) {
+        const old = this.entries.get(result.supersededEntryId);
+        if (old) {
+          old.validUntil = now;
+          this.entries.set(old.id, old);
+        }
+        supersedesId = result.supersededEntryId;
+      }
+    }
     const entry = {
       id: (0, import_crypto3.randomUUID)(),
       content: input.content,
@@ -1262,11 +1302,77 @@ var LayerManager = class {
       accessCount: 0,
       layer: assignedLayer,
       expiresAt: now + layerCfg.ttlMs,
-      importance: input.metadata?.importance ?? 0.5
+      importance: input.metadata?.importance ?? 0.5,
+      // Temporal validity (semantic layer)
+      validFrom: assignedLayer === "semantic" && layerCfg.temporalValidity ? now : void 0,
+      validUntil: void 0,
+      // null means still valid
+      // Self-edit supersession chain
+      supersedes: supersedesId,
+      supersededBy: void 0
     };
     this.evictIfNeeded(assignedLayer);
     this.entries.set(entry.id, entry);
     return entry;
+  }
+  /**
+   * Check if new input should supersede an existing semantic entry.
+   * Detects contradictions by keyword negation patterns.
+   */
+  checkSupersession(input, layer) {
+    const text = `${input.content} ${(input.topics ?? []).join(" ")}`.toLowerCase();
+    for (const entry of this.entries.values()) {
+      if (entry.layer !== layer) continue;
+      if (entry.supersededBy) continue;
+      const negationPatterns = [
+        /prefer(s|ring|red)?\s+not\s+/i,
+        /prefer(s|ring|red)?\s+instead\s+/i,
+        /no\s+longer\s+/i,
+        /changed\s+to\s+/i,
+        /now\s+uses?\s+/i,
+        /switched\s+to\s+/i
+      ];
+      const hasNegation = negationPatterns.some((p) => p.test(text));
+      if (!hasNegation) continue;
+      const existingTopics = entry.topics.join(" ").toLowerCase();
+      const inputTopics = (input.topics ?? []).join(" ").toLowerCase();
+      const contentOverlap = this.simpleRelevance(entry.content, input.content) > 0.5;
+      const topicOverlap = existingTopics && inputTopics && (existingTopics.split(" ").some((w) => inputTopics.includes(w)) || inputTopics.split(" ").some((w) => existingTopics.includes(w)));
+      if (contentOverlap || topicOverlap) {
+        return {
+          superseded: true,
+          supersededEntryId: entry.id,
+          reason: "Contradiction detected \u2014 newer entry supersedes older"
+        };
+      }
+    }
+    return { superseded: false };
+  }
+  /**
+   * Store a procedural memory — a triggered behavior/rule.
+   * trigger: keyword/pattern that fires this rule
+   * condition: when this text appears in context
+   * action: what to do when triggered
+   */
+  storeProcedural(input, trigger) {
+    const meta = { ...input.metadata, trigger };
+    return this.store({ ...input, metadata: meta }, "procedural");
+  }
+  /**
+   * Fire procedural rules matching the given context text.
+   * Returns rules whose trigger keyword appears in the context.
+   */
+  fireProcedural(context) {
+    const triggered = [];
+    const ctx = context.toLowerCase();
+    for (const entry of this.entries.values()) {
+      if (entry.layer !== "procedural") continue;
+      const trigger = entry.metadata?.trigger?.toLowerCase();
+      if (trigger && ctx.includes(trigger)) {
+        triggered.push(entry);
+      }
+    }
+    return triggered;
   }
   /**
    * Get an entry by ID.
@@ -1287,7 +1393,7 @@ var LayerManager = class {
    * Entries from higher-weight layers rank higher, but content match still matters.
    */
   query(text, options) {
-    const layers = options?.layers ?? ["episodic", "semantic", "identity"];
+    const layers = options?.layers ?? ["episodic", "semantic", "identity", "procedural"];
     const now = Date.now();
     let allEntries = [];
     for (const layer of layers) {
@@ -1316,7 +1422,8 @@ var LayerManager = class {
     const layerBreakdown = {
       episodic: 0,
       semantic: 0,
-      identity: 0
+      identity: 0,
+      procedural: 0
     };
     for (const entry of allEntries) {
       layerBreakdown[entry.layer]++;
@@ -1341,7 +1448,7 @@ var LayerManager = class {
    * Get recent entries across all layers.
    */
   getRecent(n = 10, layers) {
-    const targetLayers = layers ?? ["episodic", "semantic", "identity"];
+    const targetLayers = layers ?? ["episodic", "semantic", "identity", "procedural"];
     const now = Date.now();
     const entries = [];
     for (const entry of this.entries.values()) {
@@ -1435,6 +1542,8 @@ var LayerManager = class {
     const text = `${input.content} ${(input.topics ?? []).join(" ")}`.toLowerCase();
     const identityKeywords = ["i am", "i prefer", "my values", "my goals", "my boundaries", "i always", "i never"];
     if (identityKeywords.some((k) => text.includes(k))) return "identity";
+    const proceduralKeywords = ["when", "if", "always do", "rule:", "trigger:", "procedure:", "always use", "never use", "do this when"];
+    if (proceduralKeywords.some((k) => text.includes(k))) return "procedural";
     const semanticKeywords = ["project", "decision", "agreed", "remember", "context", "learned", "figured out"];
     if (semanticKeywords.some((k) => text.includes(k))) return "semantic";
     return "episodic";
@@ -1444,7 +1553,7 @@ var LayerManager = class {
    */
   getStats() {
     const now = Date.now();
-    const counts = { episodic: 0, semantic: 0, identity: 0 };
+    const counts = { episodic: 0, semantic: 0, identity: 0, procedural: 0 };
     for (const entry of this.entries.values()) {
       if (entry.expiresAt && now > entry.expiresAt) continue;
       counts[entry.layer]++;
@@ -1452,7 +1561,8 @@ var LayerManager = class {
     return {
       episodic: { count: counts.episodic, ...this.config.episodic },
       semantic: { count: counts.semantic, ...this.config.semantic },
-      identity: { count: counts.identity, ...this.config.identity }
+      identity: { count: counts.identity, ...this.config.identity },
+      procedural: { count: counts.procedural, ...this.config.procedural }
     };
   }
   simpleRelevance(content, query) {
@@ -1638,6 +1748,66 @@ var ReMEM = class {
   evictExpiredLayers() {
     if (!this.layers) return 0;
     return this.layers.evictExpired();
+  }
+  /**
+   * Store a procedural memory — a behavior/rule triggered by a keyword.
+   * Use when you learn a rule like "when X happens, always do Y".
+   */
+  storeProcedural(input, trigger) {
+    if (!this.layers) {
+      this.enableLayers();
+    }
+    const entry = this.layers.storeProcedural(input, trigger);
+    return {
+      id: entry.id,
+      content: entry.content,
+      topics: entry.topics,
+      relevanceScore: entry.importance,
+      createdAt: entry.createdAt,
+      accessedAt: entry.accessedAt,
+      accessCount: entry.accessCount
+    };
+  }
+  /**
+   * Fire procedural rules matching the given context.
+   * Returns rules whose trigger keyword appears in the context.
+   */
+  fireProcedural(context) {
+    if (!this.layers) return [];
+    const triggered = this.layers.fireProcedural(context);
+    return triggered.map((entry) => ({
+      id: entry.id,
+      content: entry.content,
+      topics: entry.topics,
+      relevanceScore: entry.importance,
+      createdAt: entry.createdAt,
+      accessedAt: entry.accessedAt,
+      accessCount: entry.accessCount
+    }));
+  }
+  /**
+   * Get the temporal history of an entry — trace its supersession chain.
+   * Returns all versions from newest to oldest.
+   */
+  getTemporalHistory(entryId) {
+    if (!this.layers) return [];
+    const history = [];
+    let current = this.layers.get(entryId);
+    if (!current) return [];
+    while (current) {
+      history.push({
+        id: current.id,
+        content: current.content,
+        topics: current.topics,
+        relevanceScore: current.importance,
+        createdAt: current.createdAt,
+        accessedAt: current.accessedAt,
+        accessCount: current.accessCount
+      });
+      const nextId = current.supersededBy;
+      current = nextId ? this.layers.get(nextId) ?? null : null;
+    }
+    return history;
   }
   /**
    * Check if layers are enabled.

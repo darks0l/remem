@@ -257,6 +257,74 @@ export class ReMEM {
   }
 
   /**
+   * Store a procedural memory — a behavior/rule triggered by a keyword.
+   * Use when you learn a rule like "when X happens, always do Y".
+   */
+  storeProcedural(input: StoreMemoryInput, trigger: string): QueryResult | null {
+    if (!this.layers) {
+      this.enableLayers();
+    }
+    const entry = this.layers!.storeProcedural(input, trigger);
+    return {
+      id: entry.id,
+      content: entry.content,
+      topics: entry.topics,
+      relevanceScore: entry.importance,
+      createdAt: entry.createdAt,
+      accessedAt: entry.accessedAt,
+      accessCount: entry.accessCount,
+    };
+  }
+
+  /**
+   * Fire procedural rules matching the given context.
+   * Returns rules whose trigger keyword appears in the context.
+   */
+  fireProcedural(context: string): QueryResult[] {
+    if (!this.layers) return [];
+    const triggered = this.layers.fireProcedural(context);
+    return triggered.map((entry) => ({
+      id: entry.id,
+      content: entry.content,
+      topics: entry.topics,
+      relevanceScore: entry.importance,
+      createdAt: entry.createdAt,
+      accessedAt: entry.accessedAt,
+      accessCount: entry.accessCount,
+    }));
+  }
+
+  /**
+   * Get the temporal history of an entry — trace its supersession chain.
+   * Returns all versions from newest to oldest.
+   */
+  getTemporalHistory(entryId: string): QueryResult[] {
+    if (!this.layers) return [];
+
+    const history: QueryResult[] = [];
+    let current = this.layers.get(entryId);
+
+    if (!current) return [];
+
+    // Walk the supersession chain backward (newest to oldest)
+    while (current) {
+      history.push({
+        id: current.id,
+        content: current.content,
+        topics: current.topics,
+        relevanceScore: current.importance,
+        createdAt: current.createdAt,
+        accessedAt: current.accessedAt,
+        accessCount: current.accessCount,
+      });
+      const nextId: string | undefined = current.supersededBy;
+      current = nextId ? this.layers.get(nextId) ?? null : null;
+    }
+
+    return history;
+  }
+
+  /**
    * Check if layers are enabled.
    */
   isLayersEnabled(): boolean {

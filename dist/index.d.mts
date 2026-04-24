@@ -329,20 +329,20 @@ declare const rememConfigSchema: z.ZodObject<{
     dbPath?: string | undefined;
 }>;
 type ReMEMConfig = z.infer<typeof rememConfigSchema>;
-declare const eventTypeSchema: z.ZodEnum<["memory.stored", "memory.queried", "memory.accessed", "memory.forgotten", "snapshot.created", "snapshot.restored", "identity.constitution_updated", "identity.drift_detected", "identity.drift_correction_injected"]>;
+declare const eventTypeSchema: z.ZodEnum<["memory.stored", "memory.queried", "memory.accessed", "memory.forgotten", "memory.superseded", "snapshot.created", "snapshot.restored", "identity.constitution_updated", "identity.drift_detected", "identity.drift_correction_injected"]>;
 type EventType = z.infer<typeof eventTypeSchema>;
 declare const memoryEventSchema: z.ZodObject<{
     id: z.ZodString;
-    type: z.ZodEnum<["memory.stored", "memory.queried", "memory.accessed", "memory.forgotten", "snapshot.created", "snapshot.restored", "identity.constitution_updated", "identity.drift_detected", "identity.drift_correction_injected"]>;
+    type: z.ZodEnum<["memory.stored", "memory.queried", "memory.accessed", "memory.forgotten", "memory.superseded", "snapshot.created", "snapshot.restored", "identity.constitution_updated", "identity.drift_detected", "identity.drift_correction_injected"]>;
     timestamp: z.ZodNumber;
     payload: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }, "strip", z.ZodTypeAny, {
-    type: "memory.stored" | "memory.queried" | "memory.accessed" | "memory.forgotten" | "snapshot.created" | "snapshot.restored" | "identity.constitution_updated" | "identity.drift_detected" | "identity.drift_correction_injected";
+    type: "memory.stored" | "memory.queried" | "memory.accessed" | "memory.forgotten" | "memory.superseded" | "snapshot.created" | "snapshot.restored" | "identity.constitution_updated" | "identity.drift_detected" | "identity.drift_correction_injected";
     id: string;
     timestamp: number;
     payload: Record<string, unknown>;
 }, {
-    type: "memory.stored" | "memory.queried" | "memory.accessed" | "memory.forgotten" | "snapshot.created" | "snapshot.restored" | "identity.constitution_updated" | "identity.drift_detected" | "identity.drift_correction_injected";
+    type: "memory.stored" | "memory.queried" | "memory.accessed" | "memory.forgotten" | "memory.superseded" | "snapshot.created" | "snapshot.restored" | "identity.constitution_updated" | "identity.drift_detected" | "identity.drift_correction_injected";
     id: string;
     timestamp: number;
     payload: Record<string, unknown>;
@@ -664,7 +664,7 @@ declare const identityConfigSchema: z.ZodObject<{
     } | undefined;
 }>;
 type IdentityConfig = z.infer<typeof identityConfigSchema>;
-declare const memoryLayerSchema: z.ZodEnum<["episodic", "semantic", "identity"]>;
+declare const memoryLayerSchema: z.ZodEnum<["episodic", "semantic", "identity", "procedural"]>;
 type MemoryLayer = z.infer<typeof memoryLayerSchema>;
 declare const layerConfigSchema: z.ZodObject<{
     episodic: z.ZodObject<{
@@ -684,14 +684,20 @@ declare const layerConfigSchema: z.ZodObject<{
         ttlMs: z.ZodDefault<z.ZodNumber>;
         maxEntries: z.ZodDefault<z.ZodNumber>;
         weight: z.ZodDefault<z.ZodNumber>;
+        selfEdit: z.ZodDefault<z.ZodBoolean>;
+        temporalValidity: z.ZodDefault<z.ZodBoolean>;
     }, "strip", z.ZodTypeAny, {
         weight: number;
         ttlMs: number;
         maxEntries: number;
+        selfEdit: boolean;
+        temporalValidity: boolean;
     }, {
         weight?: number | undefined;
         ttlMs?: number | undefined;
         maxEntries?: number | undefined;
+        selfEdit?: boolean | undefined;
+        temporalValidity?: boolean | undefined;
     }>;
     identity: z.ZodObject<{
         ttlMs: z.ZodDefault<z.ZodNumber>;
@@ -706,6 +712,22 @@ declare const layerConfigSchema: z.ZodObject<{
         ttlMs?: number | undefined;
         maxEntries?: number | undefined;
     }>;
+    procedural: z.ZodObject<{
+        ttlMs: z.ZodDefault<z.ZodNumber>;
+        maxEntries: z.ZodDefault<z.ZodNumber>;
+        weight: z.ZodDefault<z.ZodNumber>;
+        trigger: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        weight: number;
+        ttlMs: number;
+        maxEntries: number;
+        trigger?: string | undefined;
+    }, {
+        weight?: number | undefined;
+        ttlMs?: number | undefined;
+        maxEntries?: number | undefined;
+        trigger?: string | undefined;
+    }>;
 }, "strip", z.ZodTypeAny, {
     episodic: {
         weight: number;
@@ -716,11 +738,19 @@ declare const layerConfigSchema: z.ZodObject<{
         weight: number;
         ttlMs: number;
         maxEntries: number;
+        selfEdit: boolean;
+        temporalValidity: boolean;
     };
     identity: {
         weight: number;
         ttlMs: number;
         maxEntries: number;
+    };
+    procedural: {
+        weight: number;
+        ttlMs: number;
+        maxEntries: number;
+        trigger?: string | undefined;
     };
 }, {
     episodic: {
@@ -732,11 +762,19 @@ declare const layerConfigSchema: z.ZodObject<{
         weight?: number | undefined;
         ttlMs?: number | undefined;
         maxEntries?: number | undefined;
+        selfEdit?: boolean | undefined;
+        temporalValidity?: boolean | undefined;
     };
     identity: {
         weight?: number | undefined;
         ttlMs?: number | undefined;
         maxEntries?: number | undefined;
+    };
+    procedural: {
+        weight?: number | undefined;
+        ttlMs?: number | undefined;
+        maxEntries?: number | undefined;
+        trigger?: string | undefined;
     };
 }>;
 type LayerConfig = z.infer<typeof layerConfigSchema>;
@@ -749,9 +787,13 @@ declare const layeredMemoryEntrySchema: z.ZodObject<{
     accessedAt: z.ZodNumber;
     accessCount: z.ZodDefault<z.ZodNumber>;
 } & {
-    layer: z.ZodDefault<z.ZodEnum<["episodic", "semantic", "identity"]>>;
+    layer: z.ZodDefault<z.ZodEnum<["episodic", "semantic", "identity", "procedural"]>>;
     expiresAt: z.ZodOptional<z.ZodNumber>;
     importance: z.ZodDefault<z.ZodNumber>;
+    validFrom: z.ZodOptional<z.ZodNumber>;
+    validUntil: z.ZodOptional<z.ZodNumber>;
+    supersedes: z.ZodOptional<z.ZodString>;
+    supersededBy: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     content: string;
     topics: string[];
@@ -760,9 +802,13 @@ declare const layeredMemoryEntrySchema: z.ZodObject<{
     createdAt: number;
     accessedAt: number;
     accessCount: number;
-    layer: "episodic" | "semantic" | "identity";
+    layer: "episodic" | "semantic" | "identity" | "procedural";
     importance: number;
     expiresAt?: number | undefined;
+    validFrom?: number | undefined;
+    validUntil?: number | undefined;
+    supersedes?: string | undefined;
+    supersededBy?: string | undefined;
 }, {
     content: string;
     id: string;
@@ -771,9 +817,13 @@ declare const layeredMemoryEntrySchema: z.ZodObject<{
     topics?: string[] | undefined;
     metadata?: Record<string, unknown> | undefined;
     accessCount?: number | undefined;
-    layer?: "episodic" | "semantic" | "identity" | undefined;
+    layer?: "episodic" | "semantic" | "identity" | "procedural" | undefined;
     expiresAt?: number | undefined;
     importance?: number | undefined;
+    validFrom?: number | undefined;
+    validUntil?: number | undefined;
+    supersedes?: string | undefined;
+    supersededBy?: string | undefined;
 }>;
 type LayeredMemoryEntry = z.infer<typeof layeredMemoryEntrySchema>;
 declare const driftEventSchema: z.ZodObject<{
@@ -921,10 +971,17 @@ declare class ModelAbstraction {
 
 /**
  * ReMEM — Hierarchical Memory Layers
- * Episodic / Semantic / Identity with TTL-based eviction and weighted retrieval
+ * Episodic / Semantic / Identity / Procedural
+ * with TTL-based eviction, weighted retrieval, temporal validity, and self-edit
  */
 
 declare const DEFAULT_LAYER_CONFIG: Required<LayerConfig>;
+interface SupersessionResult {
+    superseded: boolean;
+    supersededEntryId?: string;
+    newEntry?: LayeredMemoryEntry;
+    reason?: string;
+}
 declare class LayerManager {
     private entries;
     private config;
@@ -932,8 +989,26 @@ declare class LayerManager {
     /**
      * Store an entry in the appropriate layer.
      * If layer is not specified, auto-assigns based on topics and content.
+     * For semantic layer with selfEdit=true, detects contradictions and auto-supersedes.
      */
     store(input: StoreMemoryInput, layer?: MemoryLayer): LayeredMemoryEntry;
+    /**
+     * Check if new input should supersede an existing semantic entry.
+     * Detects contradictions by keyword negation patterns.
+     */
+    private checkSupersession;
+    /**
+     * Store a procedural memory — a triggered behavior/rule.
+     * trigger: keyword/pattern that fires this rule
+     * condition: when this text appears in context
+     * action: what to do when triggered
+     */
+    storeProcedural(input: StoreMemoryInput, trigger: string): LayeredMemoryEntry;
+    /**
+     * Fire procedural rules matching the given context text.
+     * Returns rules whose trigger keyword appears in the context.
+     */
+    fireProcedural(context: string): LayeredMemoryEntry[];
     /**
      * Get an entry by ID.
      */
@@ -1236,6 +1311,21 @@ declare class ReMEM {
      */
     evictExpiredLayers(): number;
     /**
+     * Store a procedural memory — a behavior/rule triggered by a keyword.
+     * Use when you learn a rule like "when X happens, always do Y".
+     */
+    storeProcedural(input: StoreMemoryInput, trigger: string): QueryResult | null;
+    /**
+     * Fire procedural rules matching the given context.
+     * Returns rules whose trigger keyword appears in the context.
+     */
+    fireProcedural(context: string): QueryResult[];
+    /**
+     * Get the temporal history of an entry — trace its supersession chain.
+     * Returns all versions from newest to oldest.
+     */
+    getTemporalHistory(entryId: string): QueryResult[];
+    /**
      * Check if layers are enabled.
      */
     isLayersEnabled(): boolean;
@@ -1253,4 +1343,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type EventType, type IdentityCategory, type IdentityConfig, type IdentitySystem, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryStore, ModelAbstraction, type ModelConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMConfig, type StoreMemoryInput, constitutionSchema, constitutionStatementSchema, createIdentitySystem, driftEventSchema, driftResultSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema };
+export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type EventType, type IdentityCategory, type IdentityConfig, type IdentitySystem, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryStore, ModelAbstraction, type ModelConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMConfig, type StoreMemoryInput, type SupersessionResult, constitutionSchema, constitutionStatementSchema, createIdentitySystem, driftEventSchema, driftResultSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema };

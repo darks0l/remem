@@ -140,6 +140,7 @@ export const eventTypeSchema = z.enum([
   'memory.queried',
   'memory.accessed',
   'memory.forgotten',
+  'memory.superseded',
   'snapshot.created',
   'snapshot.restored',
   'identity.constitution_updated',
@@ -209,7 +210,7 @@ export type IdentityConfig = z.infer<typeof identityConfigSchema>;
 // Hierarchical Memory Layer Types
 // ============================================================================
 
-export const memoryLayerSchema = z.enum(['episodic', 'semantic', 'identity']);
+export const memoryLayerSchema = z.enum(['episodic', 'semantic', 'identity', 'procedural']);
 export type MemoryLayer = z.infer<typeof memoryLayerSchema>;
 
 export const layerConfigSchema = z.object({
@@ -222,11 +223,20 @@ export const layerConfigSchema = z.object({
     ttlMs: z.number().default(604_800_000),  // 7 days
     maxEntries: z.number().default(5000),
     weight: z.number().default(0.3),
+    // Temporal self-edit options
+    selfEdit: z.boolean().default(false),    // auto-supersede conflicting entries
+    temporalValidity: z.boolean().default(true), // track validFrom/validUntil
   }),
   identity: z.object({
     ttlMs: z.number().default(2_592_000_000), // 30 days
     maxEntries: z.number().default(500),
     weight: z.number().default(0.5),
+  }),
+  procedural: z.object({
+    ttlMs: z.number().default(2_592_000_000), // 30 days (long-term rules)
+    maxEntries: z.number().default(500),
+    weight: z.number().default(0.4),
+    trigger: z.string().optional(),            // keyword that fires this rule
   }),
 });
 
@@ -237,6 +247,12 @@ export const layeredMemoryEntrySchema = memoryEntrySchema.extend({
   layer: memoryLayerSchema.default('episodic'),
   expiresAt: z.number().optional(),
   importance: z.number().min(0).max(1).default(0.5),
+  // Temporal validity (semantic layer)
+  validFrom: z.number().optional(),  // when this fact became true
+  validUntil: z.number().optional(), // when this fact stopped being true (null = still valid)
+  // Self-edit supersession chain
+  supersedes: z.string().optional(),  // id of the entry this one supersedes (older version)
+  supersededBy: z.string().optional(), // id of the entry that supersedes this one
 });
 
 export type LayeredMemoryEntry = z.infer<typeof layeredMemoryEntrySchema>;
