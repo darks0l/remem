@@ -4,6 +4,24 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.5.0] — 2026-04-25
+
+### Added
+
+- **`EpisodicCapturePipeline`** — dedicated automatic event capture for the episodic memory layer:
+  - `capture(event)` / `captureBatch(events)` — buffer events with importance scoring
+  - `start()` / `stop()` — manage flush interval (default 1s interval, configurable)
+  - **Importance scoring** — type-based base scores (decisions=0.9, goal.achieved=0.95, errors=0.7, etc.) + keyword boosting/reduction + content length factors
+  - **Deduplication** — suppresses rapid identical events (2s window, configurable). `noDedup=true` bypasses
+  - **Topic extraction** — auto-extracts topics from event type prefix, semantic keywords, and `#hashtags` in content
+  - **Batch flushing** — buffers up to 50 events (configurable) before forced flush, or interval-based
+  - **Stats** — `getStats()` returns eventCount, droppedCount, bufferSize, started state
+  - 24 new tests covering all capture pipeline features
+
+### Changed
+
+- **Test suite expanded** — from 16/16 to 40/40 passing (24 new episodic capture tests)
+
 ## [0.4.1] — 2026-04-25
 
 ### Added
