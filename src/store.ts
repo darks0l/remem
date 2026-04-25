@@ -304,6 +304,31 @@ export class MemoryStore {
     return { results, totalAvailable };
   }
 
+  /**
+   * Get all memory entries (no text filter, ignores limit).
+   * Used internally by the duplication/export feature.
+   */
+  async getAllEntries(): Promise<QueryResult[]> {
+    this.ensureInitialized();
+
+    const result = this.db!.exec('SELECT * FROM memory ORDER BY created_at DESC');
+
+    if (result.length === 0) return [];
+
+    return result[0].values.map((v: unknown[]) => {
+      const entry = memoryEntrySchema.parse(this.rowToObject(result[0].columns, v));
+      return {
+        id: entry.id,
+        content: entry.content,
+        topics: entry.topics,
+        relevanceScore: 0,
+        createdAt: entry.createdAt,
+        accessedAt: entry.accessedAt,
+        accessCount: entry.accessCount,
+      };
+    });
+  }
+
   async getRecent(n: number = 10): Promise<QueryResult[]> {
     this.ensureInitialized();
 

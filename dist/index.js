@@ -39,15 +39,23 @@ __export(index_exports, {
   ModelAbstraction: () => ModelAbstraction,
   QueryEngine: () => QueryEngine,
   ReMEM: () => ReMEM,
+  buildIdentityPackage: () => buildIdentityPackage,
   constitutionSchema: () => constitutionSchema,
   constitutionStatementSchema: () => constitutionStatementSchema,
   createIdentitySystem: () => createIdentitySystem,
+  downloadPackage: () => downloadPackage,
   driftEventSchema: () => driftEventSchema,
   driftResultSchema: () => driftResultSchema,
+  duplicate: () => duplicate,
+  duplicationConfigSchema: () => duplicationConfigSchema,
   embeddingConfigSchema: () => embeddingConfigSchema,
   eventTypeSchema: () => eventTypeSchema,
   identityCategorySchema: () => identityCategorySchema,
   identityConfigSchema: () => identityConfigSchema,
+  identityPackageSchema: () => identityPackageSchema,
+  infect: () => infect,
+  infectFromServer: () => infectFromServer,
+  infectionConfigSchema: () => infectionConfigSchema,
   layerConfigSchema: () => layerConfigSchema,
   layeredMemoryEntrySchema: () => layeredMemoryEntrySchema,
   memoryEntrySchema: () => memoryEntrySchema,
@@ -58,7 +66,8 @@ __export(index_exports, {
   queryResponseSchema: () => queryResponseSchema,
   queryResultSchema: () => queryResultSchema,
   rememConfigSchema: () => rememConfigSchema,
-  storeMemoryInputSchema: () => storeMemoryInputSchema
+  storeMemoryInputSchema: () => storeMemoryInputSchema,
+  uploadPackage: () => uploadPackage
 });
 module.exports = __toCommonJS(index_exports);
 
@@ -254,6 +263,59 @@ var driftEventSchema = import_zod.z.object({
   driftResult: driftResultSchema,
   correctionInjected: import_zod.z.boolean().default(false),
   correctionText: import_zod.z.string().optional()
+});
+var identityPackageSchema = import_zod.z.object({
+  version: import_zod.z.string().default("1.0"),
+  agentId: import_zod.z.string().optional(),
+  userId: import_zod.z.string().optional(),
+  exportedAt: import_zod.z.number(),
+  constitution: import_zod.z.object({
+    statements: import_zod.z.array(constitutionStatementSchema),
+    version: import_zod.z.string().default("1.0"),
+    createdAt: import_zod.z.number(),
+    updatedAt: import_zod.z.number()
+  }),
+  memories: import_zod.z.array(layeredMemoryEntrySchema),
+  soul: import_zod.z.object({
+    content: import_zod.z.string(),
+    source: import_zod.z.string().optional()
+  }).optional(),
+  identity: import_zod.z.object({
+    content: import_zod.z.string(),
+    source: import_zod.z.string().optional()
+  }).optional(),
+  metadata: import_zod.z.record(import_zod.z.unknown()).default({})
+});
+var duplicationConfigSchema = import_zod.z.object({
+  /** DARKSOL server URL (e.g. https://api.darksol.net) */
+  serverUrl: import_zod.z.string().url(),
+  /** API key for the server */
+  apiKey: import_zod.z.string().min(1),
+  /** Include SOUL.md content in export */
+  includeSoul: import_zod.z.boolean().default(true),
+  /** Include IDENTITY.md content in export */
+  includeIdentity: import_zod.z.boolean().default(true),
+  /** Include all memory layers in export */
+  includeAllLayers: import_zod.z.boolean().default(true),
+  /** Only include specific layers */
+  layers: import_zod.z.array(memoryLayerSchema).optional(),
+  /** Custom agent/user ID for scoping */
+  agentId: import_zod.z.string().optional(),
+  userId: import_zod.z.string().optional()
+});
+var infectionConfigSchema = import_zod.z.object({
+  /** DARKSOL server URL */
+  serverUrl: import_zod.z.string().url(),
+  /** API key for the server */
+  apiKey: import_zod.z.string().min(1),
+  /** Source agent ID to infect FROM (optional — defaults to user\'s primary) */
+  sourceAgentId: import_zod.z.string().optional(),
+  /** Identity package version to pull (optional — defaults to latest) */
+  version: import_zod.z.string().optional(),
+  /** Auto-refresh interval in ms (0 = no auto-refresh) */
+  refreshIntervalMs: import_zod.z.number().default(0),
+  /** Layers to apply from the package */
+  layers: import_zod.z.array(import_zod.z.enum(["identity", "semantic", "procedural"])).default(["identity"])
 });
 
 // src/embeddings.ts
@@ -579,6 +641,27 @@ var MemoryStore = class {
     });
     this.logEvent("memory.queried", { text, options: opts, resultCount: results.length });
     return { results, totalAvailable };
+  }
+  /**
+   * Get all memory entries (no text filter, ignores limit).
+   * Used internally by the duplication/export feature.
+   */
+  async getAllEntries() {
+    this.ensureInitialized();
+    const result = this.db.exec("SELECT * FROM memory ORDER BY created_at DESC");
+    if (result.length === 0) return [];
+    return result[0].values.map((v) => {
+      const entry = memoryEntrySchema.parse(this.rowToObject(result[0].columns, v));
+      return {
+        id: entry.id,
+        content: entry.content,
+        topics: entry.topics,
+        relevanceScore: 0,
+        createdAt: entry.createdAt,
+        accessedAt: entry.accessedAt,
+        accessCount: entry.accessCount
+      };
+    });
   }
   async getRecent(n = 10) {
     this.ensureInitialized();
@@ -1901,6 +1984,22 @@ var LayerManager = class {
     return entry;
   }
   /**
+   * Get all entries across all layers.
+   * Used for duplication/export — returns all non-expired entries.
+   */
+  getAllEntries() {
+    const now = Date.now();
+    const result = [];
+    for (const entry of this.entries.values()) {
+      if (entry.expiresAt && now > entry.expiresAt) {
+        this.entries.delete(entry.id);
+        continue;
+      }
+      result.push(entry);
+    }
+    return result;
+  }
+  /**
    * Query across all layers with weighted retrieval.
    * Entries from higher-weight layers rank higher, but content match still matters.
    */
@@ -2093,6 +2192,167 @@ var LayerManager = class {
     return matches / Math.max(terms.length, 1);
   }
 };
+
+// src/duplicate.ts
+async function buildIdentityPackage(params) {
+  const { store, layers, identity, soulText, identityText, config } = params;
+  const statements = identity ? identity.constitution.getStatements() : [];
+  const memories = [];
+  if (config.includeAllLayers && layers) {
+    const allEntries = layers.getAllEntries();
+    const layerFilter = config.layers;
+    for (const entry of allEntries) {
+      if (layerFilter && !layerFilter.includes(entry.layer)) continue;
+      memories.push(entry);
+    }
+  } else if (!layers) {
+    const rawMemories = await store.getAllEntries();
+    for (const m of rawMemories) {
+      memories.push({
+        id: m.id,
+        content: m.content,
+        topics: m.topics,
+        metadata: {},
+        createdAt: m.createdAt,
+        accessedAt: m.accessedAt,
+        accessCount: m.accessCount,
+        layer: "episodic",
+        importance: 0.5
+      });
+    }
+  }
+  const pkg = {
+    version: "1.0",
+    agentId: config.agentId,
+    userId: config.userId,
+    exportedAt: Date.now(),
+    constitution: {
+      statements,
+      version: "1.0",
+      createdAt: statements[0]?.createdAt ?? Date.now(),
+      updatedAt: Date.now()
+    },
+    memories,
+    soul: config.includeSoul && soulText ? { content: soulText, source: "SOUL.md" } : void 0,
+    identity: config.includeIdentity && identityText ? { content: identityText, source: "IDENTITY.md" } : void 0,
+    metadata: {
+      exportedBy: "ReMEM v0.3.3",
+      layerCount: memories.length,
+      statementCount: statements.length
+    }
+  };
+  return identityPackageSchema.parse(pkg);
+}
+async function uploadPackage(pkg, config) {
+  const response = await fetch(`${config.serverUrl}/api/identity/upload`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(pkg)
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Server rejected identity package: ${response.status} ${response.statusText}`
+    );
+  }
+  const json = await response.json();
+  return {
+    uploadUrl: json.uploadUrl ?? `${config.serverUrl}/api/identity/${pkg.agentId ?? "unknown"}`,
+    response: json.response ?? json
+  };
+}
+async function duplicate(params) {
+  const pkg = await buildIdentityPackage(params);
+  const serverResult = await uploadPackage(pkg, params.config);
+  const encoder = new TextEncoder();
+  const packageSizeBytes = encoder.encode(JSON.stringify(pkg)).length;
+  return {
+    packageSizeBytes,
+    memoryCount: pkg.memories.length,
+    constitutionStatements: pkg.constitution.statements.length,
+    exportedAt: pkg.exportedAt,
+    serverUploadUrl: serverResult.uploadUrl,
+    serverUploadResponse: serverResult.response
+  };
+}
+async function downloadPackage(config) {
+  const url = `${config.serverUrl}/api/identity/${config.sourceAgentId ?? "latest"}${config.version ? `?version=${config.version}` : ""}`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`
+    }
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch identity package: ${response.status} ${response.statusText}`
+    );
+  }
+  const json = await response.json();
+  return identityPackageSchema.parse(json);
+}
+async function infect(params) {
+  const { store, layers, identity, pkg, config } = params;
+  if (identity) {
+    for (const statement of pkg.constitution.statements) {
+      const existing = identity.constitution.getStatements().find(
+        (s) => s.id === statement.id
+      );
+      if (!existing) {
+        identity.constitution.addStatement(
+          statement.text,
+          statement.category,
+          statement.weight
+        );
+      }
+    }
+  }
+  const memoriesLoaded = [];
+  const layerFilter = config.layers;
+  for (const entry of pkg.memories) {
+    if (!layerFilter.includes(entry.layer)) {
+      continue;
+    }
+    if (layers) {
+      const stored = layers.store(
+        {
+          content: entry.content,
+          topics: entry.topics,
+          metadata: entry.metadata
+        },
+        entry.layer
+      );
+      await store.persistLayerEntry(stored, {
+        agentId: pkg.agentId,
+        userId: pkg.userId
+      });
+      memoriesLoaded.push(stored);
+    } else {
+      await store.store(
+        {
+          content: entry.content,
+          topics: entry.topics,
+          metadata: entry.metadata
+        },
+        { agentId: pkg.agentId, userId: pkg.userId }
+      );
+      memoriesLoaded.push(entry);
+    }
+  }
+  return {
+    packageVersion: pkg.version,
+    statementsLoaded: pkg.constitution.statements.length,
+    memoriesLoaded: memoriesLoaded.length,
+    layersApplied: config.layers,
+    infectedAt: Date.now(),
+    liveConnection: true
+  };
+}
+async function infectFromServer(params) {
+  const pkg = await downloadPackage(params.config);
+  return infect({ ...params, pkg });
+}
 
 // src/index.ts
 var ReMEM = class {
@@ -2485,6 +2745,106 @@ var ReMEM = class {
   async deleteSnapshot(snapshotId) {
     return this._store.deleteSnapshot(snapshotId);
   }
+  // ─── Identity Duplication & Infection ──────────────────────────────────────
+  /**
+   * Export and upload the agent's identity package to DARKSOL server.
+   * This backs up all memories, constitution statements, and optionally
+   * SOUL/IDENTITY text to the DARKSOL cloud.
+   *
+   * Usage:
+   * ```
+   * const result = await memory.duplicate({
+   *   serverUrl: 'https://api.darksol.net',
+   *   apiKey: 'your-api-key',
+   *   soulText: soulMdContent,
+   *   identityText: identityMdContent,
+   * });
+   * console.log(`Uploaded ${result.memoryCount} memories`);
+   * ```
+   */
+  async duplicate(config) {
+    return duplicate({
+      store: this._store,
+      layers: this.layers,
+      identity: this.identity,
+      soulText: config.soulText,
+      identityText: config.identityText,
+      config: {
+        serverUrl: config.serverUrl,
+        apiKey: config.apiKey,
+        includeSoul: config.includeSoul ?? true,
+        includeIdentity: config.includeIdentity ?? true,
+        includeAllLayers: config.includeAllLayers ?? true,
+        layers: config.layers,
+        agentId: this._agentId,
+        userId: this._userId
+      }
+    });
+  }
+  /**
+   * Build an identity package locally without uploading.
+   * Useful for previewing what would be exported.
+   */
+  async buildIdentityPackageLocal(config) {
+    return buildIdentityPackage({
+      store: this._store,
+      layers: this.layers,
+      identity: this.identity,
+      soulText: config.soulText,
+      identityText: config.identityText,
+      config: {
+        serverUrl: "http://localhost",
+        // not used for local build
+        apiKey: "local-only",
+        includeSoul: config.includeSoul ?? true,
+        includeIdentity: config.includeIdentity ?? true,
+        includeAllLayers: config.includeAllLayers ?? true,
+        layers: config.layers,
+        agentId: this._agentId,
+        userId: this._userId
+      }
+    });
+  }
+  /**
+   * Pull an identity package from DARKSOL server and infect this ReMEM instance.
+   * Requires live connection — if the server is unreachable, throws.
+   * Infected agents gain the source identity's constitution and memories.
+   *
+   * Usage:
+   * ```
+   * const result = await memory.infect({
+   *   serverUrl: 'https://api.darksol.net',
+   *   apiKey: 'your-api-key',
+   *   layers: ['identity', 'procedural'],
+   * });
+   * ```
+   */
+  async infect(config) {
+    return infectFromServer({
+      store: this._store,
+      layers: this.layers,
+      identity: this.identity,
+      config: {
+        serverUrl: config.serverUrl,
+        apiKey: config.apiKey,
+        sourceAgentId: config.sourceAgentId,
+        version: config.version,
+        refreshIntervalMs: config.refreshIntervalMs ?? 0,
+        layers: config.layers ?? ["identity"]
+      }
+    });
+  }
+  /**
+   * Download identity package without applying it (preview).
+   */
+  async fetchIdentityPackage(config) {
+    return downloadPackage({
+      serverUrl: config.serverUrl,
+      apiKey: config.apiKey,
+      sourceAgentId: config.sourceAgentId,
+      version: config.version
+    });
+  }
   // ─── Utilities ───────────────────────────────────────────────────────────
   /**
    * Get the underlying MemoryStore for advanced operations.
@@ -2516,15 +2876,23 @@ var ReMEM = class {
   ModelAbstraction,
   QueryEngine,
   ReMEM,
+  buildIdentityPackage,
   constitutionSchema,
   constitutionStatementSchema,
   createIdentitySystem,
+  downloadPackage,
   driftEventSchema,
   driftResultSchema,
+  duplicate,
+  duplicationConfigSchema,
   embeddingConfigSchema,
   eventTypeSchema,
   identityCategorySchema,
   identityConfigSchema,
+  identityPackageSchema,
+  infect,
+  infectFromServer,
+  infectionConfigSchema,
   layerConfigSchema,
   layeredMemoryEntrySchema,
   memoryEntrySchema,
@@ -2535,5 +2903,6 @@ var ReMEM = class {
   queryResponseSchema,
   queryResultSchema,
   rememConfigSchema,
-  storeMemoryInputSchema
+  storeMemoryInputSchema,
+  uploadPackage
 });

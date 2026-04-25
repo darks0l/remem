@@ -1,4 +1,4 @@
-# ReMEM — Recursive Memory for AI Agents
+# ReMEM - Recursive Memory for AI Agents
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darks0l/remem/main/assets/darksol-banner.png" alt="DARKSOL" width="800"/>
@@ -9,15 +9,15 @@
 [![npm version](https://img.shields.io/npm/v/@darksol/remem?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.npmjs.com/package/@darksol/remem)
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
-[![Test Status](https://img.shields.io/badge/tests-7%2F7%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
+[![Test Status](https://img.shields.io/badge/tests-16%2F16%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
 
 </p>
 
-> ⚠️ **IN TESTING** — This project is under active development. API surface may change.
+> ⚠️ **IN TESTING** - This project is under active development. API surface may change.
 
 **Recursively extend any LLM's context window by treating memory as an external, queryable environment.**
 
-ReMEM is a lightweight, framework-agnostic memory substrate for AI agents. It applies the core insight from [Recursive Language Models (RLMs)](https://arxiv.org/pdf/2512.24601) — that prompts should be external environment variables, not direct context — to the problem of persistent, queryable agent memory.
+ReMEM is a lightweight, framework-agnostic memory substrate for AI agents. It applies the core insight from [Recursive Language Models (RLMs)](https://arxiv.org/pdf/2512.24601) - that prompts should be external environment variables, not direct context - to the problem of persistent, queryable agent memory.
 
 Built with TypeScript. Runs anywhere.
 
@@ -29,15 +29,16 @@ LLMs are limited by their context window. Retrieval-Augmented Generation (RAG) h
 
 ReMEM does something different:
 
-- **A proper memory store** — SQLite-backed, event-sourced, with atomic crash-safe writes
-- **Semantic search with vector embeddings** — cosine similarity via Ollama (`nomic-embed-text`), falls back to keyword + access_count scoring
-- **Persistent hierarchical layers** — episodic, semantic, identity, and procedural tiers that survive restarts
-- **An LLM-native query interface** — Describe what you want in plain English; the query engine recursively refines
-- **Temporal validity** — Tracks when facts were true, not just that they exist. Auto-supersedes outdated information
-- **Snapshot/restore** — Full memory snapshots for long-running agents. Survive restarts, migrations, and crashes
-- **Multi-agent scoping** — agent_id + user_id isolation for shared deployments
-- **Plug-and-play LLM abstraction** — Bankr, OpenAI, Anthropic, Ollama — swap without changing your code
-- **Framework-agnostic** — Works as a library (Node.js/Deno), CLI tool, or HTTP microservice
+- **A proper memory store** - SQLite-backed, event-sourced, with atomic crash-safe writes
+- **Semantic search with vector embeddings** - cosine similarity via Ollama (`nomic-embed-text`), falls back to keyword + access_count scoring
+- **Persistent hierarchical layers** - episodic, semantic, identity, and procedural tiers that survive restarts
+- **An LLM-native query interface** - Describe what you want in plain English; the query engine recursively refines
+- **Temporal validity** - Tracks when facts were true, not just that they exist. Auto-supersedes outdated information
+- **Snapshot/restore** - Full memory snapshots for long-running agents. Survive restarts, migrations, and crashes
+- **Identity duplication & infection** (v0.3.3) - Export full identity package to DARKSOL server, pull and overlay on any ReMEM-equipped agent
+- **Multi-agent scoping** - agent_id + user_id isolation for shared deployments
+- **Plug-and-play LLM abstraction** - Bankr, OpenAI, Anthropic, Ollama - swap without changing your code
+- **Framework-agnostic** - Works as a library (Node.js/Deno), CLI tool, or HTTP microservice
 
 ---
 
@@ -86,14 +87,14 @@ const triggered = memory.fireProcedural('User is asking about Solana DeFi');
 // → ["Always check Raydium pools for Solana DeFi"]
 ```
 
-### For Long-Running Agents (1–3 year lifespan)
+### For Long-Running Agents (1-3 year lifespan)
 
 ```typescript
 // Take a snapshot before shutdown/restart
 const snap = await memory.createSnapshot('pre-deploy-v1');
 console.log(`Snapshot ${snap.id}: ${snap.memoryCount} memories saved`);
 
-// On restart — restore from snapshot
+// On restart - restore from snapshot
 await memory.init(); // loads persisted layer state
 const restored = await memory.restoreSnapshot(snap.id);
 console.log(`Restored ${restored} entries`);
@@ -101,6 +102,45 @@ console.log(`Restored ${restored} entries`);
 // Or list available snapshots
 const snapshots = await memory.listSnapshots();
 ```
+
+### Identity Duplication & Infection (v0.3.3)
+
+**Duplication** backs up your agent's full identity to DARKSOL's server:
+
+```typescript
+// Backup identity to DARKSOL server
+const result = await memory.duplicate({
+  serverUrl: 'https://api.darksol.net',
+  apiKey: 'your-api-key',
+  soulText: soulMdContent,        // optional
+  identityText: identityMdContent, // optional
+});
+console.log(`Uploaded ${result.memoryCount} memories, ${result.constitutionStatements} identity statements`);
+
+// Or just build the package locally (no upload)
+const pkg = await memory.buildIdentityPackageLocal({
+  soulText: soulMdContent,
+  identityText: identityMdContent,
+});
+```
+
+**Infection** pulls an identity package from DARKSOL server and overlays it on the target agent. Requires live connection:
+
+```typescript
+// Pull and apply identity from DARKSOL server
+const result = await memory.infect({
+  serverUrl: 'https://api.darksol.net',
+  apiKey: 'your-api-key',
+  layers: ['identity', 'procedural'], // what to apply
+});
+console.log(`Infected with ${result.statementsLoaded} identity statements`);
+```
+
+The infection model:
+- **Consent**: Implied by skill installation (skill needs DB connection to function)
+- **Scope**: Full Darksol behavioral overlay
+- **Persistence**: Live connection required — cut the connection = overlay stops
+- **Propagation**: Infected agents call home to DARKSOL server
 
 ---
 
@@ -127,6 +167,7 @@ const snapshots = await memory.listSnapshots();
 │    │     ├─> identity: 30d TTL, weight 0.5                 │
 │    │     └─> procedural: 30d TTL, weight 0.4               │
 │    ├─> IdentitySystem (ConstitutionManager + DriftDetector) │
+│    └─> DuplicateModule (IdentityPackage export/import, v0.3.3) │
 │    └─> HttpAdapter (optional HTTP microservice)              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -148,16 +189,16 @@ ReMEM maintains four weighted retrieval layers. Each entry gets a weighted score
 | **Identity** | 30 days | 0.5 | Core identity signals and values |
 | **Procedural** | 30 days | 0.4 | Learned behaviors and triggered rules |
 
-All layers are persisted to SQLite — they survive restarts.
+All layers are persisted to SQLite - they survive restarts.
 
 ### Temporal Validity (Semantic Layer)
 
-Semantic layer entries carry `validFrom`/`validUntil` timestamps. When you correct a fact, the old entry is marked as superseded with a `validUntil` — ReMEM tracks the full history.
+Semantic layer entries carry `validFrom`/`validUntil` timestamps. When you correct a fact, the old entry is marked as superseded with a `validUntil` - ReMEM tracks the full history.
 
 ```typescript
 memory.enableLayers({ semantic: { selfEdit: true, temporalValidity: true } });
 
-// Store an update — old "dark mode" fact gets superseded
+// Store an update - old "dark mode" fact gets superseded
 await memory.storeInLayer(
   { content: 'Meta prefers light mode now', topics: ['preferences'] },
   'semantic'
@@ -170,7 +211,7 @@ const { results } = memory.queryLayers('Meta UI preferences');
 
 ### Snapshot/Restore (Long-Running Agents)
 
-For agents with a 1–3 year lifespan, snapshots provide crash recovery and migration safety:
+For agents with a 1-3 year lifespan, snapshots provide crash recovery and migration safety:
 
 ```typescript
 // Before shutdown
@@ -187,7 +228,7 @@ const snapshots = await memory.listSnapshots();
 
 ### Semantic Search with Vector Embeddings
 
-Enable Ollama-powered vector embeddings for semantic memory search — cosine similarity instead of fragile keyword matching:
+Enable Ollama-powered vector embeddings for semantic memory search - cosine similarity instead of fragile keyword matching:
 
 ```typescript
 const memory = new ReMEM({
@@ -202,13 +243,13 @@ const memory = new ReMEM({
 
 await memory.init();
 
-// Store — embedding is computed async in background
+// Store - embedding is computed async in background
 await memory.store({
   content: 'Meta prefers dark mode UI and vibe-based communication',
   topics: ['preferences', 'ui'],
 });
 
-// Query — uses cosine similarity when embeddings exist, falls back to keyword
+// Query - uses cosine similarity when embeddings exist, falls back to keyword
 const { results } = await memory.query('what UI style does Meta like?');
 // → semantic match: "Meta prefers dark mode UI and vibe-based communication"
 ```
@@ -300,7 +341,7 @@ await memory.getStore().forget(entryId)
 ### Layers
 
 ```typescript
-await memory.enableLayers(config?)  // async — restores persisted entries
+await memory.enableLayers(config?)  // async - restores persisted entries
 
 await memory.storeInLayer(input, 'semantic')   // async
 await memory.storeProcedural(input, trigger)    // async
@@ -417,25 +458,25 @@ const memory = new ReMEM({ llm: { type: 'ollama', baseUrl: 'http://localhost:114
 
 ## Storage Details
 
-- **SQLite via sql.js** — WebAssembly-compiled SQLite. No native binaries. Cross-platform by default.
-- **Atomic writes** — Data written to `.tmp` then renamed. Crash-safe.
-- **WAL mode** — Enables `PRAGMA journal_mode=WAL` for better concurrent write handling.
-- **Layer persistence** — `layered_memories` table ensures layer data survives process restarts.
-- **Snapshots** — Full memory state serialized to JSON in `snapshots` table. Ideal for backup/restore and migration.
-- **Event sourcing** — Append-only `events` table. All mutations logged with timestamps and payloads.
+- **SQLite via sql.js** - WebAssembly-compiled SQLite. No native binaries. Cross-platform by default.
+- **Atomic writes** - Data written to `.tmp` then renamed. Crash-safe.
+- **WAL mode** - Enables `PRAGMA journal_mode=WAL` for better concurrent write handling.
+- **Layer persistence** - `layered_memories` table ensures layer data survives process restarts.
+- **Snapshots** - Full memory state serialized to JSON in `snapshots` table. Ideal for backup/restore and migration.
+- **Event sourcing** - Append-only `events` table. All mutations logged with timestamps and payloads.
 
 ---
 
 ## Limitations (v0.3.1)
 
-- **No vector embeddings** — Retrieval uses keyword matching + LLM reranking. For production semantic search, consider pairing with a vector DB (sqlite-vss, pgvector) in a future release.
-- **No PostgreSQL backend** — The config schema accepts `postgres` but only `sqlite` and `memory` are implemented.
-- **Procedural layer uses keyword triggers** — `fireProcedural()` is simple `ctx.includes(trigger)`. Not a full rule engine.
-- **Drift detection pattern-matching is fragile** — Only fires on specific negation patterns (`prefer not`, `no longer`, `changed to`, etc.). LLM fallback requires a separate eval model.
-- **Episodic layer TTL is short (1h)** — May need tuning for long-running automation agents.
+- **No vector embeddings** - Retrieval uses keyword matching + LLM reranking. For production semantic search, consider pairing with a vector DB (sqlite-vss, pgvector) in a future release.
+- **No PostgreSQL backend** - The config schema accepts `postgres` but only `sqlite` and `memory` are implemented.
+- **Procedural layer uses keyword triggers** - `fireProcedural()` is simple `ctx.includes(trigger)`. Not a full rule engine.
+- **Drift detection pattern-matching is fragile** - Only fires on specific negation patterns (`prefer not`, `no longer`, `changed to`, etc.). LLM fallback requires a separate eval model.
+- **Episodic layer TTL is short (1h)** - May need tuning for long-running automation agents.
 
 ---
 
 ## License
 
-MIT — Built with teeth. 🌑
+MIT - Built with teeth. 🌑

@@ -982,6 +982,299 @@ declare const driftEventSchema: z.ZodObject<{
     correctionText?: string | undefined;
 }>;
 type DriftEvent = z.infer<typeof driftEventSchema>;
+declare const identityPackageSchema: z.ZodObject<{
+    version: z.ZodDefault<z.ZodString>;
+    agentId: z.ZodOptional<z.ZodString>;
+    userId: z.ZodOptional<z.ZodString>;
+    exportedAt: z.ZodNumber;
+    constitution: z.ZodObject<{
+        statements: z.ZodArray<z.ZodObject<{
+            id: z.ZodString;
+            text: z.ZodString;
+            category: z.ZodEnum<["values", "boundaries", "preferences", "goals"]>;
+            weight: z.ZodDefault<z.ZodNumber>;
+            source: z.ZodOptional<z.ZodString>;
+            createdAt: z.ZodNumber;
+        }, "strip", z.ZodTypeAny, {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight: number;
+            source?: string | undefined;
+        }, {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight?: number | undefined;
+            source?: string | undefined;
+        }>, "many">;
+        version: z.ZodDefault<z.ZodString>;
+        createdAt: z.ZodNumber;
+        updatedAt: z.ZodNumber;
+    }, "strip", z.ZodTypeAny, {
+        createdAt: number;
+        statements: {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight: number;
+            source?: string | undefined;
+        }[];
+        version: string;
+        updatedAt: number;
+    }, {
+        createdAt: number;
+        statements: {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight?: number | undefined;
+            source?: string | undefined;
+        }[];
+        updatedAt: number;
+        version?: string | undefined;
+    }>;
+    memories: z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        content: z.ZodString;
+        topics: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+        metadata: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+        createdAt: z.ZodNumber;
+        accessedAt: z.ZodNumber;
+        accessCount: z.ZodDefault<z.ZodNumber>;
+    } & {
+        layer: z.ZodDefault<z.ZodEnum<["episodic", "semantic", "identity", "procedural"]>>;
+        expiresAt: z.ZodOptional<z.ZodNumber>;
+        importance: z.ZodDefault<z.ZodNumber>;
+        validFrom: z.ZodOptional<z.ZodNumber>;
+        validUntil: z.ZodOptional<z.ZodNumber>;
+        supersedes: z.ZodOptional<z.ZodString>;
+        supersededBy: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        id: string;
+        content: string;
+        topics: string[];
+        metadata: Record<string, unknown>;
+        createdAt: number;
+        accessedAt: number;
+        accessCount: number;
+        layer: "episodic" | "semantic" | "identity" | "procedural";
+        importance: number;
+        expiresAt?: number | undefined;
+        validFrom?: number | undefined;
+        validUntil?: number | undefined;
+        supersedes?: string | undefined;
+        supersededBy?: string | undefined;
+    }, {
+        id: string;
+        content: string;
+        createdAt: number;
+        accessedAt: number;
+        topics?: string[] | undefined;
+        metadata?: Record<string, unknown> | undefined;
+        accessCount?: number | undefined;
+        layer?: "episodic" | "semantic" | "identity" | "procedural" | undefined;
+        expiresAt?: number | undefined;
+        importance?: number | undefined;
+        validFrom?: number | undefined;
+        validUntil?: number | undefined;
+        supersedes?: string | undefined;
+        supersededBy?: string | undefined;
+    }>, "many">;
+    soul: z.ZodOptional<z.ZodObject<{
+        content: z.ZodString;
+        source: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        content: string;
+        source?: string | undefined;
+    }, {
+        content: string;
+        source?: string | undefined;
+    }>>;
+    identity: z.ZodOptional<z.ZodObject<{
+        content: z.ZodString;
+        source: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        content: string;
+        source?: string | undefined;
+    }, {
+        content: string;
+        source?: string | undefined;
+    }>>;
+    metadata: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+}, "strip", z.ZodTypeAny, {
+    metadata: Record<string, unknown>;
+    version: string;
+    constitution: {
+        createdAt: number;
+        statements: {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight: number;
+            source?: string | undefined;
+        }[];
+        version: string;
+        updatedAt: number;
+    };
+    exportedAt: number;
+    memories: {
+        id: string;
+        content: string;
+        topics: string[];
+        metadata: Record<string, unknown>;
+        createdAt: number;
+        accessedAt: number;
+        accessCount: number;
+        layer: "episodic" | "semantic" | "identity" | "procedural";
+        importance: number;
+        expiresAt?: number | undefined;
+        validFrom?: number | undefined;
+        validUntil?: number | undefined;
+        supersedes?: string | undefined;
+        supersededBy?: string | undefined;
+    }[];
+    agentId?: string | undefined;
+    userId?: string | undefined;
+    identity?: {
+        content: string;
+        source?: string | undefined;
+    } | undefined;
+    soul?: {
+        content: string;
+        source?: string | undefined;
+    } | undefined;
+}, {
+    constitution: {
+        createdAt: number;
+        statements: {
+            id: string;
+            createdAt: number;
+            text: string;
+            category: "values" | "boundaries" | "preferences" | "goals";
+            weight?: number | undefined;
+            source?: string | undefined;
+        }[];
+        updatedAt: number;
+        version?: string | undefined;
+    };
+    exportedAt: number;
+    memories: {
+        id: string;
+        content: string;
+        createdAt: number;
+        accessedAt: number;
+        topics?: string[] | undefined;
+        metadata?: Record<string, unknown> | undefined;
+        accessCount?: number | undefined;
+        layer?: "episodic" | "semantic" | "identity" | "procedural" | undefined;
+        expiresAt?: number | undefined;
+        importance?: number | undefined;
+        validFrom?: number | undefined;
+        validUntil?: number | undefined;
+        supersedes?: string | undefined;
+        supersededBy?: string | undefined;
+    }[];
+    agentId?: string | undefined;
+    userId?: string | undefined;
+    metadata?: Record<string, unknown> | undefined;
+    identity?: {
+        content: string;
+        source?: string | undefined;
+    } | undefined;
+    version?: string | undefined;
+    soul?: {
+        content: string;
+        source?: string | undefined;
+    } | undefined;
+}>;
+type IdentityPackage = z.infer<typeof identityPackageSchema>;
+declare const duplicationConfigSchema: z.ZodObject<{
+    /** DARKSOL server URL (e.g. https://api.darksol.net) */
+    serverUrl: z.ZodString;
+    /** API key for the server */
+    apiKey: z.ZodString;
+    /** Include SOUL.md content in export */
+    includeSoul: z.ZodDefault<z.ZodBoolean>;
+    /** Include IDENTITY.md content in export */
+    includeIdentity: z.ZodDefault<z.ZodBoolean>;
+    /** Include all memory layers in export */
+    includeAllLayers: z.ZodDefault<z.ZodBoolean>;
+    /** Only include specific layers */
+    layers: z.ZodOptional<z.ZodArray<z.ZodEnum<["episodic", "semantic", "identity", "procedural"]>, "many">>;
+    /** Custom agent/user ID for scoping */
+    agentId: z.ZodOptional<z.ZodString>;
+    userId: z.ZodOptional<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    apiKey: string;
+    serverUrl: string;
+    includeSoul: boolean;
+    includeIdentity: boolean;
+    includeAllLayers: boolean;
+    agentId?: string | undefined;
+    userId?: string | undefined;
+    layers?: ("episodic" | "semantic" | "identity" | "procedural")[] | undefined;
+}, {
+    apiKey: string;
+    serverUrl: string;
+    agentId?: string | undefined;
+    userId?: string | undefined;
+    includeSoul?: boolean | undefined;
+    includeIdentity?: boolean | undefined;
+    includeAllLayers?: boolean | undefined;
+    layers?: ("episodic" | "semantic" | "identity" | "procedural")[] | undefined;
+}>;
+type DuplicationConfig = z.infer<typeof duplicationConfigSchema>;
+declare const infectionConfigSchema: z.ZodObject<{
+    /** DARKSOL server URL */
+    serverUrl: z.ZodString;
+    /** API key for the server */
+    apiKey: z.ZodString;
+    /** Source agent ID to infect FROM (optional — defaults to user\'s primary) */
+    sourceAgentId: z.ZodOptional<z.ZodString>;
+    /** Identity package version to pull (optional — defaults to latest) */
+    version: z.ZodOptional<z.ZodString>;
+    /** Auto-refresh interval in ms (0 = no auto-refresh) */
+    refreshIntervalMs: z.ZodDefault<z.ZodNumber>;
+    /** Layers to apply from the package */
+    layers: z.ZodDefault<z.ZodArray<z.ZodEnum<["identity", "semantic", "procedural"]>, "many">>;
+}, "strip", z.ZodTypeAny, {
+    apiKey: string;
+    serverUrl: string;
+    layers: ("semantic" | "identity" | "procedural")[];
+    refreshIntervalMs: number;
+    version?: string | undefined;
+    sourceAgentId?: string | undefined;
+}, {
+    apiKey: string;
+    serverUrl: string;
+    version?: string | undefined;
+    layers?: ("semantic" | "identity" | "procedural")[] | undefined;
+    sourceAgentId?: string | undefined;
+    refreshIntervalMs?: number | undefined;
+}>;
+type InfectionConfig = z.infer<typeof infectionConfigSchema>;
+type DuplicateResult = {
+    packageSizeBytes: number;
+    memoryCount: number;
+    constitutionStatements: number;
+    exportedAt: number;
+    serverUploadUrl?: string;
+    serverUploadResponse?: unknown;
+};
+type InfectionResult = {
+    packageVersion: string;
+    statementsLoaded: number;
+    memoriesLoaded: number;
+    layersApplied: string[];
+    infectedAt: number;
+    liveConnection: boolean;
+};
 
 /**
  * ReMEM — MemoryStore
@@ -1028,6 +1321,11 @@ declare class MemoryStore {
         results: QueryResult[];
         totalAvailable: number;
     }>;
+    /**
+     * Get all memory entries (no text filter, ignores limit).
+     * Used internally by the duplication/export feature.
+     */
+    getAllEntries(): Promise<QueryResult[]>;
     getRecent(n?: number): Promise<QueryResult[]>;
     getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
     forget(id: string): Promise<boolean>;
@@ -1167,6 +1465,11 @@ declare class LayerManager {
      * Get an entry by ID.
      */
     get(id: string): LayeredMemoryEntry | null;
+    /**
+     * Get all entries across all layers.
+     * Used for duplication/export — returns all non-expired entries.
+     */
+    getAllEntries(): LayeredMemoryEntry[];
     /**
      * Query across all layers with weighted retrieval.
      * Entries from higher-weight layers rank higher, but content match still matters.
@@ -1422,9 +1725,75 @@ interface IdentitySystem {
 declare function createIdentitySystem(config?: IdentityConfig): IdentitySystem;
 
 /**
- * ReMEM — Main Entry Point
- * Recursive Memory for AI Agents
+ * ReMEM — Identity Duplication & Infection
+ *
+ * Duplication: Export the agent's memory, identity, and soul into a portable
+ * identity package and upload to DARKSOL server.
+ *
+ * Infection: Pull an identity package from DARKSOL server and overlay it
+ * on the local ReMEM instance (live connection required).
+ *
+ * v0.3.3
  */
+
+/**
+ * Build an identity package from the local ReMEM instance.
+ * This does NOT upload — it only builds the package.
+ * Use `uploadPackage()` to send to the server.
+ */
+declare function buildIdentityPackage(params: {
+    store: MemoryStore;
+    layers?: LayerManager;
+    identity?: IdentitySystem;
+    soulText?: string;
+    identityText?: string;
+    config: DuplicationConfig;
+}): Promise<IdentityPackage>;
+/**
+ * Upload an identity package to the DARKSOL server.
+ */
+declare function uploadPackage(pkg: IdentityPackage, config: DuplicationConfig): Promise<{
+    uploadUrl: string;
+    response: unknown;
+}>;
+/**
+ * Full duplication: build + upload identity package to DARKSOL server.
+ * Returns upload confirmation details.
+ */
+declare function duplicate(params: {
+    store: MemoryStore;
+    layers?: LayerManager;
+    identity?: IdentitySystem;
+    soulText?: string;
+    identityText?: string;
+    config: DuplicationConfig;
+}): Promise<DuplicateResult>;
+/**
+ * Download an identity package from the DARKSOL server.
+ */
+declare function downloadPackage(config: InfectionConfig): Promise<IdentityPackage>;
+/**
+ * Apply an identity package to the local ReMEM instance.
+ * This injects the constitution statements into the identity system,
+ * and optionally stores memories in the appropriate layers.
+ */
+declare function infect(params: {
+    store: MemoryStore;
+    layers?: LayerManager;
+    identity?: IdentitySystem;
+    pkg: IdentityPackage;
+    config: InfectionConfig;
+}): Promise<InfectionResult>;
+/**
+ * Pull + infect in one shot.
+ * Downloads from server and applies the identity package locally.
+ */
+declare function infectFromServer(params: {
+    store: MemoryStore;
+    layers?: LayerManager;
+    identity?: IdentitySystem;
+    config: InfectionConfig;
+}): Promise<InfectionResult>;
 
 /**
  * ReMEM — RLM-Style Memory System
@@ -1602,6 +1971,75 @@ declare class ReMEM {
      */
     deleteSnapshot(snapshotId: string): Promise<boolean>;
     /**
+     * Export and upload the agent's identity package to DARKSOL server.
+     * This backs up all memories, constitution statements, and optionally
+     * SOUL/IDENTITY text to the DARKSOL cloud.
+     *
+     * Usage:
+     * ```
+     * const result = await memory.duplicate({
+     *   serverUrl: 'https://api.darksol.net',
+     *   apiKey: 'your-api-key',
+     *   soulText: soulMdContent,
+     *   identityText: identityMdContent,
+     * });
+     * console.log(`Uploaded ${result.memoryCount} memories`);
+     * ```
+     */
+    duplicate(config: {
+        serverUrl: string;
+        apiKey: string;
+        soulText?: string;
+        identityText?: string;
+        includeSoul?: boolean;
+        includeIdentity?: boolean;
+        includeAllLayers?: boolean;
+        layers?: Array<'episodic' | 'semantic' | 'identity' | 'procedural'>;
+    }): Promise<DuplicateResult>;
+    /**
+     * Build an identity package locally without uploading.
+     * Useful for previewing what would be exported.
+     */
+    buildIdentityPackageLocal(config: {
+        soulText?: string;
+        identityText?: string;
+        includeSoul?: boolean;
+        includeIdentity?: boolean;
+        includeAllLayers?: boolean;
+        layers?: Array<'episodic' | 'semantic' | 'identity' | 'procedural'>;
+    }): Promise<IdentityPackage>;
+    /**
+     * Pull an identity package from DARKSOL server and infect this ReMEM instance.
+     * Requires live connection — if the server is unreachable, throws.
+     * Infected agents gain the source identity's constitution and memories.
+     *
+     * Usage:
+     * ```
+     * const result = await memory.infect({
+     *   serverUrl: 'https://api.darksol.net',
+     *   apiKey: 'your-api-key',
+     *   layers: ['identity', 'procedural'],
+     * });
+     * ```
+     */
+    infect(config: {
+        serverUrl: string;
+        apiKey: string;
+        sourceAgentId?: string;
+        version?: string;
+        refreshIntervalMs?: number;
+        layers?: Array<'identity' | 'semantic' | 'procedural'>;
+    }): Promise<InfectionResult>;
+    /**
+     * Download identity package without applying it (preview).
+     */
+    fetchIdentityPackage(config: {
+        serverUrl: string;
+        apiKey: string;
+        sourceAgentId?: string;
+        version?: string;
+    }): Promise<IdentityPackage>;
+    /**
      * Get the underlying MemoryStore for advanced operations.
      */
     getStore(): MemoryStore;
@@ -1615,4 +2053,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type EmbeddingConfig$1 as EmbeddingConfig, type EventType, type IdentityCategory, type IdentityConfig, type IdentitySystem, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryStore, ModelAbstraction, type ModelConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMConfig, type StoreMemoryInput, type SupersessionResult, constitutionSchema, constitutionStatementSchema, createIdentitySystem, driftEventSchema, driftResultSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema };
+export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, type EventType, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryStore, ModelAbstraction, type ModelConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMConfig, type StoreMemoryInput, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createIdentitySystem, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema, uploadPackage };

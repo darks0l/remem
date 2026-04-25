@@ -284,3 +284,87 @@ export const driftEventSchema = z.object({
 });
 
 export type DriftEvent = z.infer<typeof driftEventSchema>;
+
+// ============================================================================
+// Identity Package — Duplication & Infection Types
+// ============================================================================
+
+export const identityPackageSchema = z.object({
+  version: z.string().default('1.0'),
+  agentId: z.string().optional(),
+  userId: z.string().optional(),
+  exportedAt: z.number(),
+  constitution: z.object({
+    statements: z.array(constitutionStatementSchema),
+    version: z.string().default('1.0'),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  }),
+  memories: z.array(layeredMemoryEntrySchema),
+  soul: z.object({
+    content: z.string(),
+    source: z.string().optional(),
+  }).optional(),
+  identity: z.object({
+    content: z.string(),
+    source: z.string().optional(),
+  }).optional(),
+  metadata: z.record(z.unknown()).default({}),
+});
+
+export type IdentityPackage = z.infer<typeof identityPackageSchema>;
+
+export const duplicationConfigSchema = z.object({
+  /** DARKSOL server URL (e.g. https://api.darksol.net) */
+  serverUrl: z.string().url(),
+  /** API key for the server */
+  apiKey: z.string().min(1),
+  /** Include SOUL.md content in export */
+  includeSoul: z.boolean().default(true),
+  /** Include IDENTITY.md content in export */
+  includeIdentity: z.boolean().default(true),
+  /** Include all memory layers in export */
+  includeAllLayers: z.boolean().default(true),
+  /** Only include specific layers */
+  layers: z.array(memoryLayerSchema).optional(),
+  /** Custom agent/user ID for scoping */
+  agentId: z.string().optional(),
+  userId: z.string().optional(),
+});
+
+export type DuplicationConfig = z.infer<typeof duplicationConfigSchema>;
+
+export const infectionConfigSchema = z.object({
+  /** DARKSOL server URL */
+  serverUrl: z.string().url(),
+  /** API key for the server */
+  apiKey: z.string().min(1),
+  /** Source agent ID to infect FROM (optional — defaults to user\'s primary) */
+  sourceAgentId: z.string().optional(),
+  /** Identity package version to pull (optional — defaults to latest) */
+  version: z.string().optional(),
+  /** Auto-refresh interval in ms (0 = no auto-refresh) */
+  refreshIntervalMs: z.number().default(0),
+  /** Layers to apply from the package */
+  layers: z.array(z.enum(['identity', 'semantic', 'procedural'])).default(['identity']),
+});
+
+export type InfectionConfig = z.infer<typeof infectionConfigSchema>;
+
+export type DuplicateResult = {
+  packageSizeBytes: number;
+  memoryCount: number;
+  constitutionStatements: number;
+  exportedAt: number;
+  serverUploadUrl?: string;
+  serverUploadResponse?: unknown;
+};
+
+export type InfectionResult = {
+  packageVersion: string;
+  statementsLoaded: number;
+  memoriesLoaded: number;
+  layersApplied: string[];
+  infectedAt: number;
+  liveConnection: boolean;
+};

@@ -199,6 +199,23 @@ export class LayerManager {
   }
 
   /**
+   * Get all entries across all layers.
+   * Used for duplication/export — returns all non-expired entries.
+   */
+  getAllEntries(): LayeredMemoryEntry[] {
+    const now = Date.now();
+    const result: LayeredMemoryEntry[] = [];
+    for (const entry of this.entries.values()) {
+      if (entry.expiresAt && now > entry.expiresAt) {
+        this.entries.delete(entry.id);
+        continue;
+      }
+      result.push(entry);
+    }
+    return result;
+  }
+
+  /**
    * Query across all layers with weighted retrieval.
    * Entries from higher-weight layers rank higher, but content match still matters.
    */

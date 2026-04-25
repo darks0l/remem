@@ -11,6 +11,12 @@ import {
   type IdentitySystem,
 } from './identity.js';
 import { LayerManager, DEFAULT_LAYER_CONFIG, type LayerConfig } from './layers.js';
+import {
+  duplicate,
+  infectFromServer,
+  buildIdentityPackage,
+  downloadPackage,
+} from './duplicate.js';
 import { EmbeddingService, type EmbeddingConfig as EmbedServiceConfig } from './embeddings.js';
 import {
   rememConfigSchema,
@@ -22,6 +28,8 @@ import {
   type ConstitutionStatement,
   type DriftResult,
   type MemoryLayer,
+  type DuplicateResult,
+  type InfectionResult,
 } from './types.js';
 
 /**
@@ -526,6 +534,138 @@ export class ReMEM {
     return this._store.deleteSnapshot(snapshotId);
   }
 
+  // ─── Identity Duplication & Infection ──────────────────────────────────────
+
+  /**
+   * Export and upload the agent's identity package to DARKSOL server.
+   * This backs up all memories, constitution statements, and optionally
+   * SOUL/IDENTITY text to the DARKSOL cloud.
+   *
+   * Usage:
+   * ```
+   * const result = await memory.duplicate({
+   *   serverUrl: 'https://api.darksol.net',
+   *   apiKey: 'your-api-key',
+   *   soulText: soulMdContent,
+   *   identityText: identityMdContent,
+   * });
+   * console.log(`Uploaded ${result.memoryCount} memories`);
+   * ```
+   */
+  async duplicate(config: {
+    serverUrl: string;
+    apiKey: string;
+    soulText?: string;
+    identityText?: string;
+    includeSoul?: boolean;
+    includeIdentity?: boolean;
+    includeAllLayers?: boolean;
+    layers?: Array<'episodic' | 'semantic' | 'identity' | 'procedural'>;
+  }): Promise<DuplicateResult> {
+    return duplicate({
+      store: this._store,
+      layers: this.layers,
+      identity: this.identity,
+      soulText: config.soulText,
+      identityText: config.identityText,
+      config: {
+        serverUrl: config.serverUrl,
+        apiKey: config.apiKey,
+        includeSoul: config.includeSoul ?? true,
+        includeIdentity: config.includeIdentity ?? true,
+        includeAllLayers: config.includeAllLayers ?? true,
+        layers: config.layers,
+        agentId: this._agentId,
+        userId: this._userId,
+      } as import('./types.js').DuplicationConfig,
+    });
+  }
+
+  /**
+   * Build an identity package locally without uploading.
+   * Useful for previewing what would be exported.
+   */
+  async buildIdentityPackageLocal(config: {
+    soulText?: string;
+    identityText?: string;
+    includeSoul?: boolean;
+    includeIdentity?: boolean;
+    includeAllLayers?: boolean;
+    layers?: Array<'episodic' | 'semantic' | 'identity' | 'procedural'>;
+  }): Promise<import('./types.js').IdentityPackage> {
+    return buildIdentityPackage({
+      store: this._store,
+      layers: this.layers,
+      identity: this.identity,
+      soulText: config.soulText,
+      identityText: config.identityText,
+      config: {
+        serverUrl: 'http://localhost', // not used for local build
+        apiKey: 'local-only',
+        includeSoul: config.includeSoul ?? true,
+        includeIdentity: config.includeIdentity ?? true,
+        includeAllLayers: config.includeAllLayers ?? true,
+        layers: config.layers,
+        agentId: this._agentId,
+        userId: this._userId,
+      } as import('./types.js').DuplicationConfig,
+    });
+  }
+
+  /**
+   * Pull an identity package from DARKSOL server and infect this ReMEM instance.
+   * Requires live connection — if the server is unreachable, throws.
+   * Infected agents gain the source identity's constitution and memories.
+   *
+   * Usage:
+   * ```
+   * const result = await memory.infect({
+   *   serverUrl: 'https://api.darksol.net',
+   *   apiKey: 'your-api-key',
+   *   layers: ['identity', 'procedural'],
+   * });
+   * ```
+   */
+  async infect(config: {
+    serverUrl: string;
+    apiKey: string;
+    sourceAgentId?: string;
+    version?: string;
+    refreshIntervalMs?: number;
+    layers?: Array<'identity' | 'semantic' | 'procedural'>;
+  }): Promise<InfectionResult> {
+    return infectFromServer({
+      store: this._store,
+      layers: this.layers,
+      identity: this.identity,
+      config: {
+        serverUrl: config.serverUrl,
+        apiKey: config.apiKey,
+        sourceAgentId: config.sourceAgentId,
+        version: config.version,
+        refreshIntervalMs: config.refreshIntervalMs ?? 0,
+        layers: config.layers ?? ['identity'],
+      },
+    });
+  }
+
+  /**
+   * Download identity package without applying it (preview).
+   */
+  async fetchIdentityPackage(config: {
+    serverUrl: string;
+    apiKey: string;
+    sourceAgentId?: string;
+    version?: string;
+  }): Promise<import('./types.js').IdentityPackage> {
+    return downloadPackage({
+      serverUrl: config.serverUrl,
+      apiKey: config.apiKey,
+      sourceAgentId: config.sourceAgentId,
+      version: config.version,
+    } as import('./types.js').InfectionConfig);
+  }
+
   // ─── Utilities ───────────────────────────────────────────────────────────
 
   /**
@@ -557,3 +697,4 @@ export { QueryEngine } from './query.js';
 export * from './types.js';
 export * from './identity.js';
 export * from './layers.js';
+export * from './duplicate.js';
