@@ -1772,6 +1772,322 @@ declare class MemoryREPL {
 }
 
 /**
+ * ReMEM — HTTP Adapter
+ * Framework-agnostic HTTP interface for remote memory access
+ */
+
+interface HttpAdapterConfig {
+    port?: number;
+    host?: string;
+    store: MemoryStore;
+    model?: ModelAbstraction;
+    /** Optional bearer token required for all non-OPTIONS requests. */
+    authToken?: string;
+    /** CORS origin. Defaults to localhost-only usage (no wildcard). */
+    corsOrigin?: string;
+    /** Max request body size in bytes. Default: 1MiB. */
+    maxBodyBytes?: number;
+}
+declare class HttpAdapter {
+    private server?;
+    private engine;
+    private store;
+    private model?;
+    private port;
+    private host;
+    private authToken?;
+    private corsOrigin;
+    private maxBodyBytes;
+    constructor(config: HttpAdapterConfig);
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    private handleRequest;
+    private isAuthorized;
+    private readBody;
+}
+
+/**
+ * ReMEM — Memory Consolidation
+ * Deduplication, merging, and conflict resolution across memory layers.
+ *
+ * v0.6.0: Memory consolidation
+ * - Similarity-based deduplication: merge near-duplicate entries on store
+ * - Cross-layer conflict resolution: contradiction detection + supersession
+ * - Cross-layer promotion: frequently-accessed episodic entries promoted to semantic
+ * - Periodic consolidation: full deduplication pass over all layers
+ *
+ * Usage:
+ *   const consolidator = new MemoryConsolidator(remem, embeddingService);
+ *   await consolidator.deduplicateLayer('semantic');
+ *   await consolidator.promoteFrequentEpisodic();
+ */
+
+interface ConsolidationOptions {
+    /** Cosine similarity threshold for deduplication (0-1). Default: 0.85 */
+    similarityThreshold?: number;
+    /** Minimum access count to trigger episodic promotion. Default: 5 */
+    promotionAccessThreshold?: number;
+    /** Run consolidation on every store() call. Default: false (manual only) */
+    autoOnStore?: boolean;
+    /** Merge strategy for near-duplicates */
+    mergeStrategy?: 'newer_wins' | 'older_wins' | 'concatenate' | 'supersede';
+}
+interface ConsolidationResult {
+    deduplicated: number;
+    promoted: number;
+    superseded: number;
+    errors: string[];
+}
+interface SimilarityPair {
+    entryA: LayeredMemoryEntry;
+    entryB: LayeredMemoryEntry;
+    similarity: number;
+}
+/**
+ * MemoryConsolidator
+ *
+ * Handles:
+ * 1. Deduplication — find and merge near-duplicate entries using embeddings
+ * 2. Conflict resolution — detect contradictions, mark one as superseded
+ * 3. Cross-layer promotion — promote frequently-accessed episodic entries to semantic
+ * 4. Periodic full consolidation — run over all layers to clean up
+ */
+declare class MemoryConsolidator {
+    private remem;
+    private embeddingService;
+    private options;
+    constructor(remem: MemoryConsolidator['remem'], embeddingService?: EmbeddingService | null, options?: ConsolidationOptions);
+    /**
+     * Find all near-duplicate pairs in a layer.
+     * Uses embedding cosine similarity when available, keyword fallback otherwise.
+     */
+    findSimilarPairs(layer: MemoryLayer): Promise<SimilarityPair[]>;
+    /**
+     * Compute similarity between two entries.
+     * Uses embeddings when available, keyword Jaccard fallback.
+     */
+    computeSimilarity(a: LayeredMemoryEntry, b: LayeredMemoryEntry): Promise<number>;
+    private getEntryEmbedding;
+    private cosineSimilarity;
+    private keywordSimilarity;
+    /**
+     * Merge two entries according to the configured merge strategy.
+     * Returns the merged entry content + metadata.
+     */
+    merge(a: LayeredMemoryEntry, b: LayeredMemoryEntry): {
+        content: string;
+        topics: string[];
+        metadata: Record<string, unknown>;
+    };
+    /**
+     * Run deduplication over a specific layer.
+     * Finds similar pairs, merges them, and deletes the merged entries.
+     * @returns Number of entries deduplicated
+     */
+    deduplicateLayer(layer: MemoryLayer): Promise<ConsolidationResult>;
+    /**
+     * Detect contradictions between entries in the same layer.
+     * Uses negation pattern matching to find conflicting statements.
+     *
+     * e.g., "User prefers dark mode" vs "User prefers light mode"
+     */
+    detectConflicts(layer: MemoryLayer): Promise<Array<{
+        older: LayeredMemoryEntry;
+        newer: LayeredMemoryEntry;
+    }>>;
+    /**
+     * Resolve conflicts by marking older entries as superseded.
+     * Keeps the newest (most recent) entry as authoritative.
+     */
+    resolveConflicts(layer: MemoryLayer): Promise<ConsolidationResult>;
+    /**
+     * Promote frequently-accessed episodic entries to semantic layer.
+     * Entries with accessCount >= promotionAccessThreshold that are still in episodic
+     * after 10 minutes get promoted to semantic layer (they're important enough to keep longer).
+     */
+    promoteFrequentEpisodic(): Promise<ConsolidationResult>;
+    /**
+     * Run full consolidation over all layers.
+     * 1. Deduplicate each layer
+     * 2. Resolve conflicts in semantic and identity layers
+     * 3. Promote frequent episodic entries
+     *
+     * @param layers Layers to consolidate. Defaults to all.
+     */
+    consolidateAll(layers?: MemoryLayer[]): Promise<ConsolidationResult>;
+}
+
+/**
+ * ReMEM — Episodic Capture Pipeline
+ * Automatic event capture for the episodic memory layer.
+ *
+ * v0.5.0: Episodic capture pipeline
+ * - Event buffering + batched writes to MemoryStore
+ * - Importance scoring based on event type + content analysis
+ * - Deduplication of rapid similar events
+ * - Integration via EventSource adapters or direct capture()
+ *
+ * Usage:
+ *   const pipeline = new EpisodicCapturePipeline(remem);
+ *   pipeline.capture({ type: 'user.message', content: '...', metadata: {...} });
+ *   pipeline.capture({ type: 'decision', content: 'Agreed to build X', metadata: { importance: 0.9 }});
+ *   pipeline.start(); // start flush interval
+ */
+
+type CaptureEventType = 'agent.turn' | 'agent.response' | 'agent.tool_call' | 'agent.tool_result' | 'agent.error' | 'user.message' | 'user.feedback' | 'user.question' | 'memory.store' | 'memory.query' | 'memory.recall' | 'session.start' | 'session.end' | 'session.compaction' | 'decision' | 'learning' | 'goal.set' | 'goal.achieved' | 'identity.drift' | 'identity.correction';
+interface CaptureEvent {
+    id?: string;
+    type: CaptureEventType;
+    /** Human-readable content describing the event */
+    content: string;
+    /** Raw metadata about the event (sender, channel, model, tool name, etc.) */
+    metadata?: Record<string, unknown>;
+    /** Unix timestamp ms — defaults to Date.now() */
+    timestamp?: number;
+    /** Override auto-computed importance (0-1). Auto-computed if not set. */
+    importanceOverride?: number;
+    /** Skip deduplication for this event (e.g., decisions should never be deduped) */
+    noDedup?: boolean;
+}
+interface CaptureOptions {
+    /** Batch flush interval in ms (default: 1000) */
+    flushIntervalMs?: number;
+    /** Max events per batch before forced flush (default: 50) */
+    maxBatchSize?: number;
+    /** Deduplication window in ms — suppress events identical in type+content (default: 2000) */
+    dedupWindowMs?: number;
+    /** Store to a specific layer (default: 'episodic') */
+    layer?: MemoryLayer;
+}
+declare class EpisodicCapturePipeline {
+    private remem;
+    private eventBuffer;
+    private dedupSet;
+    private flushIntervalMs;
+    private maxBatchSize;
+    private dedupWindowMs;
+    private layer;
+    private intervalHandle;
+    private started;
+    private eventCount;
+    private droppedCount;
+    constructor(remem: EpisodicCapturePipeline['remem'], options?: CaptureOptions);
+    /**
+     * Capture a single event into the episodic layer.
+     * Events are buffered and flushed in batches.
+     */
+    capture(event: CaptureEvent): void;
+    /**
+     * Capture multiple events at once.
+     */
+    captureBatch(events: CaptureEvent[]): void;
+    /**
+     * Start the periodic flush interval.
+     * Call once after registering event sources.
+     */
+    start(): void;
+    /**
+     * Stop the flush interval and flush remaining events.
+     */
+    stop(): void;
+    /**
+     * Flush the event buffer to MemoryStore.
+     */
+    flush(): Promise<void>;
+    /**
+     * Extract topics from event type and content.
+     */
+    private extractTopics;
+    /**
+     * Format an event into a human-readable episodic memory string.
+     */
+    private formatEvent;
+    /**
+     * Generate embedding for a stored entry (async, non-blocking).
+     * Returns early if no embedding service available.
+     */
+    private generateEmbedding;
+    /**
+     * Get capture statistics.
+     */
+    getStats(): {
+        eventCount: number;
+        droppedCount: number;
+        bufferSize: number;
+        started: boolean;
+    };
+}
+
+/**
+ * ReMEM — Framework adapters
+ * Lightweight, dependency-free adapters for common agent runtimes.
+ */
+
+interface ReMEMAdapterOptions {
+    /** Default topic attached to memories stored through the adapter. */
+    defaultTopic?: string;
+    /** Default query limit when the caller does not provide one. */
+    defaultLimit?: number;
+}
+/**
+ * Vercel AI SDK-style helper.
+ *
+ * The AI SDK does not mandate one memory interface, so this adapter exposes
+ * tiny primitives that fit neatly into middleware/tools: save messages,
+ * remember arbitrary text, and recall relevant context.
+ */
+declare function createVercelAIAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
+    name: string;
+    remember(input: string | StoreMemoryInput): Promise<void>;
+    saveMessages(messages: unknown, metadata?: Record<string, unknown>): Promise<void>;
+    recall(query: string, queryOptions?: QueryOptions): Promise<QueryResponse>;
+    context(query: string, queryOptions?: QueryOptions): Promise<string>;
+};
+/**
+ * LangGraph/LangChain-style BaseStore-ish adapter.
+ *
+ * Implements get/put/search/listNamespaces in a dependency-free structural shape
+ * so it can be wrapped by LangGraph JS projects without pulling LangChain into
+ * ReMEM itself.
+ */
+declare function createLangGraphStoreAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
+    name: string;
+    put(namespace: string | string[], key: string, value: unknown): Promise<void>;
+    search(namespace: string | string[], query: string, queryOptions?: QueryOptions): Promise<{
+        namespace: string[];
+        key: string;
+        value: string;
+        createdAt: number;
+        updatedAt: number;
+        score: number | undefined;
+    }[]>;
+    get(namespace: string | string[], key: string): Promise<{
+        namespace: string[];
+        key: string;
+        value: string;
+        createdAt: number;
+        updatedAt: number;
+    } | null>;
+    listNamespaces(): Promise<string[][]>;
+};
+/**
+ * OpenClaw/session adapter.
+ * Stores user/assistant turns and recalls concise context blocks for prompts.
+ */
+declare function createOpenClawAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
+    name: string;
+    rememberTurn(turn: {
+        role: "user" | "assistant" | "system" | string;
+        content: string;
+        sessionId?: string;
+        messageId?: string;
+        metadata?: Record<string, unknown>;
+    }): Promise<void>;
+    recallContext(query: string, queryOptions?: QueryOptions): Promise<string>;
+    query(query: string, queryOptions?: QueryOptions): Promise<QueryResponse>;
+};
+
+/**
  * ReMEM — Identity & Constitution
  * RLM-style identity layer with drift detection and constitution injection
  */
@@ -1974,6 +2290,18 @@ declare class ReMEM {
      * Returns the embedding service instance (if enabled).
      */
     getEmbeddingService(): EmbeddingService | undefined;
+    /**
+     * Get the layer manager for advanced layer/consolidation operations.
+     */
+    getLayerManager(): LayerManager | undefined;
+    /**
+     * Persist a layer entry. Exposed for advanced consolidation workflows.
+     */
+    persistLayerEntry(entry: LayeredMemoryEntry): Promise<void>;
+    /**
+     * Persist a vector embedding for a layered memory entry.
+     */
+    persistLayerEmbedding(entryId: string, vector: number[], model: string): Promise<void>;
     /**
      * Get recent memory entries.
      */
@@ -2217,4 +2545,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, type EventType, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryREPL, MemoryStore, ModelAbstraction, type ModelConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMConfig, type StoreMemoryInput, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createIdentitySystem, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema, uploadPackage };
+export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryREPL, MemoryStore, ModelAbstraction, type ModelConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type StoreMemoryInput, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema, uploadPackage };

@@ -31,6 +31,7 @@ import {
   type MemoryLayer,
   type DuplicateResult,
   type InfectionResult,
+  storeMemoryInputSchema,
 } from './types.js';
 
 /**
@@ -120,15 +121,17 @@ export class ReMEM {
    * If embeddings are enabled, generates a vector embedding in the background.
    */
   async store(input: StoreMemoryInput): Promise<void> {
+    const normalized = storeMemoryInputSchema.parse(input);
+
     // Store in the underlying SQLite store to get the entry ID for embedding
-    const stored = await this._store.store(input, {
+    const stored = await this._store.store(normalized, {
       agentId: this._agentId,
       userId: this._userId,
     });
 
     // Also store in layers if enabled (layers are persisted to SQLite)
     if (this._layersEnabled && this.layers) {
-      const result = this.layers.store(input);
+      const result = this.layers.store(normalized);
       await this._store.persistLayerEntry(result, {
         agentId: this._agentId,
         userId: this._userId,
@@ -137,11 +140,11 @@ export class ReMEM {
 
     // Generate embedding (sync or async) if enabled
     if (this._embeddingEnabled && this.embeddingService) {
-      const contentToEmbed = input.topics.length > 0
-        ? `[${input.topics.join(', ')}] ${input.content}`
-        : input.content;
+      const contentToEmbed = normalized.topics.length > 0
+        ? `[${normalized.topics.join(', ')}] ${normalized.content}`
+        : normalized.content;
 
-      if (input.metadata?.asyncEmbed === false) {
+      if (normalized.metadata?.asyncEmbed === false) {
         // Synchronous: block until embedding is computed and stored
         try {
           const emb = await this.embeddingService.generateEmbedding(stored.id, contentToEmbed);
@@ -201,6 +204,31 @@ export class ReMEM {
    */
   getEmbeddingService(): EmbeddingService | undefined {
     return this.embeddingService;
+  }
+
+  /**
+   * Get the layer manager for advanced layer/consolidation operations.
+   */
+  getLayerManager(): LayerManager | undefined {
+    return this.layers;
+  }
+
+  /**
+   * Persist a layer entry. Exposed for advanced consolidation workflows.
+   */
+  async persistLayerEntry(entry: import('./types.js').LayeredMemoryEntry): Promise<void> {
+    await this._store.persistLayerEntry(entry, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
+  }
+
+  /**
+   * Persist a vector embedding for a layered memory entry.
+   */
+  async persistLayerEmbedding(entryId: string, vector: number[], model: string): Promise<void> {
+    const base64 = EmbeddingService.encodeVector(vector);
+    await this._store.storeEmbedding(entryId, base64, vector.length, model, 'layered');
   }
 
   /**
@@ -407,10 +435,12 @@ export class ReMEM {
    * Store in a specific layer.
    */
   async storeInLayer(input: StoreMemoryInput, layer: MemoryLayer): Promise<QueryResult | null> {
+    const normalized = storeMemoryInputSchema.parse(input);
+
     if (!this.layers) {
       await this.enableLayers();
     }
-    const entry = this.layers!.store(input, layer);
+    const entry = this.layers!.store(normalized, layer);
     await this._store.persistLayerEntry(entry, {
       agentId: this._agentId,
       userId: this._userId,
@@ -418,9 +448,9 @@ export class ReMEM {
 
     // Generate embedding and store in LayerManager for hybrid layer scoring
     if (this.embeddingService) {
-      const contentToEmbed = input.topics.length > 0
-        ? `[${input.topics.join(', ')}] ${input.content}`
-        : input.content;
+      const contentToEmbed = normalized.topics.length > 0
+        ? `[${normalized.topics.join(', ')}] ${normalized.content}`
+        : normalized.content;
 
       this.embeddingService
         .generateEmbedding(entry.id, contentToEmbed)
@@ -821,6 +851,15 @@ export { MemoryStore } from './store.js';
 export { ModelAbstraction } from './model.js';
 export { QueryEngine } from './query.js';
 export { MemoryREPL } from './repl.js';
+export { HttpAdapter } from './http.js';
+export { MemoryConsolidator } from './consolidate.js';
+export { EpisodicCapturePipeline } from './episodic-capture.js';
+export {
+  createVercelAIAdapter,
+  createLangGraphStoreAdapter,
+  createOpenClawAdapter,
+} from './adapters.js';
+export type { ReMEMAdapterOptions } from './adapters.js';
 export * from './types.js';
 export * from './identity.js';
 export * from './layers.js';

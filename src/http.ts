@@ -3,34 +3,50 @@
  * Framework-agnostic HTTP interface for remote memory access
  */
 
-import type { QueryOptions, QueryResponse, QueryResult, StoreMemoryInput, MemoryEntry, MemoryEvent } from './types.js';
+import type { QueryOptions } from './types.js';
+import { storeMemoryInputSchema } from './types.js';
 import { MemoryStore } from './store.js';
 import { ModelAbstraction } from './model.js';
 import { QueryEngine } from './query.js';
-import { randomUUID } from 'crypto';
 
 export interface HttpAdapterConfig {
   port?: number;
+  host?: string;
   store: MemoryStore;
   model?: ModelAbstraction;
+  /** Optional bearer token required for all non-OPTIONS requests. */
+  authToken?: string;
+  /** CORS origin. Defaults to localhost-only usage (no wildcard). */
+  corsOrigin?: string;
+  /** Max request body size in bytes. Default: 1MiB. */
+  maxBodyBytes?: number;
 }
 
-interface ParsedUrl {
-  pathname: string;
-  searchParams: URLSearchParams;
+interface RouteResult {
+  status: number;
+  body: unknown;
 }
 
 export class HttpAdapter {
   private server?: import('http').Server;
   private engine: QueryEngine;
   private store: MemoryStore;
+  private model?: ModelAbstraction;
   private port: number;
+  private host: string;
+  private authToken?: string;
+  private corsOrigin: string;
+  private maxBodyBytes: number;
 
   constructor(config: HttpAdapterConfig) {
     this.store = config.store;
     this.model = config.model;
     this.engine = new QueryEngine({ store: this.store, model: this.model });
     this.port = config.port ?? 8787;
+    this.host = config.host ?? '127.0.0.1';
+    this.authToken = config.authToken;
+    this.corsOrigin = config.corsOrigin ?? 'http://localhost';
+    this.maxBodyBytes = config.maxBodyBytes ?? 1024 * 1024;
   }
 
   async start(): Promise<void> {
@@ -41,7 +57,7 @@ export class HttpAdapter {
       const method = req.method ?? 'GET';
 
       // CORS headers
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Origin', this.corsOrigin);
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
@@ -51,10 +67,16 @@ export class HttpAdapter {
         return;
       }
 
+      if (!this.isAuthorized(req)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized' }));
+        return;
+      }
+
       try {
         const result = await this.handleRequest(method, url, req);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(result));
+        res.writeHead(result.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result.body));
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -63,7 +85,7 @@ export class HttpAdapter {
     });
 
     return new Promise((resolve) => {
-      this.server!.listen(this.port, () => {
+      this.server!.listen(this.port, this.host, () => {
         resolve();
       });
     });
@@ -75,17 +97,17 @@ export class HttpAdapter {
     });
   }
 
-  private async handleRequest(method: string, url: URL, req?: import('http').IncomingMessage): Promise<unknown> {
+  private async handleRequest(method: string, url: URL, req?: import('http').IncomingMessage): Promise<RouteResult> {
     const path = url.pathname;
 
     // POST /memory — store a new entry
     if (method === 'POST' && path === '/memory') {
-      if (!req) return { error: 'Request body unavailable' };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
       const body = await this.readBody(req);
-      if (!body) return { error: 'Empty request body' };
-      const input = JSON.parse(body) as StoreMemoryInput;
+      if (!body) return { status: 400, body: { error: 'Empty request body' } };
+      const input = storeMemoryInputSchema.parse(JSON.parse(body));
       await this.engine.store(input);
-      return { ok: true, message: 'Memory stored' };
+      return { status: 201, body: { ok: true, message: 'Memory stored' } };
     }
 
     // GET /memory — query memory
@@ -98,14 +120,14 @@ export class HttpAdapter {
       if (topics) options.topics = topics;
 
       const result = await this.engine.query(query, options);
-      return result;
+      return { status: 200, body: result };
     }
 
     // GET /memory/recent — get recent entries
     if (method === 'GET' && path === '/memory/recent') {
       const n = parseInt(url.searchParams.get('n') ?? '10', 10);
       const results = await this.engine.getRecent(n);
-      return { results };
+      return { status: 200, body: { results } };
     }
 
     // GET /memory/topics/:topic — get by topic
@@ -113,7 +135,7 @@ export class HttpAdapter {
       const topic = decodeURIComponent(path.split('/')[3]);
       const limit = parseInt(url.searchParams.get('limit') ?? '20', 10);
       const results = await this.engine.getByTopic(topic, limit);
-      return { results };
+      return { status: 200, body: { results } };
     }
 
     // GET /memory/:id — get specific entry
@@ -121,38 +143,90 @@ export class HttpAdapter {
       const id = path.split('/')[2];
       if (id === 'recent' || id === 'topics') {
         // Already handled above
-        return { error: 'Not found' };
+        return { status: 404, body: { error: 'Not found' } };
       }
       const entry = await this.store.get(id);
-      return { entry };
+      return entry
+        ? { status: 200, body: { entry } }
+        : { status: 404, body: { error: 'Memory not found' } };
     }
 
     // DELETE /memory/:id — forget an entry
     if (method === 'DELETE' && path.startsWith('/memory/')) {
       const id = path.split('/')[2];
       const forgotten = await this.store.forget(id);
-      return { ok: forgotten, message: forgotten ? 'Memory forgotten' : 'Memory not found' };
+      return {
+        status: forgotten ? 200 : 404,
+        body: { ok: forgotten, message: forgotten ? 'Memory forgotten' : 'Memory not found' },
+      };
+    }
+
+    // GET /snapshots — list snapshots
+    if (method === 'GET' && path === '/snapshots') {
+      const snapshots = await this.store.listSnapshots();
+      return { status: 200, body: { snapshots } };
+    }
+
+    // POST /snapshots — create snapshot
+    if (method === 'POST' && path === '/snapshots') {
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) as { label?: unknown } : {};
+      const label = typeof parsed.label === 'string' && parsed.label.trim() ? parsed.label : 'snapshot';
+      const snapshot = await this.store.createSnapshot(label);
+      return { status: 201, body: { snapshot } };
+    }
+
+    // POST /snapshots/:id/restore — restore snapshot
+    if (method === 'POST' && path.startsWith('/snapshots/') && path.endsWith('/restore')) {
+      const id = path.split('/')[2];
+      const restored = await this.store.restoreSnapshot(id);
+      return { status: 200, body: { ok: true, restored } };
+    }
+
+    // DELETE /snapshots/:id — delete snapshot
+    if (method === 'DELETE' && path.startsWith('/snapshots/')) {
+      const id = path.split('/')[2];
+      const deleted = await this.store.deleteSnapshot(id);
+      return {
+        status: deleted ? 200 : 404,
+        body: { ok: deleted, message: deleted ? 'Snapshot deleted' : 'Snapshot not found' },
+      };
     }
 
     // GET /events — get event log
     if (method === 'GET' && path === '/events') {
       const limit = parseInt(url.searchParams.get('limit') ?? '100', 10);
       const events = this.store.getEventLog(limit);
-      return { events };
+      return { status: 200, body: { events } };
     }
 
     // GET /health — health check
     if (method === 'GET' && path === '/health') {
-      return { ok: true, model: this.model?.name() ?? 'none' };
+      return { status: 200, body: { ok: true, model: this.model?.name() ?? 'none' } };
     }
 
-    return { error: 'Not found', path, method };
+    return { status: 404, body: { error: 'Not found', path, method } };
+  }
+
+  private isAuthorized(req: import('http').IncomingMessage): boolean {
+    if (!this.authToken) return true;
+    return req.headers.authorization === `Bearer ${this.authToken}`;
   }
 
   private async readBody(req: import('http').IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
-      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      let total = 0;
+      req.on('data', (chunk: Buffer) => {
+        total += chunk.length;
+        if (total > this.maxBodyBytes) {
+          reject(new Error('Request body too large'));
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
       req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
       req.on('error', reject);
     });

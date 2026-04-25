@@ -4,6 +4,20 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.6.1] — 2026-04-25
+
+### Fixed
+
+- Exported documented public APIs from the package root: `HttpAdapter`, `MemoryConsolidator`, and `EpisodicCapturePipeline`.
+- Fixed optional `topics` handling when embeddings are enabled. `store()` and `storeInLayer()` now normalize input before embedding generation.
+- Fixed `HttpAdapter` typing by storing the optional model field on the class.
+- Hardened `HttpAdapter`: localhost binding by default, optional bearer auth, configurable CORS origin, body size limit, input validation, proper 4xx/201 status codes, and snapshot routes.
+- Persisted consolidation-generated layered embeddings through the store when supported.
+- Tightened release gate: publish now requires lint, tests, build, and pack dry-run.
+- Added dependency-free framework adapters: `createVercelAIAdapter`, `createLangGraphStoreAdapter`, and `createOpenClawAdapter`.
+- Added package export, HTTP adapter, and framework adapter tests.
+- Restricted npm package contents to built artifacts and docs.
+
 ## [0.6.0] — 2026-04-25
 
 ### Added

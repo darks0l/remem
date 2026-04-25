@@ -410,7 +410,7 @@ export class EpisodicCapturePipeline {
    * Generate embedding for a stored entry (async, non-blocking).
    * Returns early if no embedding service available.
    */
-  private async generateEmbedding(entryId: string, content: string): Promise<void> {
+  private async generateEmbedding(_entryId: string, _content: string): Promise<void> {
     // This would call EmbeddingService.embed() if available
     // Non-blocking — we don't wait for it
     // In a full implementation, this would be wired through getLayerManager()

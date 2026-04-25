@@ -14,7 +14,6 @@
  *   await consolidator.promoteFrequentEpisodic();
  */
 
-import { randomUUID } from 'crypto';
 import type { LayeredMemoryEntry, MemoryLayer } from './types.js';
 import type { EmbeddingService } from './embeddings.js';
 
@@ -68,7 +67,8 @@ export class MemoryConsolidator {
       getStats(): Record<MemoryLayer, { count: number; maxEntries: number; ttlMs: number; weight: number }>;
     };
     getEmbeddingService?(): EmbeddingService | null;
-    persistLayerEntry?(entry: LayeredMemoryEntry, opts?: any): Promise<void>;
+    persistLayerEntry?(entry: LayeredMemoryEntry): Promise<void>;
+    persistLayerEmbedding?(entryId: string, vector: number[], model: string): Promise<void>;
   };
   private embeddingService: EmbeddingService | null;
   private options: Required<ConsolidationOptions>;
@@ -176,7 +176,6 @@ export class MemoryConsolidator {
     const older = a.createdAt <= b.createdAt ? a : b;
     const newer = a.createdAt <= b.createdAt ? b : a;
     const winner = strategy === 'older_wins' ? older : newer;
-    const loser = winner === older ? newer : older;
 
     let content: string;
     let topics: string[];
@@ -202,7 +201,7 @@ export class MemoryConsolidator {
         // Keep winner content, loser is marked as superseded via supersededBy field (set by caller)
         content = winner.content;
         topics = winner.topics;
-        metadata = { ...winner.metadata, supersededBy: winner.id, consolidatedAt: Date.now() };
+        metadata = { ...winner.metadata, consolidatedAt: Date.now() };
         break;
       }
       default:
@@ -239,7 +238,6 @@ export class MemoryConsolidator {
       if (processedIds.has(pair.entryA.id) || processedIds.has(pair.entryB.id)) continue;
 
       const merged = this.merge(pair.entryA, pair.entryB);
-      const winner = pair.entryB.createdAt >= pair.entryA.createdAt ? pair.entryB : pair.entryA;
 
       try {
         // Store merged entry
@@ -272,11 +270,8 @@ export class MemoryConsolidator {
         if (this.embeddingService && newEntry.id) {
           try {
             const vec = await this.embeddingService.embed(merged.content);
-            const encoded = Buffer.from(new Float32Array(vec).buffer).toString('base64');
-            await this.remem.persistLayerEntry?.(
-              { ...newEntry, content: merged.content } as LayeredMemoryEntry,
-              {}
-            );
+            await this.remem.persistLayerEntry?.({ ...newEntry, content: merged.content } as LayeredMemoryEntry);
+            await this.remem.persistLayerEmbedding?.(newEntry.id, vec, this.embeddingService.model);
             // Store the embedding vector in layer manager
             if (layerManager && 'setEntryEmbedding' in layerManager) {
               (layerManager as any).setEntryEmbedding(newEntry.id, vec);
@@ -365,7 +360,7 @@ export class MemoryConsolidator {
         older.validUntil = newer.createdAt; // older was true until newer's creation time
 
         // Persist the updated older entry
-        await this.remem.persistLayerEntry?.(older, {});
+        await this.remem.persistLayerEntry?.(older);
         result.superseded++;
       } catch (err) {
         result.errors.push(`Conflict resolution failed for ${older.id}: ${err}`);
@@ -423,7 +418,7 @@ export class MemoryConsolidator {
           // Mark original as superseded (superseded by promoted version)
           entry.supersededBy = promoted.id;
           entry.validUntil = now;
-          await this.remem.persistLayerEntry?.(entry, {});
+          await this.remem.persistLayerEntry?.(entry);
 
           // Delete original from episodic
           layerManager.forget(entry.id);

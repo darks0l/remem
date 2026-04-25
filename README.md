@@ -9,8 +9,8 @@
 [![npm version](https://img.shields.io/npm/v/@darksol/remem?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.npmjs.com/package/@darksol/remem)
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
-[![Test Status](https://img.shields.io/badge/tests-61%2F61%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.6.0](https://img.shields.io/badge/v0.6.0-memory%20consolidation%20-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![Test Status](https://img.shields.io/badge/tests-67%2F67%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
+[![v0.6.1](https://img.shields.io/badge/v0.6.1-memory%20consolidation%20-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -36,13 +36,14 @@ ReMEM does something different:
 - **An LLM-native query interface** - Describe what you want in plain English; the query engine recursively refines
 - **Temporal validity** - Tracks when facts were true, not just that they exist. Enforced in all layer queries — expired entries are filtered out automatically
 - **Episodic capture pipeline** (v0.5.0) - Automatic event capture for the episodic layer. Buffers + batch-writes to MemoryStore, importance scoring based on event type + content, deduplication of rapid similar events, and topic extraction from event content and hashtags
-- **Memory consolidation** (v0.6.0) - Cross-layer deduplication via embedding/keyword similarity, conflict resolution with contradiction detection, cross-layer promotion of frequently-accessed episodic entries to semantic layer, and configurable merge strategies (newer_wins, older_wins, concatenate, supersede)
+- **Memory consolidation** (v0.6.1) - Cross-layer deduplication via embedding/keyword similarity, conflict resolution with contradiction detection, cross-layer promotion of frequently-accessed episodic entries to semantic layer, and configurable merge strategies (newer_wins, older_wins, concatenate, supersede)
 - **Episodic compression** - When the episodic layer fills up, old entries are LLM-compressed into semantic summaries instead of lost to TTL eviction. Meaning preserved, storage reclaimed
 - **RLM-style Memory REPL** (v0.4.0) - Model writes JavaScript to navigate memory programmatically. Never sees all memory at once — only constant-size metadata. Enables arbitrarily large memory stores without context window overflow
 - **Snapshot/restore** - Full memory snapshots for long-running agents. Survive restarts, migrations, and crashes
 - **Identity duplication & infection** (v0.3.3) - Export full identity package to DARKSOL server, pull and overlay on any ReMEM-equipped agent
 - **Multi-agent scoping** - agent_id + user_id isolation for shared deployments
 - **Plug-and-play LLM abstraction** - Bankr, OpenAI, Anthropic, Ollama - swap without changing your code
+- **Framework adapters** (v0.6.1) - Dependency-free helpers for Vercel AI SDK, LangGraph-style stores, and OpenClaw/session memory
 - **Framework-agnostic** - Works as a library (Node.js/Deno), CLI tool, or HTTP microservice
 
 ---
@@ -95,6 +96,39 @@ const { results, layerBreakdown } = await memory.queryLayers('Solana trading rul
 const triggered = memory.fireProcedural('User is asking about Solana DeFi');
 // → ["Always check Raydium pools for Solana DeFi"]
 ```
+
+### Framework Adapters
+
+```typescript
+import {
+  createVercelAIAdapter,
+  createLangGraphStoreAdapter,
+  createOpenClawAdapter,
+} from '@darksol/remem';
+
+// Vercel AI SDK-style helpers: save messages, remember text, recall context
+const aiMemory = createVercelAIAdapter(memory);
+await aiMemory.saveMessages([
+  { role: 'user', content: 'I prefer local-first memory' },
+  { role: 'assistant', content: 'Got it.' },
+]);
+const context = await aiMemory.context('memory preferences');
+
+// LangGraph/LangChain-style BaseStore-ish adapter
+const store = createLangGraphStoreAdapter(memory);
+await store.put(['users', 'meta'], 'preference', { theme: 'dark mode' });
+const matches = await store.search(['users', 'meta'], 'dark mode');
+
+// OpenClaw/session adapter
+const openclaw = createOpenClawAdapter(memory);
+await openclaw.rememberTurn({
+  role: 'user',
+  content: 'Ship after tests pass',
+  sessionId: 'general',
+});
+```
+
+Adapters are intentionally dependency-free. They expose structural interfaces you can wrap into your framework of choice without dragging Vercel, LangChain, or OpenClaw into your runtime.
 
 ### For Long-Running Agents (1-3 year lifespan)
 
@@ -455,8 +489,9 @@ import { HttpAdapter } from '@darksol/remem';
 
 const adapter = new HttpAdapter({
   port: 8787,
+  host: '127.0.0.1',      // default: localhost only
   store: memory.getStore(),
-  model: memory.model,  // optional
+  authToken: process.env.REMEM_TOKEN, // optional bearer auth
 });
 
 await adapter.start();
@@ -466,26 +501,42 @@ await adapter.start();
 # Store
 curl -X POST http://localhost:8787/memory \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
   -d '{"content": "...", "topics": ["preferences"]}'
 
 # Query
-curl "http://localhost:8787/memory?q=preferences&limit=5"
+curl -H "Authorization: Bearer $REMEM_TOKEN" \
+  "http://localhost:8787/memory?q=preferences&limit=5"
 
 # Recent
-curl "http://localhost:8787/memory/recent?n=10"
+curl -H "Authorization: Bearer $REMEM_TOKEN" \
+  "http://localhost:8787/memory/recent?n=10"
 
 # Snapshots
-curl "http://localhost:8787/snapshots"
-curl -X POST "http://localhost:8787/snapshots" -d '{"label": "pre-deploy"}'
+curl -H "Authorization: Bearer $REMEM_TOKEN" \
+  "http://localhost:8787/snapshots"
+curl -X POST "http://localhost:8787/snapshots" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -d '{"label": "pre-deploy"}'
 
-# Delete
-curl -X DELETE "http://localhost:8787/memory/{id}"
+# Restore / delete snapshots
+curl -X POST -H "Authorization: Bearer $REMEM_TOKEN" \
+  "http://localhost:8787/snapshots/{id}/restore"
+curl -X DELETE -H "Authorization: Bearer $REMEM_TOKEN" \
+  "http://localhost:8787/snapshots/{id}"
+
+# Delete memory
+curl -X DELETE -H "Authorization: Bearer $REMEM_TOKEN" \
+  "http://localhost:8787/memory/{id}"
 
 # Events
-curl "http://localhost:8787/events?limit=50"
+curl -H "Authorization: Bearer $REMEM_TOKEN" \
+  "http://localhost:8787/events?limit=50"
 
 # Health
-curl "http://localhost:8787/health"
+curl -H "Authorization: Bearer $REMEM_TOKEN" \
+  "http://localhost:8787/health"
 ```
 
 ---

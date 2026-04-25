@@ -34,7 +34,10 @@ __export(index_exports, {
   ConstitutionManager: () => ConstitutionManager,
   DEFAULT_LAYER_CONFIG: () => DEFAULT_LAYER_CONFIG,
   DriftDetector: () => DriftDetector,
+  EpisodicCapturePipeline: () => EpisodicCapturePipeline,
+  HttpAdapter: () => HttpAdapter,
   LayerManager: () => LayerManager,
+  MemoryConsolidator: () => MemoryConsolidator,
   MemoryREPL: () => MemoryREPL,
   MemoryStore: () => MemoryStore,
   ModelAbstraction: () => ModelAbstraction,
@@ -44,6 +47,9 @@ __export(index_exports, {
   constitutionSchema: () => constitutionSchema,
   constitutionStatementSchema: () => constitutionStatementSchema,
   createIdentitySystem: () => createIdentitySystem,
+  createLangGraphStoreAdapter: () => createLangGraphStoreAdapter,
+  createOpenClawAdapter: () => createOpenClawAdapter,
+  createVercelAIAdapter: () => createVercelAIAdapter,
   downloadPackage: () => downloadPackage,
   driftEventSchema: () => driftEventSchema,
   driftResultSchema: () => driftResultSchema,
@@ -2816,6 +2822,917 @@ Embeddings: ${this.store ? "available (semantic search enabled)" : "not configur
   }
 };
 
+// src/http.ts
+var HttpAdapter = class {
+  server;
+  engine;
+  store;
+  model;
+  port;
+  host;
+  authToken;
+  corsOrigin;
+  maxBodyBytes;
+  constructor(config) {
+    this.store = config.store;
+    this.model = config.model;
+    this.engine = new QueryEngine({ store: this.store, model: this.model });
+    this.port = config.port ?? 8787;
+    this.host = config.host ?? "127.0.0.1";
+    this.authToken = config.authToken;
+    this.corsOrigin = config.corsOrigin ?? "http://localhost";
+    this.maxBodyBytes = config.maxBodyBytes ?? 1024 * 1024;
+  }
+  async start() {
+    const http = await import("http");
+    this.server = http.createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", `http://localhost:${this.port}`);
+      const method = req.method ?? "GET";
+      res.setHeader("Access-Control-Allow-Origin", this.corsOrigin);
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      if (method === "OPTIONS") {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      if (!this.isAuthorized(req)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Unauthorized" }));
+        return;
+      }
+      try {
+        const result = await this.handleRequest(method, url, req);
+        res.writeHead(result.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result.body));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: message }));
+      }
+    });
+    return new Promise((resolve) => {
+      this.server.listen(this.port, this.host, () => {
+        resolve();
+      });
+    });
+  }
+  async stop() {
+    return new Promise((resolve) => {
+      this.server?.close(() => resolve());
+    });
+  }
+  async handleRequest(method, url, req) {
+    const path = url.pathname;
+    if (method === "POST" && path === "/memory") {
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      if (!body) return { status: 400, body: { error: "Empty request body" } };
+      const input = storeMemoryInputSchema.parse(JSON.parse(body));
+      await this.engine.store(input);
+      return { status: 201, body: { ok: true, message: "Memory stored" } };
+    }
+    if (method === "GET" && path === "/memory") {
+      const query = url.searchParams.get("q") ?? "";
+      const limit = parseInt(url.searchParams.get("limit") ?? "10", 10);
+      const topics = url.searchParams.get("topics")?.split(",").filter(Boolean);
+      const options = { limit };
+      if (topics) options.topics = topics;
+      const result = await this.engine.query(query, options);
+      return { status: 200, body: result };
+    }
+    if (method === "GET" && path === "/memory/recent") {
+      const n = parseInt(url.searchParams.get("n") ?? "10", 10);
+      const results = await this.engine.getRecent(n);
+      return { status: 200, body: { results } };
+    }
+    if (method === "GET" && path.startsWith("/memory/topics/")) {
+      const topic = decodeURIComponent(path.split("/")[3]);
+      const limit = parseInt(url.searchParams.get("limit") ?? "20", 10);
+      const results = await this.engine.getByTopic(topic, limit);
+      return { status: 200, body: { results } };
+    }
+    if (method === "GET" && path.startsWith("/memory/")) {
+      const id = path.split("/")[2];
+      if (id === "recent" || id === "topics") {
+        return { status: 404, body: { error: "Not found" } };
+      }
+      const entry = await this.store.get(id);
+      return entry ? { status: 200, body: { entry } } : { status: 404, body: { error: "Memory not found" } };
+    }
+    if (method === "DELETE" && path.startsWith("/memory/")) {
+      const id = path.split("/")[2];
+      const forgotten = await this.store.forget(id);
+      return {
+        status: forgotten ? 200 : 404,
+        body: { ok: forgotten, message: forgotten ? "Memory forgotten" : "Memory not found" }
+      };
+    }
+    if (method === "GET" && path === "/snapshots") {
+      const snapshots = await this.store.listSnapshots();
+      return { status: 200, body: { snapshots } };
+    }
+    if (method === "POST" && path === "/snapshots") {
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      const label = typeof parsed.label === "string" && parsed.label.trim() ? parsed.label : "snapshot";
+      const snapshot = await this.store.createSnapshot(label);
+      return { status: 201, body: { snapshot } };
+    }
+    if (method === "POST" && path.startsWith("/snapshots/") && path.endsWith("/restore")) {
+      const id = path.split("/")[2];
+      const restored = await this.store.restoreSnapshot(id);
+      return { status: 200, body: { ok: true, restored } };
+    }
+    if (method === "DELETE" && path.startsWith("/snapshots/")) {
+      const id = path.split("/")[2];
+      const deleted = await this.store.deleteSnapshot(id);
+      return {
+        status: deleted ? 200 : 404,
+        body: { ok: deleted, message: deleted ? "Snapshot deleted" : "Snapshot not found" }
+      };
+    }
+    if (method === "GET" && path === "/events") {
+      const limit = parseInt(url.searchParams.get("limit") ?? "100", 10);
+      const events = this.store.getEventLog(limit);
+      return { status: 200, body: { events } };
+    }
+    if (method === "GET" && path === "/health") {
+      return { status: 200, body: { ok: true, model: this.model?.name() ?? "none" } };
+    }
+    return { status: 404, body: { error: "Not found", path, method } };
+  }
+  isAuthorized(req) {
+    if (!this.authToken) return true;
+    return req.headers.authorization === `Bearer ${this.authToken}`;
+  }
+  async readBody(req) {
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      let total = 0;
+      req.on("data", (chunk) => {
+        total += chunk.length;
+        if (total > this.maxBodyBytes) {
+          reject(new Error("Request body too large"));
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+      req.on("error", reject);
+    });
+  }
+};
+
+// src/consolidate.ts
+var DEFAULT_OPTIONS = {
+  similarityThreshold: 0.85,
+  promotionAccessThreshold: 5,
+  autoOnStore: false,
+  mergeStrategy: "newer_wins"
+};
+var MemoryConsolidator = class {
+  remem;
+  embeddingService;
+  options;
+  constructor(remem, embeddingService = null, options = {}) {
+    this.remem = remem;
+    this.embeddingService = embeddingService ?? remem.getEmbeddingService?.() ?? null;
+    this.options = { ...DEFAULT_OPTIONS, ...options };
+  }
+  // =========================================================================
+  // Similarity-Based Deduplication
+  // =========================================================================
+  /**
+   * Find all near-duplicate pairs in a layer.
+   * Uses embedding cosine similarity when available, keyword fallback otherwise.
+   */
+  async findSimilarPairs(layer) {
+    const layerManager = this.remem.getLayerManager?.();
+    if (!layerManager) return [];
+    const entries = layerManager.getAllEntries().filter((e) => e.layer === layer);
+    const pairs = [];
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const similarity = await this.computeSimilarity(entries[i], entries[j]);
+        if (similarity >= this.options.similarityThreshold) {
+          pairs.push({ entryA: entries[i], entryB: entries[j], similarity });
+        }
+      }
+    }
+    return pairs;
+  }
+  /**
+   * Compute similarity between two entries.
+   * Uses embeddings when available, keyword Jaccard fallback.
+   */
+  async computeSimilarity(a, b) {
+    if (this.embeddingService) {
+      try {
+        const embA = await this.getEntryEmbedding(a.id);
+        const embB = await this.getEntryEmbedding(b.id);
+        if (embA && embB) {
+          return this.cosineSimilarity(embA, embB);
+        }
+      } catch {
+      }
+    }
+    return this.keywordSimilarity(a.content, b.content);
+  }
+  async getEntryEmbedding(entryId) {
+    const layerManager = this.remem.getLayerManager?.();
+    if (layerManager && "entryEmbeddings" in layerManager) {
+      const embeddings = layerManager.entryEmbeddings;
+      return embeddings.get(entryId) ?? null;
+    }
+    return null;
+  }
+  cosineSimilarity(a, b) {
+    if (a.length !== b.length) return 0;
+    let dot = 0, normA = 0, normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-8);
+  }
+  keywordSimilarity(textA, textB) {
+    const tokensA = new Set(textA.toLowerCase().split(/\W+/).filter(Boolean));
+    const tokensB = new Set(textB.toLowerCase().split(/\W+/).filter(Boolean));
+    const intersection = [...tokensA].filter((t) => tokensB.has(t)).length;
+    const union = (/* @__PURE__ */ new Set([...tokensA, ...tokensB])).size;
+    return union > 0 ? intersection / union : 0;
+  }
+  // =========================================================================
+  // Merge Strategies
+  // =========================================================================
+  /**
+   * Merge two entries according to the configured merge strategy.
+   * Returns the merged entry content + metadata.
+   */
+  merge(a, b) {
+    const strategy = this.options.mergeStrategy;
+    const older = a.createdAt <= b.createdAt ? a : b;
+    const newer = a.createdAt <= b.createdAt ? b : a;
+    const winner = strategy === "older_wins" ? older : newer;
+    let content;
+    let topics;
+    let metadata;
+    switch (strategy) {
+      case "newer_wins":
+      case "older_wins": {
+        content = winner.content;
+        topics = [.../* @__PURE__ */ new Set([...a.topics, ...b.topics])];
+        metadata = { ...a.metadata, ...b.metadata, mergedFrom: [a.id, b.id], winner: winner.id, consolidatedAt: Date.now() };
+        break;
+      }
+      case "concatenate": {
+        content = `${older.content}
+---
+${newer.content}`;
+        topics = [.../* @__PURE__ */ new Set([...a.topics, ...b.topics])];
+        metadata = { ...a.metadata, ...b.metadata, mergedFrom: [a.id, b.id], consolidatedAt: Date.now() };
+        break;
+      }
+      case "supersede": {
+        content = winner.content;
+        topics = winner.topics;
+        metadata = { ...winner.metadata, consolidatedAt: Date.now() };
+        break;
+      }
+      default:
+        content = winner.content;
+        topics = winner.topics;
+        metadata = { ...winner.metadata };
+    }
+    return { content, topics, metadata };
+  }
+  // =========================================================================
+  // Deduplicate a Layer
+  // =========================================================================
+  /**
+   * Run deduplication over a specific layer.
+   * Finds similar pairs, merges them, and deletes the merged entries.
+   * @returns Number of entries deduplicated
+   */
+  async deduplicateLayer(layer) {
+    const result = { deduplicated: 0, promoted: 0, superseded: 0, errors: [] };
+    const layerManager = this.remem.getLayerManager?.();
+    if (!layerManager) {
+      result.errors.push("No layer manager available");
+      return result;
+    }
+    const pairs = await this.findSimilarPairs(layer);
+    const processedIds = /* @__PURE__ */ new Set();
+    for (const pair of pairs) {
+      if (processedIds.has(pair.entryA.id) || processedIds.has(pair.entryB.id)) continue;
+      const merged = this.merge(pair.entryA, pair.entryB);
+      try {
+        const newEntry = this.remem.store(
+          {
+            content: merged.content,
+            topics: merged.topics,
+            metadata: {
+              ...merged.metadata,
+              consolidatedFrom: [pair.entryA.id, pair.entryB.id],
+              similarity: pair.similarity
+            }
+          },
+          layer
+        );
+        layerManager.forget(pair.entryA.id);
+        layerManager.forget(pair.entryB.id);
+        processedIds.add(pair.entryA.id);
+        processedIds.add(pair.entryB.id);
+        result.deduplicated++;
+        if (this.options.mergeStrategy === "supersede") {
+          result.superseded++;
+        }
+        if (this.embeddingService && newEntry.id) {
+          try {
+            const vec = await this.embeddingService.embed(merged.content);
+            await this.remem.persistLayerEntry?.({ ...newEntry, content: merged.content });
+            await this.remem.persistLayerEmbedding?.(newEntry.id, vec, this.embeddingService.model);
+            if (layerManager && "setEntryEmbedding" in layerManager) {
+              layerManager.setEntryEmbedding(newEntry.id, vec);
+            }
+          } catch (err) {
+            result.errors.push(`Embedding generation failed for ${newEntry.id}: ${err}`);
+          }
+        }
+      } catch (err) {
+        result.errors.push(`Merge failed for ${pair.entryA.id}+${pair.entryB.id}: ${err}`);
+      }
+    }
+    return result;
+  }
+  // =========================================================================
+  // Cross-Layer Conflict Resolution
+  // =========================================================================
+  /**
+   * Detect contradictions between entries in the same layer.
+   * Uses negation pattern matching to find conflicting statements.
+   *
+   * e.g., "User prefers dark mode" vs "User prefers light mode"
+   */
+  async detectConflicts(layer) {
+    const layerManager = this.remem.getLayerManager?.();
+    if (!layerManager) return [];
+    const entries = layerManager.getAllEntries().filter((e) => e.layer === layer);
+    const conflicts = [];
+    const NEGATION_PATTERNS = [
+      /prefer(s|ring|red)?\s+not\s+/i,
+      /prefer(s|ring|red)?\s+instead\s+/i,
+      /no\s+longer\s+/i,
+      /changed\s+to\s+/i,
+      /now\s+(use|pref|like)\s+/i,
+      /switched\s+to\s+/i,
+      /from\s+\w+\s+to\s+\w+\s+transition/i
+    ];
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const a = entries[i];
+        const b = entries[j];
+        const aHasNegation = NEGATION_PATTERNS.some((p) => p.test(a.content));
+        const bHasNegation = NEGATION_PATTERNS.some((p) => p.test(b.content));
+        if (aHasNegation !== bHasNegation) {
+          const sharedTopics = a.topics.filter((t) => b.topics.includes(t));
+          if (sharedTopics.length > 0) {
+            const older = aHasNegation ? b : a;
+            const newer = aHasNegation ? a : b;
+            conflicts.push({ older, newer });
+          }
+        }
+      }
+    }
+    return conflicts;
+  }
+  /**
+   * Resolve conflicts by marking older entries as superseded.
+   * Keeps the newest (most recent) entry as authoritative.
+   */
+  async resolveConflicts(layer) {
+    const result = { deduplicated: 0, promoted: 0, superseded: 0, errors: [] };
+    const layerManager = this.remem.getLayerManager?.();
+    if (!layerManager) {
+      result.errors.push("No layer manager available");
+      return result;
+    }
+    const conflicts = await this.detectConflicts(layer);
+    for (const { older, newer } of conflicts) {
+      try {
+        older.supersededBy = newer.id;
+        older.validUntil = newer.createdAt;
+        await this.remem.persistLayerEntry?.(older);
+        result.superseded++;
+      } catch (err) {
+        result.errors.push(`Conflict resolution failed for ${older.id}: ${err}`);
+      }
+    }
+    return result;
+  }
+  // =========================================================================
+  // Cross-Layer Promotion
+  // =========================================================================
+  /**
+   * Promote frequently-accessed episodic entries to semantic layer.
+   * Entries with accessCount >= promotionAccessThreshold that are still in episodic
+   * after 10 minutes get promoted to semantic layer (they're important enough to keep longer).
+   */
+  async promoteFrequentEpisodic() {
+    const result = { deduplicated: 0, promoted: 0, superseded: 0, errors: [] };
+    const layerManager = this.remem.getLayerManager?.();
+    if (!layerManager) {
+      result.errors.push("No layer manager available");
+      return result;
+    }
+    const entries = layerManager.getAllEntries().filter((e) => e.layer === "episodic");
+    const now = Date.now();
+    const EPISODIC_KEEP_MS = 10 * 60 * 1e3;
+    for (const entry of entries) {
+      if (entry.accessCount >= this.options.promotionAccessThreshold && now - entry.createdAt >= EPISODIC_KEEP_MS) {
+        try {
+          const promoted = this.remem.store(
+            {
+              content: entry.content,
+              topics: [...entry.topics, "promoted-from-episodic"],
+              metadata: {
+                ...entry.metadata,
+                promotedFrom: entry.id,
+                originalLayer: "episodic",
+                originalCreatedAt: entry.createdAt,
+                promotedAt: now,
+                accessCount: entry.accessCount
+              }
+            },
+            "semantic"
+          );
+          entry.supersededBy = promoted.id;
+          entry.validUntil = now;
+          await this.remem.persistLayerEntry?.(entry);
+          layerManager.forget(entry.id);
+          result.promoted++;
+        } catch (err) {
+          result.errors.push(`Promotion failed for ${entry.id}: ${err}`);
+        }
+      }
+    }
+    return result;
+  }
+  // =========================================================================
+  // Full Periodic Consolidation
+  // =========================================================================
+  /**
+   * Run full consolidation over all layers.
+   * 1. Deduplicate each layer
+   * 2. Resolve conflicts in semantic and identity layers
+   * 3. Promote frequent episodic entries
+   *
+   * @param layers Layers to consolidate. Defaults to all.
+   */
+  async consolidateAll(layers = ["episodic", "semantic", "identity", "procedural"]) {
+    const result = { deduplicated: 0, promoted: 0, superseded: 0, errors: [] };
+    for (const layer of layers) {
+      const dedupResult = await this.deduplicateLayer(layer);
+      result.deduplicated += dedupResult.deduplicated;
+      result.superseded += dedupResult.superseded;
+      result.errors.push(...dedupResult.errors);
+      if (layer === "semantic" || layer === "identity") {
+        const conflictResult = await this.resolveConflicts(layer);
+        result.superseded += conflictResult.superseded;
+        result.errors.push(...conflictResult.errors);
+      }
+    }
+    const promotionResult = await this.promoteFrequentEpisodic();
+    result.promoted += promotionResult.promoted;
+    result.errors.push(...promotionResult.errors);
+    return result;
+  }
+};
+
+// src/episodic-capture.ts
+var import_crypto5 = require("crypto");
+var HIGH_IMPORTANCE_PATTERNS = [
+  "decision",
+  "agreed",
+  "decided",
+  "commit",
+  "ship",
+  "deploy",
+  "publish",
+  "fix",
+  "bug",
+  "broken",
+  "hack",
+  "workaround",
+  "important",
+  "critical",
+  "priority",
+  "blocker",
+  "ship it",
+  "go",
+  "no-go",
+  "approved",
+  "rejected",
+  "refactor",
+  "architecture",
+  "design",
+  "strategy",
+  "plan"
+];
+var LOW_IMPORTANCE_PATTERNS = [
+  "ping",
+  "pong",
+  "heartbeat",
+  "typing",
+  "read",
+  "check",
+  "ACK",
+  "ok",
+  "yes",
+  "noop",
+  "noop",
+  "null",
+  "skip",
+  "ignore",
+  "watermark"
+];
+var TYPE_IMPORTANCE = {
+  "decision": 0.9,
+  "goal.achieved": 0.95,
+  "identity.drift": 0.8,
+  "identity.correction": 0.8,
+  "agent.error": 0.7,
+  "learning": 0.75,
+  "user.feedback": 0.65,
+  "user.question": 0.55,
+  "goal.set": 0.7,
+  "memory.store": 0.5,
+  "memory.query": 0.3,
+  "memory.recall": 0.4,
+  "session.start": 0.2,
+  "session.end": 0.3,
+  "session.compaction": 0.1,
+  "agent.turn": 0.4,
+  "agent.response": 0.4,
+  "agent.tool_call": 0.5,
+  "agent.tool_result": 0.45,
+  "user.message": 0.5
+};
+function scoreImportance(event) {
+  if (event.importanceOverride !== void 0) {
+    return Math.max(0, Math.min(1, event.importanceOverride));
+  }
+  let score = TYPE_IMPORTANCE[event.type] ?? 0.5;
+  const lower = event.content.toLowerCase();
+  for (const pattern of HIGH_IMPORTANCE_PATTERNS) {
+    if (lower.includes(pattern)) {
+      score = Math.min(1, score + 0.15);
+      break;
+    }
+  }
+  for (const pattern of LOW_IMPORTANCE_PATTERNS) {
+    if (lower.includes(pattern)) {
+      score = Math.max(0.1, score - 0.2);
+      break;
+    }
+  }
+  if (event.content.length < 20) {
+    score = Math.max(0.1, score - 0.1);
+  }
+  if (event.content.length > 500) {
+    score = Math.min(1, score + 0.1);
+  }
+  return Math.max(0, Math.min(1, score));
+}
+function hashString(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h = (h << 5) - h + c;
+    h = h & h;
+  }
+  return h;
+}
+function makeDedupKey(event) {
+  const normalized = event.content.toLowerCase().replace(/\s+/g, " ").trim();
+  return {
+    type: event.type,
+    contentHash: hashString(normalized)
+  };
+}
+var EpisodicCapturePipeline = class {
+  remem;
+  eventBuffer = [];
+  dedupSet = /* @__PURE__ */ new Map();
+  flushIntervalMs;
+  maxBatchSize;
+  dedupWindowMs;
+  layer;
+  intervalHandle = null;
+  started = false;
+  eventCount = 0;
+  droppedCount = 0;
+  constructor(remem, options = {}) {
+    this.remem = remem;
+    this.flushIntervalMs = options.flushIntervalMs ?? 1e3;
+    this.maxBatchSize = options.maxBatchSize ?? 50;
+    this.dedupWindowMs = options.dedupWindowMs ?? 2e3;
+    this.layer = options.layer ?? "episodic";
+  }
+  /**
+   * Capture a single event into the episodic layer.
+   * Events are buffered and flushed in batches.
+   */
+  capture(event) {
+    const now = Date.now();
+    this.eventCount++;
+    const enriched = {
+      ...event,
+      id: event.id ?? (0, import_crypto5.randomUUID)(),
+      timestamp: event.timestamp ?? now
+    };
+    if (!enriched.noDedup) {
+      const key = makeDedupKey(enriched);
+      const keyStr = `${key.type}::${key.contentHash}`;
+      const existing = this.dedupSet.get(keyStr);
+      if (existing && now < existing.expiresAt) {
+        this.droppedCount++;
+        return;
+      }
+      this.dedupSet.set(keyStr, { key, expiresAt: now + this.dedupWindowMs });
+    }
+    this.eventBuffer.push(enriched);
+    if (this.eventBuffer.length >= this.maxBatchSize) {
+      this.flush().catch((err) => console.error("[EpisodicCapture] flush error:", err));
+    }
+  }
+  /**
+   * Capture multiple events at once.
+   */
+  captureBatch(events) {
+    for (const event of events) {
+      this.capture(event);
+    }
+  }
+  /**
+   * Start the periodic flush interval.
+   * Call once after registering event sources.
+   */
+  start() {
+    if (this.started) return;
+    this.started = true;
+    this.intervalHandle = setInterval(() => {
+      if (this.eventBuffer.length > 0) {
+        this.flush().catch((err) => console.error("[EpisodicCapture] flush error:", err));
+      }
+      const now = Date.now();
+      for (const [key, val] of this.dedupSet.entries()) {
+        if (now >= val.expiresAt) this.dedupSet.delete(key);
+      }
+    }, this.flushIntervalMs);
+  }
+  /**
+   * Stop the flush interval and flush remaining events.
+   */
+  stop() {
+    if (this.intervalHandle) {
+      clearInterval(this.intervalHandle);
+      this.intervalHandle = null;
+    }
+    if (this.eventBuffer.length > 0) {
+      this.flush().catch((err) => console.error("[EpisodicCapture] final flush error:", err));
+    }
+    this.started = false;
+  }
+  /**
+   * Flush the event buffer to MemoryStore.
+   */
+  async flush() {
+    if (this.eventBuffer.length === 0) return;
+    const batch = this.eventBuffer.splice(0, this.eventBuffer.length);
+    for (const event of batch) {
+      const importance = scoreImportance(event);
+      const topics = this.extractTopics(event);
+      const content = this.formatEvent(event);
+      const entry = this.remem.store(
+        {
+          content,
+          topics,
+          metadata: {
+            ...event.metadata,
+            captureEventId: event.id,
+            captureEventType: event.type,
+            importance,
+            capturedAt: event.timestamp
+          }
+        },
+        this.layer
+      );
+      if (this.remem.getLayerManager && typeof entry.id === "string") {
+        void this.generateEmbedding(entry.id, content).catch(() => {
+        });
+      }
+    }
+  }
+  /**
+   * Extract topics from event type and content.
+   */
+  extractTopics(event) {
+    const topics = [event.type.split(".")[0]];
+    switch (event.type) {
+      case "decision":
+        topics.push("decision");
+        break;
+      case "learning":
+        topics.push("learning");
+        break;
+      case "goal.set":
+      case "goal.achieved":
+        topics.push("goal");
+        break;
+      case "identity.drift":
+      case "identity.correction":
+        topics.push("identity", "drift");
+        break;
+      case "agent.error":
+        topics.push("error");
+        break;
+      case "user.message":
+        topics.push("user-interaction");
+        if (event.metadata?.channel?.includes("discord")) topics.push("discord");
+        break;
+      case "session.compaction":
+        topics.push("session", "maintenance");
+        break;
+    }
+    const hashtags = event.content.match(/#[a-zA-Z][\w-]*/g);
+    if (hashtags) {
+      topics.push(...hashtags.map((t) => t.slice(1).toLowerCase()));
+    }
+    return [...new Set(topics)];
+  }
+  /**
+   * Format an event into a human-readable episodic memory string.
+   */
+  formatEvent(event) {
+    const ts = event.timestamp ? new Date(event.timestamp).toISOString().slice(0, 19).replace("T", " ") : "";
+    const metaStr = event.metadata ? Object.entries(event.metadata).filter(([k]) => !["importance", "capturedAt"].includes(k)).slice(0, 5).map(([k, v]) => `${k}=${String(v).slice(0, 50)}`).join(" ") : "";
+    const importance = scoreImportance(event);
+    const importanceLabel = importance >= 0.8 ? "\u{1F534}" : importance >= 0.6 ? "\u{1F7E1}" : importance >= 0.4 ? "\u{1F7E2}" : "\u26AA";
+    return `[${event.type}] ${event.content}${metaStr ? ` (${metaStr})` : ""} ${importanceLabel} ${ts}`.trim();
+  }
+  /**
+   * Generate embedding for a stored entry (async, non-blocking).
+   * Returns early if no embedding service available.
+   */
+  async generateEmbedding(_entryId, _content) {
+  }
+  /**
+   * Get capture statistics.
+   */
+  getStats() {
+    return {
+      eventCount: this.eventCount,
+      droppedCount: this.droppedCount,
+      bufferSize: this.eventBuffer.length,
+      started: this.started
+    };
+  }
+};
+
+// src/adapters.ts
+function withDefaultTopic(input, defaultTopic) {
+  const normalized = storeMemoryInputSchema.parse(input);
+  if (!defaultTopic) return normalized;
+  const topics = Array.from(/* @__PURE__ */ new Set([...normalized.topics, defaultTopic]));
+  return { ...normalized, topics };
+}
+function contentFromMessages(messages) {
+  if (!Array.isArray(messages)) return String(messages ?? "");
+  return messages.map((message) => {
+    if (typeof message === "string") return message;
+    if (!message || typeof message !== "object") return String(message ?? "");
+    const record = message;
+    const role = typeof record.role === "string" ? `${record.role}: ` : "";
+    const content = record.content;
+    if (typeof content === "string") return `${role}${content}`;
+    if (Array.isArray(content)) {
+      const text = content.map((part) => {
+        if (typeof part === "string") return part;
+        if (part && typeof part === "object" && typeof part.text === "string") {
+          return part.text;
+        }
+        return "";
+      }).filter(Boolean).join("\n");
+      return `${role}${text}`;
+    }
+    return `${role}${JSON.stringify(content ?? "")}`;
+  }).filter(Boolean).join("\n");
+}
+function createVercelAIAdapter(memory, options = {}) {
+  return {
+    name: "vercel-ai",
+    async remember(input) {
+      const normalized = storeMemoryInputSchema.parse(typeof input === "string" ? { content: input } : input);
+      await memory.store(withDefaultTopic(normalized, options.defaultTopic ?? "vercel-ai"));
+    },
+    async saveMessages(messages, metadata = {}) {
+      const content = contentFromMessages(messages).trim();
+      if (!content) return;
+      const entry = storeMemoryInputSchema.parse({
+        content,
+        metadata: { ...metadata, source: "vercel-ai.messages" }
+      });
+      await memory.store(withDefaultTopic(entry, options.defaultTopic ?? "conversation"));
+    },
+    async recall(query, queryOptions = { limit: options.defaultLimit ?? 5 }) {
+      return memory.query(query, queryOptions);
+    },
+    async context(query, queryOptions = { limit: options.defaultLimit ?? 5 }) {
+      const response = await memory.query(query, queryOptions);
+      return response.results.map((result) => `- ${result.content}`).join("\n");
+    }
+  };
+}
+function createLangGraphStoreAdapter(memory, options = {}) {
+  return {
+    name: "langgraph-store",
+    async put(namespace, key, value) {
+      const ns = Array.isArray(namespace) ? namespace.join("/") : namespace;
+      const content = typeof value === "string" ? value : JSON.stringify(value);
+      await memory.store(withDefaultTopic({
+        content,
+        topics: [ns],
+        metadata: { key, namespace: ns, source: "langgraph.store" }
+      }, options.defaultTopic));
+    },
+    async search(namespace, query, queryOptions = { limit: options.defaultLimit ?? 10 }) {
+      const ns = Array.isArray(namespace) ? namespace.join("/") : namespace;
+      const response = await memory.query(query, {
+        ...queryOptions,
+        topics: Array.from(/* @__PURE__ */ new Set([...queryOptions.topics ?? [], ns]))
+      });
+      return response.results.map((result) => ({
+        namespace: [ns],
+        key: result.id,
+        value: result.content,
+        createdAt: result.createdAt,
+        updatedAt: result.accessedAt,
+        score: result.relevanceScore
+      }));
+    },
+    async get(namespace, key) {
+      const ns = Array.isArray(namespace) ? namespace.join("/") : namespace;
+      const response = await memory.query(key, { limit: 20, topics: [ns] });
+      const found = response.results.find((result) => result.id === key || result.content.includes(key));
+      return found ? {
+        namespace: [ns],
+        key: found.id,
+        value: found.content,
+        createdAt: found.createdAt,
+        updatedAt: found.accessedAt
+      } : null;
+    },
+    async listNamespaces() {
+      const recent = await memory.getRecent(100);
+      const namespaces = /* @__PURE__ */ new Set();
+      for (const entry of recent) {
+        for (const topic of entry.topics) namespaces.add(topic);
+      }
+      return [...namespaces].map((ns) => [ns]);
+    }
+  };
+}
+function createOpenClawAdapter(memory, options = {}) {
+  return {
+    name: "openclaw",
+    async rememberTurn(turn) {
+      await memory.store(withDefaultTopic({
+        content: `${turn.role}: ${turn.content}`,
+        topics: [turn.sessionId ? `session:${turn.sessionId}` : "session"],
+        metadata: {
+          ...turn.metadata,
+          role: turn.role,
+          sessionId: turn.sessionId,
+          messageId: turn.messageId,
+          source: "openclaw.turn"
+        }
+      }, options.defaultTopic ?? "openclaw"));
+    },
+    async recallContext(query, queryOptions = { limit: options.defaultLimit ?? 8 }) {
+      const response = await memory.query(query, queryOptions);
+      return response.results.map((result) => `- ${result.content}`).join("\n");
+    },
+    async query(query, queryOptions) {
+      return memory.query(query, queryOptions);
+    }
+  };
+}
+
 // src/index.ts
 var ReMEM = class {
   _store;
@@ -2876,20 +3793,21 @@ var ReMEM = class {
    * If embeddings are enabled, generates a vector embedding in the background.
    */
   async store(input) {
-    const stored = await this._store.store(input, {
+    const normalized = storeMemoryInputSchema.parse(input);
+    const stored = await this._store.store(normalized, {
       agentId: this._agentId,
       userId: this._userId
     });
     if (this._layersEnabled && this.layers) {
-      const result = this.layers.store(input);
+      const result = this.layers.store(normalized);
       await this._store.persistLayerEntry(result, {
         agentId: this._agentId,
         userId: this._userId
       });
     }
     if (this._embeddingEnabled && this.embeddingService) {
-      const contentToEmbed = input.topics.length > 0 ? `[${input.topics.join(", ")}] ${input.content}` : input.content;
-      if (input.metadata?.asyncEmbed === false) {
+      const contentToEmbed = normalized.topics.length > 0 ? `[${normalized.topics.join(", ")}] ${normalized.content}` : normalized.content;
+      if (normalized.metadata?.asyncEmbed === false) {
         try {
           const emb = await this.embeddingService.generateEmbedding(stored.id, contentToEmbed);
           await this._store.storeEmbedding(stored.id, emb.base64, emb.vector.length, emb.model);
@@ -2936,6 +3854,28 @@ var ReMEM = class {
    */
   getEmbeddingService() {
     return this.embeddingService;
+  }
+  /**
+   * Get the layer manager for advanced layer/consolidation operations.
+   */
+  getLayerManager() {
+    return this.layers;
+  }
+  /**
+   * Persist a layer entry. Exposed for advanced consolidation workflows.
+   */
+  async persistLayerEntry(entry) {
+    await this._store.persistLayerEntry(entry, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
+  }
+  /**
+   * Persist a vector embedding for a layered memory entry.
+   */
+  async persistLayerEmbedding(entryId, vector, model) {
+    const base64 = EmbeddingService.encodeVector(vector);
+    await this._store.storeEmbedding(entryId, base64, vector.length, model, "layered");
   }
   /**
    * Get recent memory entries.
@@ -3100,16 +4040,17 @@ var ReMEM = class {
    * Store in a specific layer.
    */
   async storeInLayer(input, layer) {
+    const normalized = storeMemoryInputSchema.parse(input);
     if (!this.layers) {
       await this.enableLayers();
     }
-    const entry = this.layers.store(input, layer);
+    const entry = this.layers.store(normalized, layer);
     await this._store.persistLayerEntry(entry, {
       agentId: this._agentId,
       userId: this._userId
     });
     if (this.embeddingService) {
-      const contentToEmbed = input.topics.length > 0 ? `[${input.topics.join(", ")}] ${input.content}` : input.content;
+      const contentToEmbed = normalized.topics.length > 0 ? `[${normalized.topics.join(", ")}] ${normalized.content}` : normalized.content;
       this.embeddingService.generateEmbedding(entry.id, contentToEmbed).then(async (emb) => {
         await this._store.storeEmbedding(entry.id, emb.base64, emb.vector.length, emb.model);
         this.layers.setEntryEmbedding(entry.id, emb.vector);
@@ -3426,7 +4367,10 @@ var ReMEM = class {
   ConstitutionManager,
   DEFAULT_LAYER_CONFIG,
   DriftDetector,
+  EpisodicCapturePipeline,
+  HttpAdapter,
   LayerManager,
+  MemoryConsolidator,
   MemoryREPL,
   MemoryStore,
   ModelAbstraction,
@@ -3436,6 +4380,9 @@ var ReMEM = class {
   constitutionSchema,
   constitutionStatementSchema,
   createIdentitySystem,
+  createLangGraphStoreAdapter,
+  createOpenClawAdapter,
+  createVercelAIAdapter,
   downloadPackage,
   driftEventSchema,
   driftResultSchema,
