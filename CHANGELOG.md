@@ -4,6 +4,22 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.4.1] — 2026-04-25
+
+### Added
+
+- **Hybrid keyword + semantic scoring in LayerManager** — `EmbeddingService` is now wired into `LayerManager` constructor. `query()` uses 40% keyword relevance + 60% cosine similarity when embeddings are available. `query()` is now `async` (pre-computes query embedding once).
+- **`setEntryEmbedding(id, vector)` on LayerManager** — stores pre-computed embedding vectors for semantic similarity scoring. `forget()` cleans up stored embeddings.
+- **`needsEpisodicCompression()` on LayerManager** — moved from ReMEM class so it's accessible on the layer manager directly.
+- **Auto-compression on restore** — `enableLayers()` compresses episodic entries if above 80% capacity after restoring from SQLite.
+- **Auto-compression on store** — `storeInLayer()` triggers compression check after each store, compressing oldest entries when episodic fills up.
+- **Embedding generation on storeInLayer** — generates embedding and stores it in `LayerManager` for hybrid layer scoring.
+
+### Changed
+
+- **`queryLayers()` on ReMEM is now `async`** — mirrors the async `LayerManager.query()`.
+- **`layers.query()` in REPL executor is now `async`** — required for async LayerManager query.
+
 ## [0.4.0] — 2026-04-25
 
 ### Added
