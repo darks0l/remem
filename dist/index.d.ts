@@ -1509,6 +1509,31 @@ declare class LayerManager {
      */
     evictExpired(): number;
     /**
+     * Get entries eligible for compression — oldest episodic entries.
+     * These will be LLM-compressed into a semantic summary before eviction.
+     * @param count Number of entries to return for compression
+     */
+    getEntriesForCompression(count?: number): LayeredMemoryEntry[];
+    /**
+     * Compress episodic entries into a semantic summary.
+     * Creates a new semantic layer entry that summarizes the episodic content.
+     * Returns the new semantic entry ID, or null if compression not applicable.
+     */
+    compressToSemantic(episodicEntries: LayeredMemoryEntry[], model: {
+        chat(messages: Array<{
+            role: string;
+            content: string;
+        }>, opts?: {
+            temperature?: number;
+            maxTokens?: number;
+        }): Promise<{
+            content: string;
+        }>;
+    }): Promise<{
+        compressedEntry: LayeredMemoryEntry;
+        entriesEvicted: number;
+    } | null>;
+    /**
      * Auto-assign layer based on content analysis.
      */
     private autoAssignLayer;
@@ -1641,6 +1666,96 @@ declare class QueryEngine {
         answer: string;
         memories: QueryResult[];
     }>;
+}
+
+/**
+ * ReMEM — RLM-Style Memory REPL
+ * Recursive Language Model loop for navigating memory programmatically.
+ *
+ * RLM Core Insight (from "Recursive Language Models"):
+ * Treat the memory store as an external environment. Instead of retrieving
+ * and truncating (losing detail), let the model write code to navigate it.
+ *
+ * The model never sees all memory at once — only constant-size metadata
+ * about the store structure and what it's already observed. This enables
+ * arbitrarily large memory stores without context window overflow.
+ *
+ * Design:
+ * - Root model call: receives query + environment metadata (constant size)
+ * - Model generates JavaScript to navigate: query layers, get chunks, recurse
+ * - Executor runs the JS safely (Function constructor, not eval)
+ * - Next iteration: model sees only what it observed, decides next action
+ * - Loop until model returns __done or maxDepth reached
+ */
+
+type MemoryAction = {
+    action: 'observe';
+    data: unknown;
+} | {
+    action: 'done';
+    answer: string;
+};
+interface REPLObservation {
+    iteration: number;
+    code: string;
+    result: unknown;
+    action: MemoryAction;
+}
+interface MemoryREPLOptions {
+    /** Memory store for actual operations */
+    store: MemoryStore;
+    /** Layer manager (optional — enables layer-aware navigation) */
+    layers?: LayerManager;
+    /** LLM for the REPL loop */
+    model?: ModelAbstraction;
+    /** Max recursion depth (default: 5) */
+    maxDepth?: number;
+    /** Max entries to return in final answer (default: 20) */
+    maxResults?: number;
+    /** Custom system prompt for the REPL model */
+    systemPrompt?: string;
+}
+declare class MemoryREPL {
+    private store;
+    private layers?;
+    private model?;
+    private maxDepth;
+    private maxResults;
+    private systemPrompt;
+    constructor(options: MemoryREPLOptions);
+    /**
+     * Navigate memory using the RLM loop.
+     * Model writes JS to explore, executor runs it, results feed back into next iteration.
+     */
+    navigate(query: string): Promise<{
+        answer: string;
+        observations: REPLObservation[];
+    }>;
+    /**
+     * Build constant-size metadata about the store environment.
+     * This is what the RLM paper calls the "screen" — fixed size regardless of memory size.
+     */
+    private buildEnvironmentMetadata;
+    /**
+     * Extract executable JavaScript code from the model's response.
+     * Looks for the first { ... } object containing mem.* calls.
+     */
+    private extractCode;
+    /**
+     * Execute model-generated code safely.
+     * Uses Function constructor — no eval, no require, no Node.js globals.
+     * Only exposes the safe memory API.
+     */
+    private executeCode;
+    /**
+     * Build the safe memory API exposed to model-generated code.
+     * Only exposes query/retrieve operations — no mutation, no system access.
+     */
+    private buildMemoryAPI;
+    /**
+     * Format observation result for display to the model in next iteration.
+     */
+    private formatObservation;
 }
 
 /**
@@ -1862,6 +1977,23 @@ declare class ReMEM {
         memories: QueryResult[];
     }>;
     /**
+     * RLM-style Memory REPL — navigate memory programmatically.
+     *
+     * The model writes JavaScript to navigate the memory store. This enables
+     * arbitrarily large memory stores without context window overflow — the model
+     * never sees all memory at once, only constant-size metadata about what it
+     * has observed.
+     *
+     * Requires: model configured.
+     * Optional: layers enabled (enables layer-aware navigation).
+     *
+     * @returns { answer: string, observations: REPL debug trace }
+     */
+    replNavigate(query: string): Promise<{
+        answer: string;
+        observations: unknown[];
+    }>;
+    /**
      * Enable identity layer with optional constitution import.
      */
     enableIdentity(config?: {
@@ -1920,6 +2052,24 @@ declare class ReMEM {
      * Evict expired entries from all layers.
      */
     evictExpiredLayers(): number;
+    /**
+     * Check if episodic layer needs compression.
+     * Returns true when episodic is above 80% capacity.
+     */
+    needsEpisodicCompression(): boolean;
+    /**
+     * Compress oldest episodic entries into semantic summaries.
+     * Call this when episodic layer fills up — uses the LLM to summarize
+     * old entries rather than losing them to TTL eviction.
+     *
+     * @param count How many episodic entries to compress (default: 20)
+     * @returns compressed entry info, or null if layers/llm not available
+     */
+    compressEpisodic(count?: number): Promise<{
+        compressedEntryId: string;
+        summary: string;
+        entriesEvicted: number;
+    } | null>;
     /**
      * Store a procedural memory — a behavior/rule triggered by a keyword.
      * Use when you learn a rule like "when X happens, always do Y".
@@ -2053,4 +2203,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, type EventType, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryStore, ModelAbstraction, type ModelConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMConfig, type StoreMemoryInput, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createIdentitySystem, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema, uploadPackage };
+export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, type EventType, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryREPL, MemoryStore, ModelAbstraction, type ModelConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMConfig, type StoreMemoryInput, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createIdentitySystem, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema, uploadPackage };

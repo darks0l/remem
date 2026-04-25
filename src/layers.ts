@@ -234,9 +234,19 @@ export class LayerManager {
       for (const entry of this.entries.values()) {
         if (entry.layer !== layer) continue;
 
-        // Skip expired
+        // Skip expired by TTL
         if (entry.expiresAt && now > entry.expiresAt) {
           this.entries.delete(entry.id);
+          continue;
+        }
+
+        // Skip temporal validity — entry was true in the past but not anymore
+        if (entry.validUntil && now > entry.validUntil) {
+          continue; // don't delete, just don't return it in current queries
+        }
+
+        // Skip entries that aren't valid yet (future validFrom)
+        if (entry.validFrom && now < entry.validFrom) {
           continue;
         }
 
@@ -418,6 +428,111 @@ export class LayerManager {
     }
 
     return evicted;
+  }
+
+  /**
+   * Get entries eligible for compression — oldest episodic entries.
+   * These will be LLM-compressed into a semantic summary before eviction.
+   * @param count Number of entries to return for compression
+   */
+  getEntriesForCompression(count: number = 20): LayeredMemoryEntry[] {
+    const episodic = [...this.entries.values()].filter((e) => e.layer === 'episodic');
+    episodic.sort((a, b) => a.createdAt - b.createdAt);
+    return episodic.slice(0, Math.min(count, episodic.length));
+  }
+
+  /**
+   * Compress episodic entries into a semantic summary.
+   * Creates a new semantic layer entry that summarizes the episodic content.
+   * Returns the new semantic entry ID, or null if compression not applicable.
+   */
+  compressToSemantic(
+    episodicEntries: LayeredMemoryEntry[],
+    model: {
+      chat(messages: Array<{ role: string; content: string }>, opts?: { temperature?: number; maxTokens?: number }): Promise<{ content: string }>;
+    }
+  ): Promise<{ compressedEntry: LayeredMemoryEntry; entriesEvicted: number } | null> {
+    if (episodicEntries.length === 0) return Promise.resolve(null);
+
+    const now = Date.now();
+
+    // Format episodic entries for the LLM
+    const episodicText = episodicEntries
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((e) => `[${new Date(e.createdAt).toISOString().slice(0, 10)}] ${e.content}`)
+      .join('\n');
+
+    const compressionPrompt = `You are compressing a series of short-term episodic memories into a single semantic summary. These are raw observations, preferences, or context fragments from a session.
+
+Episodic memories:
+${episodicText}
+
+Your task:
+1. Identify recurring themes, facts, or patterns across these entries
+2. Discard transient details (timestamps, one-off observations with no pattern)
+3. Write a semantic summary that captures what matters: decisions made, preferences expressed, context established, facts learned
+4. Keep it concise — 2-4 sentences max. The goal is to preserve meaning, not volume.
+
+Respond with ONLY a JSON object:
+{
+  "summary": "Your 2-4 sentence semantic summary here.",
+  "topics": ["topic1", "topic2"],
+  "keyFacts": ["fact1", "fact2"]
+}`;
+
+    return model
+      .chat([{ role: 'user', content: compressionPrompt }], { temperature: 0.3, maxTokens: 512 })
+      .then(async (response) => {
+        let parsed: { summary?: string; topics?: string[]; keyFacts?: string[] } = {};
+        try {
+          const match = response.content.match(/\{[\s\S]*\}/);
+          if (match) parsed = JSON.parse(match[0]);
+        } catch {
+          // Fall back to raw content
+          parsed = { summary: response.content.slice(0, 500), topics: [], keyFacts: [] };
+        }
+
+        const summary = parsed.summary ?? response.content.slice(0, 500);
+        const topics = parsed.topics ?? [];
+        const keyFacts = parsed.keyFacts ?? [];
+
+        // Create the semantic summary entry
+        const semanticCfg = this.config.semantic;
+        const compressedEntry: LayeredMemoryEntry = {
+          id: `compression-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          content: summary,
+          topics: ['compressed', 'episodic-summary', ...topics],
+          metadata: {
+            compressed: true,
+            sourceEntryCount: episodicEntries.length,
+            keyFacts,
+            compressedAt: now,
+          },
+          createdAt: now,
+          accessedAt: now,
+          accessCount: 0,
+          layer: 'semantic',
+          expiresAt: now + semanticCfg.ttlMs,
+          importance: 0.6,
+          validFrom: now,
+          validUntil: undefined,
+        };
+
+        // Store the compressed entry
+        this.entries.set(compressedEntry.id, compressedEntry);
+
+        // Evict the original episodic entries
+        let evicted = 0;
+        for (const entry of episodicEntries) {
+          if (this.entries.has(entry.id)) {
+            this.entries.delete(entry.id);
+            evicted++;
+          }
+        }
+
+        return { compressedEntry, entriesEvicted: evicted };
+      })
+      .catch(() => null);
   }
 
   /**

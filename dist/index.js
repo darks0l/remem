@@ -35,6 +35,7 @@ __export(index_exports, {
   DEFAULT_LAYER_CONFIG: () => DEFAULT_LAYER_CONFIG,
   DriftDetector: () => DriftDetector,
   LayerManager: () => LayerManager,
+  MemoryREPL: () => MemoryREPL,
   MemoryStore: () => MemoryStore,
   ModelAbstraction: () => ModelAbstraction,
   QueryEngine: () => QueryEngine,
@@ -2015,6 +2016,12 @@ var LayerManager = class {
           this.entries.delete(entry.id);
           continue;
         }
+        if (entry.validUntil && now > entry.validUntil) {
+          continue;
+        }
+        if (entry.validFrom && now < entry.validFrom) {
+          continue;
+        }
         if (options?.topics && options.topics.length > 0) {
           const hasTopic = options.topics.some(
             (t) => entry.topics.some((et) => et.toLowerCase().includes(t.toLowerCase()))
@@ -2154,6 +2161,84 @@ var LayerManager = class {
       }
     }
     return evicted;
+  }
+  /**
+   * Get entries eligible for compression — oldest episodic entries.
+   * These will be LLM-compressed into a semantic summary before eviction.
+   * @param count Number of entries to return for compression
+   */
+  getEntriesForCompression(count = 20) {
+    const episodic = [...this.entries.values()].filter((e) => e.layer === "episodic");
+    episodic.sort((a, b) => a.createdAt - b.createdAt);
+    return episodic.slice(0, Math.min(count, episodic.length));
+  }
+  /**
+   * Compress episodic entries into a semantic summary.
+   * Creates a new semantic layer entry that summarizes the episodic content.
+   * Returns the new semantic entry ID, or null if compression not applicable.
+   */
+  compressToSemantic(episodicEntries, model) {
+    if (episodicEntries.length === 0) return Promise.resolve(null);
+    const now = Date.now();
+    const episodicText = episodicEntries.sort((a, b) => a.createdAt - b.createdAt).map((e) => `[${new Date(e.createdAt).toISOString().slice(0, 10)}] ${e.content}`).join("\n");
+    const compressionPrompt = `You are compressing a series of short-term episodic memories into a single semantic summary. These are raw observations, preferences, or context fragments from a session.
+
+Episodic memories:
+${episodicText}
+
+Your task:
+1. Identify recurring themes, facts, or patterns across these entries
+2. Discard transient details (timestamps, one-off observations with no pattern)
+3. Write a semantic summary that captures what matters: decisions made, preferences expressed, context established, facts learned
+4. Keep it concise \u2014 2-4 sentences max. The goal is to preserve meaning, not volume.
+
+Respond with ONLY a JSON object:
+{
+  "summary": "Your 2-4 sentence semantic summary here.",
+  "topics": ["topic1", "topic2"],
+  "keyFacts": ["fact1", "fact2"]
+}`;
+    return model.chat([{ role: "user", content: compressionPrompt }], { temperature: 0.3, maxTokens: 512 }).then(async (response) => {
+      let parsed = {};
+      try {
+        const match = response.content.match(/\{[\s\S]*\}/);
+        if (match) parsed = JSON.parse(match[0]);
+      } catch {
+        parsed = { summary: response.content.slice(0, 500), topics: [], keyFacts: [] };
+      }
+      const summary = parsed.summary ?? response.content.slice(0, 500);
+      const topics = parsed.topics ?? [];
+      const keyFacts = parsed.keyFacts ?? [];
+      const semanticCfg = this.config.semantic;
+      const compressedEntry = {
+        id: `compression-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        content: summary,
+        topics: ["compressed", "episodic-summary", ...topics],
+        metadata: {
+          compressed: true,
+          sourceEntryCount: episodicEntries.length,
+          keyFacts,
+          compressedAt: now
+        },
+        createdAt: now,
+        accessedAt: now,
+        accessCount: 0,
+        layer: "semantic",
+        expiresAt: now + semanticCfg.ttlMs,
+        importance: 0.6,
+        validFrom: now,
+        validUntil: void 0
+      };
+      this.entries.set(compressedEntry.id, compressedEntry);
+      let evicted = 0;
+      for (const entry of episodicEntries) {
+        if (this.entries.has(entry.id)) {
+          this.entries.delete(entry.id);
+          evicted++;
+        }
+      }
+      return { compressedEntry, entriesEvicted: evicted };
+    }).catch(() => null);
   }
   /**
    * Auto-assign layer based on content analysis.
@@ -2354,6 +2439,350 @@ async function infectFromServer(params) {
   return infect({ ...params, pkg });
 }
 
+// src/repl.ts
+var DEFAULT_SYSTEM_PROMPT2 = `You are a memory navigation assistant. The user has a large memory store containing thoughts, facts, preferences, and context.
+
+Your job is to navigate the memory store by writing JavaScript code. You NEVER see the full memory \u2014 you only see metadata and what you observe from your own queries.
+
+AVAILABLE API (in the 'mem' object):
+- mem.query(text, { limit })       \u2014 search memories by text, returns { results: [...], total }
+- mem.get(id)                       \u2014 get a single memory entry by ID
+- mem.getRecent(n)                  \u2014 get N most recently accessed memories
+- mem.getByTopic(topic, limit)      \u2014 get memories by topic tag
+- mem.layers.stats()                 \u2014 get per-layer memory counts
+- mem.layers.query(text, opts)      \u2014 query across specific layers with weighted retrieval
+- mem.layers.fireProcedural(text)   \u2014 fire procedural rules matching context text
+
+NAVIGATION STRATEGY:
+1. Start by querying broad terms to understand what's in memory
+2. Then dig into specific layers or topics that look relevant
+3. Load the actual content of interesting entries with mem.get(id)
+4. Synthesize what you found into a coherent answer
+
+RESPONSE FORMAT \u2014 return EXACTLY one of:
+
+  // When you have a complete answer:
+  ({ action: "done", answer: "Your synthesized answer here." })
+
+  // When you need to observe more before answering:
+  ({ action: "observe", data: { what: "description of what you're checking", findings: "what you expect to find" } })
+
+IMPORTANT:
+- Always return valid JavaScript object literals, not statements
+- Do NOT use await, async, fetch, require, import, or any Node.js APIs
+- The 'mem' object methods are already Promise-aware when used with await inside your code
+- You can write multi-line code that calls multiple mem methods and returns an observation
+- Be specific in your queries \u2014 don't just ask for everything at once
+- After observing results, build on them with more targeted queries
+- If you have enough to answer, say done!
+
+MAX DEPTH: If you reach the recursion limit without enough information, fall back to your best direct query and answer.`;
+var MemoryREPL = class {
+  store;
+  layers;
+  model;
+  maxDepth;
+  maxResults;
+  systemPrompt;
+  constructor(options) {
+    this.store = options.store;
+    this.layers = options.layers;
+    this.model = options.model;
+    this.maxDepth = options.maxDepth ?? 5;
+    this.maxResults = options.maxResults ?? 20;
+    this.systemPrompt = options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT2;
+  }
+  /**
+   * Navigate memory using the RLM loop.
+   * Model writes JS to explore, executor runs it, results feed back into next iteration.
+   */
+  async navigate(query) {
+    const observations = [];
+    const envMeta = await this.buildEnvironmentMetadata();
+    let currentContext = `Query: ${query}
+
+Store metadata:
+${envMeta}`;
+    for (let depth = 0; depth < this.maxDepth; depth++) {
+      const messages = [
+        { role: "system", content: this.systemPrompt },
+        { role: "user", content: currentContext }
+      ];
+      const response = await this.model.chat(messages, {
+        temperature: 0.4,
+        maxTokens: 1024
+      });
+      const raw = response.content.trim();
+      let parsed;
+      try {
+        const objectMatch = raw.match(/\{[\s\S]*\}/);
+        if (!objectMatch) {
+          parsed = { action: "done", answer: raw };
+        } else {
+          parsed = JSON.parse(objectMatch[0]);
+        }
+      } catch {
+        parsed = { action: "done", answer: raw };
+      }
+      if (parsed.action === "done") {
+        return {
+          answer: parsed.answer,
+          observations
+        };
+      }
+      const code = this.extractCode(raw);
+      if (code) {
+        const result = await this.executeCode(code);
+        const observation = {
+          iteration: depth + 1,
+          code,
+          result,
+          action: { action: "observe", data: result }
+        };
+        observations.push(observation);
+        currentContext = `Query: ${query}
+
+## Iteration ${depth + 1} Observations:
+${this.formatObservation(result)}
+
+Continue exploring or synthesize your answer.`;
+      } else {
+        const observation = {
+          iteration: depth + 1,
+          code: "(no code)",
+          result: raw,
+          action: { action: "observe", data: raw }
+        };
+        observations.push(observation);
+        currentContext = `Query: ${query}
+
+## Iteration ${depth + 1}:
+${raw}
+
+If you have enough, return { action: "done", answer: "..." }. Otherwise continue exploring.`;
+      }
+    }
+    const { results } = await this.store.query(query, { limit: this.maxResults });
+    const fallback = `Recursion limit reached. Direct query found ${results.length} relevant memories:
+
+${results.slice(0, 10).map((r) => `- ${r.content}`).join("\n")}`;
+    return { answer: fallback, observations };
+  }
+  /**
+   * Build constant-size metadata about the store environment.
+   * This is what the RLM paper calls the "screen" — fixed size regardless of memory size.
+   */
+  async buildEnvironmentMetadata() {
+    const lines = [];
+    try {
+      const recent = await this.store.getRecent(5);
+      lines.push(`Recent memories (5): ${recent.length} available`);
+      if (recent.length > 0) {
+        for (const r of recent.slice(0, 3)) {
+          lines.push(`  - [${new Date(r.createdAt).toISOString().slice(0, 10)}] ${r.content.slice(0, 80)}`);
+        }
+      }
+    } catch {
+    }
+    if (this.layers) {
+      const stats = this.layers.getStats();
+      lines.push(`
+Layer counts:`);
+      for (const [layer, s] of Object.entries(stats)) {
+        lines.push(`  - ${layer}: ${s.count}/${s.maxEntries} (ttl: ${Math.round(s.ttlMs / 36e5)}h)`);
+      }
+    }
+    lines.push(`
+Embeddings: ${this.store ? "available (semantic search enabled)" : "not configured"}`);
+    return lines.join("\n");
+  }
+  /**
+   * Extract executable JavaScript code from the model's response.
+   * Looks for the first { ... } object containing mem.* calls.
+   */
+  extractCode(response) {
+    const match = response.match(/(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/);
+    if (!match) return null;
+    const obj = match[1];
+    if (!obj.includes("mem.") && !obj.includes("return")) return null;
+    return obj;
+  }
+  /**
+   * Execute model-generated code safely.
+   * Uses Function constructor — no eval, no require, no Node.js globals.
+   * Only exposes the safe memory API.
+   */
+  executeCode(code) {
+    const memAPI = this.buildMemoryAPI();
+    const executor = new Function(
+      "mem",
+      `return (async () => { ${code} })()`
+    );
+    try {
+      return executor(memAPI);
+    } catch (err) {
+      return Promise.resolve({ __error: String(err) });
+    }
+  }
+  /**
+   * Build the safe memory API exposed to model-generated code.
+   * Only exposes query/retrieve operations — no mutation, no system access.
+   */
+  buildMemoryAPI() {
+    const store = this.store;
+    const layers = this.layers;
+    return {
+      // Core store operations
+      query: async (text, opts) => {
+        try {
+          const result = await store.query(text, { limit: opts?.limit ?? 10 });
+          return {
+            count: result.results.length,
+            total: result.totalAvailable,
+            entries: result.results.map((r) => ({
+              id: r.id,
+              content: r.content.slice(0, 200),
+              topics: r.topics,
+              relevance: r.relevanceScore
+            }))
+          };
+        } catch (err) {
+          return { __error: `query failed: ${err}` };
+        }
+      },
+      get: async (id) => {
+        try {
+          const entry = await store.get(id);
+          if (!entry) return { __error: "not found" };
+          return {
+            id: entry.id,
+            content: entry.content,
+            topics: entry.topics,
+            createdAt: entry.createdAt,
+            accessedAt: entry.accessedAt,
+            accessCount: entry.accessCount
+          };
+        } catch (err) {
+          return { __error: `get failed: ${err}` };
+        }
+      },
+      getRecent: async (n = 10) => {
+        try {
+          const results = await store.getRecent(n);
+          return {
+            count: results.length,
+            entries: results.map((r) => ({
+              id: r.id,
+              content: r.content.slice(0, 150),
+              topics: r.topics
+            }))
+          };
+        } catch (err) {
+          return { __error: `getRecent failed: ${err}` };
+        }
+      },
+      getByTopic: async (topic, limit = 20) => {
+        try {
+          const results = await store.getByTopic(topic, limit);
+          return {
+            count: results.length,
+            topic,
+            entries: results.map((r) => ({
+              id: r.id,
+              content: r.content.slice(0, 150),
+              topics: r.topics
+            }))
+          };
+        } catch (err) {
+          return { __error: `getByTopic failed: ${err}` };
+        }
+      },
+      // Layer-aware navigation
+      layers: {
+        stats: () => {
+          if (!layers) return { __error: "layers not enabled" };
+          return layers.getStats();
+        },
+        query: (text, opts) => {
+          if (!layers) return { __error: "layers not enabled" };
+          try {
+            const result = layers.query(text, {
+              limit: opts?.limit ?? 10,
+              layers: opts?.layers
+            });
+            return {
+              count: result.results.length,
+              total: result.totalAvailable,
+              layerBreakdown: result.layerBreakdown,
+              entries: result.results.map((r) => ({
+                id: r.id,
+                content: r.content.slice(0, 150),
+                topics: r.topics,
+                relevance: r.relevanceScore
+              }))
+            };
+          } catch (err) {
+            return { __error: `layer query failed: ${err}` };
+          }
+        },
+        fireProcedural: (context) => {
+          if (!layers) return { __error: "layers not enabled" };
+          try {
+            const triggered = layers.fireProcedural(context);
+            return {
+              count: triggered.length,
+              rules: triggered.map((e) => ({
+                id: e.id,
+                content: e.content,
+                trigger: e.metadata?.trigger
+              }))
+            };
+          } catch (err) {
+            return { __error: `fireProcedural failed: ${err}` };
+          }
+        },
+        getTemporalHistory: (entryId) => {
+          if (!layers) return { __error: "layers not enabled" };
+          try {
+            const history = layers.getTemporalHistory(entryId);
+            return {
+              count: history.length,
+              entries: history.map((r) => ({
+                id: r.id,
+                content: r.content.slice(0, 150)
+              }))
+            };
+          } catch (err) {
+            return { __error: `getTemporalHistory failed: ${err}` };
+          }
+        }
+      }
+    };
+  }
+  /**
+   * Format observation result for display to the model in next iteration.
+   */
+  formatObservation(result) {
+    if (!result) return "  (no result)";
+    if (typeof result === "object" && result !== null && "__error" in result) {
+      return `  ERROR: ${result.__error}`;
+    }
+    if (typeof result === "object" && result !== null) {
+      const r = result;
+      if ("count" in r && "entries" in r) {
+        const entries = r.entries;
+        if (entries.length === 0) return "  No entries found.";
+        return entries.slice(0, 5).map((e) => `  - [${e.id?.toString().slice(0, 8)}] ${String(e.content).slice(0, 100)}`).join("\n");
+      }
+      if ("total" in r) {
+        return `  Found ${r.total} total, showing ${r.count ?? 0}`;
+      }
+    }
+    const json = JSON.stringify(result, null, 2);
+    return json.length > 500 ? json.slice(0, 500) + "..." : json;
+  }
+};
+
 // src/index.ts
 var ReMEM = class {
   _store;
@@ -2493,6 +2922,37 @@ var ReMEM = class {
   async recursiveQuery(initialQuery, maxDepth) {
     return this.engine.recursiveQuery(initialQuery, maxDepth ?? 3);
   }
+  /**
+   * RLM-style Memory REPL — navigate memory programmatically.
+   *
+   * The model writes JavaScript to navigate the memory store. This enables
+   * arbitrarily large memory stores without context window overflow — the model
+   * never sees all memory at once, only constant-size metadata about what it
+   * has observed.
+   *
+   * Requires: model configured.
+   * Optional: layers enabled (enables layer-aware navigation).
+   *
+   * @returns { answer: string, observations: REPL debug trace }
+   */
+  async replNavigate(query) {
+    if (!this.model) {
+      const { results } = await this.query(query);
+      return {
+        answer: results.length > 0 ? `No LLM configured \u2014 used direct query. Found ${results.length} results:
+` + results.slice(0, 5).map((r) => `- ${r.content}`).join("\n") : "No LLM configured and no direct query results.",
+        observations: []
+      };
+    }
+    const repl = new MemoryREPL({
+      store: this._store,
+      layers: this.layers,
+      model: this.model,
+      maxDepth: 5,
+      maxResults: 20
+    });
+    return repl.navigate(query);
+  }
   // ─── Identity Layer ───────────────────────────────────────────────────────
   /**
    * Enable identity layer with optional constitution import.
@@ -2629,6 +3089,40 @@ var ReMEM = class {
   evictExpiredLayers() {
     if (!this.layers) return 0;
     return this.layers.evictExpired();
+  }
+  /**
+   * Check if episodic layer needs compression.
+   * Returns true when episodic is above 80% capacity.
+   */
+  needsEpisodicCompression() {
+    if (!this.layers) return false;
+    const stats = this.layers.getStats();
+    const episodic = stats.episodic;
+    return episodic.count > episodic.maxEntries * 0.8;
+  }
+  /**
+   * Compress oldest episodic entries into semantic summaries.
+   * Call this when episodic layer fills up — uses the LLM to summarize
+   * old entries rather than losing them to TTL eviction.
+   *
+   * @param count How many episodic entries to compress (default: 20)
+   * @returns compressed entry info, or null if layers/llm not available
+   */
+  async compressEpisodic(count = 20) {
+    if (!this.layers || !this.model) return null;
+    const entries = this.layers.getEntriesForCompression(count);
+    if (entries.length === 0) return null;
+    const result = await this.layers.compressToSemantic(entries, this.model);
+    if (!result) return null;
+    await this._store.persistLayerEntry(result.compressedEntry, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
+    return {
+      compressedEntryId: result.compressedEntry.id,
+      summary: result.compressedEntry.content,
+      entriesEvicted: result.entriesEvicted
+    };
   }
   /**
    * Store a procedural memory — a behavior/rule triggered by a keyword.
@@ -2872,6 +3366,7 @@ var ReMEM = class {
   DEFAULT_LAYER_CONFIG,
   DriftDetector,
   LayerManager,
+  MemoryREPL,
   MemoryStore,
   ModelAbstraction,
   QueryEngine,

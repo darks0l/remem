@@ -18,6 +18,7 @@ import {
   downloadPackage,
 } from './duplicate.js';
 import { EmbeddingService, type EmbeddingConfig as EmbedServiceConfig } from './embeddings.js';
+import { MemoryREPL } from './repl.js';
 import {
   rememConfigSchema,
   type ReMEMConfig,
@@ -226,6 +227,43 @@ export class ReMEM {
     return this.engine.recursiveQuery(initialQuery, maxDepth ?? 3);
   }
 
+  /**
+   * RLM-style Memory REPL — navigate memory programmatically.
+   *
+   * The model writes JavaScript to navigate the memory store. This enables
+   * arbitrarily large memory stores without context window overflow — the model
+   * never sees all memory at once, only constant-size metadata about what it
+   * has observed.
+   *
+   * Requires: model configured.
+   * Optional: layers enabled (enables layer-aware navigation).
+   *
+   * @returns { answer: string, observations: REPL debug trace }
+   */
+  async replNavigate(query: string): Promise<{ answer: string; observations: unknown[] }> {
+    if (!this.model) {
+      // Fall back to direct query
+      const { results } = await this.query(query);
+      return {
+        answer: results.length > 0
+          ? `No LLM configured — used direct query. Found ${results.length} results:\n` +
+            results.slice(0, 5).map((r) => `- ${r.content}`).join('\n')
+          : 'No LLM configured and no direct query results.',
+        observations: [],
+      };
+    }
+
+    const repl = new MemoryREPL({
+      store: this._store,
+      layers: this.layers,
+      model: this.model,
+      maxDepth: 5,
+      maxResults: 20,
+    });
+
+    return repl.navigate(query);
+  }
+
   // ─── Identity Layer ───────────────────────────────────────────────────────
 
   /**
@@ -392,6 +430,51 @@ export class ReMEM {
   evictExpiredLayers(): number {
     if (!this.layers) return 0;
     return this.layers.evictExpired();
+  }
+
+  /**
+   * Check if episodic layer needs compression.
+   * Returns true when episodic is above 80% capacity.
+   */
+  needsEpisodicCompression(): boolean {
+    if (!this.layers) return false;
+    const stats = this.layers.getStats();
+    const episodic = stats.episodic;
+    return episodic.count > episodic.maxEntries * 0.8;
+  }
+
+  /**
+   * Compress oldest episodic entries into semantic summaries.
+   * Call this when episodic layer fills up — uses the LLM to summarize
+   * old entries rather than losing them to TTL eviction.
+   *
+   * @param count How many episodic entries to compress (default: 20)
+   * @returns compressed entry info, or null if layers/llm not available
+   */
+  async compressEpisodic(count: number = 20): Promise<{
+    compressedEntryId: string;
+    summary: string;
+    entriesEvicted: number;
+  } | null> {
+    if (!this.layers || !this.model) return null;
+
+    const entries = this.layers.getEntriesForCompression(count);
+    if (entries.length === 0) return null;
+
+    const result = await this.layers.compressToSemantic(entries, this.model);
+    if (!result) return null;
+
+    // Persist the compressed entry to SQLite
+    await this._store.persistLayerEntry(result.compressedEntry, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
+
+    return {
+      compressedEntryId: result.compressedEntry.id,
+      summary: result.compressedEntry.content,
+      entriesEvicted: result.entriesEvicted,
+    };
   }
 
   /**
@@ -694,6 +777,7 @@ export class ReMEM {
 export { MemoryStore } from './store.js';
 export { ModelAbstraction } from './model.js';
 export { QueryEngine } from './query.js';
+export { MemoryREPL } from './repl.js';
 export * from './types.js';
 export * from './identity.js';
 export * from './layers.js';
