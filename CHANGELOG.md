@@ -4,6 +4,24 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.6.0] — 2026-04-25
+
+### Added
+
+- **`MemoryConsolidator`** — memory deduplication, conflict resolution, and cross-layer promotion:
+  - `findSimilarPairs(layer)` — find near-duplicate entries using embeddings or keyword similarity
+  - `deduplicateLayer(layer)` — merge + delete near-duplicates (configurable similarity threshold 0.85)
+  - `detectConflicts(layer)` — detect contradictory entries via negation pattern matching
+  - `resolveConflicts(layer)` — mark older contradictions as superseded with temporal validity
+  - `promoteFrequentEpisodic()` — promote episodic entries with high access count (>=5) to semantic layer after 10 minutes
+  - `consolidateAll(layers?)` — full periodic consolidation over all layers
+  - Configurable merge strategies: `newer_wins`, `older_wins`, `concatenate`, `supersede`
+  - 21 new tests covering all consolidation features
+
+### Changed
+
+- **Test suite expanded** — from 40/40 to 61/61 passing (21 new consolidation tests)
+
 ## [0.5.0] — 2026-04-25
 
 ### Added

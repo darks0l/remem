@@ -9,8 +9,8 @@
 [![npm version](https://img.shields.io/npm/v/@darksol/remem?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.npmjs.com/package/@darksol/remem)
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
-[![Test Status](https://img.shields.io/badge/tests-40%2F40%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.5.0](https://img.shields.io/badge/v0.5.0-episodic%20capture%20-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![Test Status](https://img.shields.io/badge/tests-61%2F61%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
+[![v0.6.0](https://img.shields.io/badge/v0.6.0-memory%20consolidation%20-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -36,6 +36,7 @@ ReMEM does something different:
 - **An LLM-native query interface** - Describe what you want in plain English; the query engine recursively refines
 - **Temporal validity** - Tracks when facts were true, not just that they exist. Enforced in all layer queries — expired entries are filtered out automatically
 - **Episodic capture pipeline** (v0.5.0) - Automatic event capture for the episodic layer. Buffers + batch-writes to MemoryStore, importance scoring based on event type + content, deduplication of rapid similar events, and topic extraction from event content and hashtags
+- **Memory consolidation** (v0.6.0) - Cross-layer deduplication via embedding/keyword similarity, conflict resolution with contradiction detection, cross-layer promotion of frequently-accessed episodic entries to semantic layer, and configurable merge strategies (newer_wins, older_wins, concatenate, supersede)
 - **Episodic compression** - When the episodic layer fills up, old entries are LLM-compressed into semantic summaries instead of lost to TTL eviction. Meaning preserved, storage reclaimed
 - **RLM-style Memory REPL** (v0.4.0) - Model writes JavaScript to navigate memory programmatically. Never sees all memory at once — only constant-size metadata. Enables arbitrarily large memory stores without context window overflow
 - **Snapshot/restore** - Full memory snapshots for long-running agents. Survive restarts, migrations, and crashes
