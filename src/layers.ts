@@ -1,7 +1,8 @@
 /**
  * ReMEM — Hierarchical Memory Layers
  * Episodic / Semantic / Identity / Procedural
- * with TTL-based eviction, weighted retrieval, temporal validity, and self-edit
+ * with TTL-based eviction, weighted retrieval, temporal validity, self-edit,
+ * episodic compression, and semantic embedding-based scoring.
  */
 
 import { randomUUID } from 'crypto';
@@ -14,6 +15,7 @@ import {
   type StoreMemoryInput,
   layerConfigSchema,
 } from './types.js';
+import { EmbeddingService } from './embeddings.js';
 
 // ============================================================================
 // Layer Manager — manages the four-tier memory hierarchy
@@ -38,8 +40,10 @@ export interface SupersessionResult {
 export class LayerManager {
   private entries: Map<string, LayeredMemoryEntry> = new Map();
   private config: Required<LayerConfig>;
+  private embeddingService: EmbeddingService | null = null;
+  private entryEmbeddings: Map<string, number[]> = new Map();
 
-  constructor(config?: Partial<LayerConfig>) {
+  constructor(config?: Partial<LayerConfig>, embeddingService?: EmbeddingService | null) {
     const merged = {
       episodic: { ...DEFAULT_LAYER_CONFIG.episodic, ...config?.episodic },
       semantic: { ...DEFAULT_LAYER_CONFIG.semantic, ...config?.semantic },
@@ -47,6 +51,7 @@ export class LayerManager {
       procedural: { ...DEFAULT_LAYER_CONFIG.procedural, ...config?.procedural },
     };
     this.config = layerConfigSchema.parse(merged) as Required<LayerConfig>;
+    this.embeddingService = embeddingService ?? null;
   }
 
   /**
@@ -218,13 +223,25 @@ export class LayerManager {
   /**
    * Query across all layers with weighted retrieval.
    * Entries from higher-weight layers rank higher, but content match still matters.
+   * When EmbeddingService is set, uses hybrid scoring: 40% keyword + 60% cosine similarity.
    */
-  query(
+  async query(
     text: string,
     options?: QueryOptions & { layers?: MemoryLayer[] }
-  ): { results: QueryResult[]; totalAvailable: number; layerBreakdown: Record<MemoryLayer, number> } {
+  ): Promise<{ results: QueryResult[]; totalAvailable: number; layerBreakdown: Record<MemoryLayer, number> }> {
     const layers = options?.layers ?? (['episodic', 'semantic', 'identity', 'procedural'] as MemoryLayer[]);
     const now = Date.now();
+
+    // Pre-compute query embedding once if embedding service is available
+    let queryEmbedding: number[] | null = null;
+    if (this.embeddingService) {
+      try {
+        queryEmbedding = await this.embeddingService.embed(text);
+      } catch {
+        // Embedding failed — fall back to keyword scoring
+        queryEmbedding = null;
+      }
+    }
 
     let allEntries: Array<LayeredMemoryEntry & { weightedScore: number }> = [];
 
@@ -265,11 +282,19 @@ export class LayerManager {
         // Access count filter
         if (options?.minAccessCount && entry.accessCount < options.minAccessCount) continue;
 
-        // Content relevance score
+        // Content relevance score (keyword)
         const contentScore = this.simpleRelevance(entry.content, text);
 
-        // Weighted score: layer weight * content relevance * importance
-        const weightedScore = layerCfg.weight * contentScore * (0.5 + entry.importance);
+        // Semantic embedding score — blend with keyword if both available
+        let blendedScore = contentScore;
+        if (queryEmbedding && this.entryEmbeddings.has(entry.id)) {
+          const entryEmbedding = this.entryEmbeddings.get(entry.id)!;
+          const semanticScore = EmbeddingService.cosineSimilarity(queryEmbedding, entryEmbedding);
+          blendedScore = contentScore * 0.4 + semanticScore * 0.6;
+        }
+
+        // Weighted score: layer weight * blended relevance * importance
+        const weightedScore = layerCfg.weight * blendedScore * (0.5 + entry.importance);
 
         allEntries.push({ ...entry, weightedScore });
       }
@@ -377,9 +402,18 @@ export class LayerManager {
   }
 
   /**
+   * Store a pre-computed embedding vector for an entry.
+   * Enables semantic similarity scoring in queries.
+   */
+  setEntryEmbedding(id: string, vector: number[]): void {
+    this.entryEmbeddings.set(id, vector);
+  }
+
+  /**
    * Forget an entry.
    */
   forget(id: string): boolean {
+    this.entryEmbeddings.delete(id);
     return this.entries.delete(id);
   }
 
@@ -555,6 +589,14 @@ Respond with ONLY a JSON object:
 
     // Default to episodic for everything else
     return 'episodic';
+  }
+
+  /**
+   * Check if episodic layer is above 80% capacity and needs compression.
+   */
+  needsEpisodicCompression(): boolean {
+    const episodic = this.getStats().episodic;
+    return episodic.count > episodic.maxEntries * 0.8;
   }
 
   /**

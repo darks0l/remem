@@ -1858,7 +1858,9 @@ var DEFAULT_LAYER_CONFIG = {
 var LayerManager = class {
   entries = /* @__PURE__ */ new Map();
   config;
-  constructor(config) {
+  embeddingService = null;
+  entryEmbeddings = /* @__PURE__ */ new Map();
+  constructor(config, embeddingService) {
     const merged = {
       episodic: { ...DEFAULT_LAYER_CONFIG.episodic, ...config?.episodic },
       semantic: { ...DEFAULT_LAYER_CONFIG.semantic, ...config?.semantic },
@@ -1866,6 +1868,7 @@ var LayerManager = class {
       procedural: { ...DEFAULT_LAYER_CONFIG.procedural, ...config?.procedural }
     };
     this.config = layerConfigSchema.parse(merged);
+    this.embeddingService = embeddingService ?? null;
   }
   /**
    * Store an entry in the appropriate layer.
@@ -2003,10 +2006,19 @@ var LayerManager = class {
   /**
    * Query across all layers with weighted retrieval.
    * Entries from higher-weight layers rank higher, but content match still matters.
+   * When EmbeddingService is set, uses hybrid scoring: 40% keyword + 60% cosine similarity.
    */
-  query(text, options) {
+  async query(text, options) {
     const layers = options?.layers ?? ["episodic", "semantic", "identity", "procedural"];
     const now = Date.now();
+    let queryEmbedding = null;
+    if (this.embeddingService) {
+      try {
+        queryEmbedding = await this.embeddingService.embed(text);
+      } catch {
+        queryEmbedding = null;
+      }
+    }
     let allEntries = [];
     for (const layer of layers) {
       const layerCfg = this.config[layer];
@@ -2032,7 +2044,13 @@ var LayerManager = class {
         if (options?.until && entry.createdAt > options.until) continue;
         if (options?.minAccessCount && entry.accessCount < options.minAccessCount) continue;
         const contentScore = this.simpleRelevance(entry.content, text);
-        const weightedScore = layerCfg.weight * contentScore * (0.5 + entry.importance);
+        let blendedScore = contentScore;
+        if (queryEmbedding && this.entryEmbeddings.has(entry.id)) {
+          const entryEmbedding = this.entryEmbeddings.get(entry.id);
+          const semanticScore = EmbeddingService.cosineSimilarity(queryEmbedding, entryEmbedding);
+          blendedScore = contentScore * 0.4 + semanticScore * 0.6;
+        }
+        const weightedScore = layerCfg.weight * blendedScore * (0.5 + entry.importance);
         allEntries.push({ ...entry, weightedScore });
       }
     }
@@ -2119,9 +2137,17 @@ var LayerManager = class {
     return results.slice(0, limit).map(({ weightedScore, ...r }) => r);
   }
   /**
+   * Store a pre-computed embedding vector for an entry.
+   * Enables semantic similarity scoring in queries.
+   */
+  setEntryEmbedding(id, vector) {
+    this.entryEmbeddings.set(id, vector);
+  }
+  /**
    * Forget an entry.
    */
   forget(id) {
+    this.entryEmbeddings.delete(id);
     return this.entries.delete(id);
   }
   /**
@@ -2252,6 +2278,13 @@ Respond with ONLY a JSON object:
     const semanticKeywords = ["project", "decision", "agreed", "remember", "context", "learned", "figured out"];
     if (semanticKeywords.some((k) => text.includes(k))) return "semantic";
     return "episodic";
+  }
+  /**
+   * Check if episodic layer is above 80% capacity and needs compression.
+   */
+  needsEpisodicCompression() {
+    const episodic = this.getStats().episodic;
+    return episodic.count > episodic.maxEntries * 0.8;
   }
   /**
    * Get stats for each layer.
@@ -2703,10 +2736,10 @@ Embeddings: ${this.store ? "available (semantic search enabled)" : "not configur
           if (!layers) return { __error: "layers not enabled" };
           return layers.getStats();
         },
-        query: (text, opts) => {
+        query: async (text, opts) => {
           if (!layers) return { __error: "layers not enabled" };
           try {
-            const result = layers.query(text, {
+            const result = await layers.query(text, {
               limit: opts?.limit ?? 10,
               layers: opts?.layers
             });
@@ -3031,7 +3064,7 @@ var ReMEM = class {
    * Layers are persisted to SQLite — they survive process restarts.
    */
   async enableLayers(config) {
-    this.layers = new LayerManager(config ?? DEFAULT_LAYER_CONFIG);
+    this.layers = new LayerManager(config ?? DEFAULT_LAYER_CONFIG, this.embeddingService);
     this._layersEnabled = true;
     if (this._store) {
       try {
@@ -3043,8 +3076,24 @@ var ReMEM = class {
         if (persisted.length > 0) {
           console.log(`[ReMEM] Restored ${persisted.length} persisted layer entries from SQLite`);
         }
+        if (this.embeddingService) {
+          for (const entry of persisted) {
+            try {
+              const stored = await this._store.getEmbedding(entry.id);
+              if (stored) {
+                const vector = EmbeddingService.decodeVector(stored.base64, stored.dimension);
+                this.layers.setEntryEmbedding(entry.id, vector);
+              }
+            } catch {
+            }
+          }
+        }
       } catch {
       }
+    }
+    if (this.needsEpisodicCompression() && this.model) {
+      this.compressEpisodic(20).catch(() => {
+      });
     }
   }
   /**
@@ -3059,6 +3108,17 @@ var ReMEM = class {
       agentId: this._agentId,
       userId: this._userId
     });
+    if (this.embeddingService) {
+      const contentToEmbed = input.topics.length > 0 ? `[${input.topics.join(", ")}] ${input.content}` : input.content;
+      this.embeddingService.generateEmbedding(entry.id, contentToEmbed).then(async (emb) => {
+        await this._store.storeEmbedding(entry.id, emb.base64, emb.vector.length, emb.model);
+        this.layers.setEntryEmbedding(entry.id, emb.vector);
+      }).catch((err) => console.warn(`[ReMEM] Layer embedding failed for ${entry.id}: ${err}`));
+    }
+    if (this.needsEpisodicCompression() && this.model) {
+      this.compressEpisodic(20).catch(() => {
+      });
+    }
     return {
       id: entry.id,
       content: entry.content,
@@ -3071,8 +3131,9 @@ var ReMEM = class {
   }
   /**
    * Query across layers with weighted retrieval.
+   * Uses hybrid scoring (keyword + semantic embeddings) when embedding service is available.
    */
-  queryLayers(query, options) {
+  async queryLayers(query, options) {
     if (!this.layers) return null;
     return this.layers.query(query, options);
   }

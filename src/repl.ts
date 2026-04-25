@@ -349,10 +349,10 @@ export class MemoryREPL {
           return layers.getStats();
         },
 
-        query: (text: string, opts?: { layers?: string[]; limit?: number }): unknown => {
+        query: async (text: string, opts?: { layers?: string[]; limit?: number }): Promise<unknown> => {
           if (!layers) return { __error: 'layers not enabled' };
           try {
-            const result = layers.query(text, {
+            const result = await layers.query(text, {
               limit: opts?.limit ?? 10,
               layers: opts?.layers as never,
             });

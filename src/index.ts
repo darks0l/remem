@@ -362,7 +362,8 @@ export class ReMEM {
    * Layers are persisted to SQLite — they survive process restarts.
    */
   async enableLayers(config?: Partial<LayerConfig>): Promise<void> {
-    this.layers = new LayerManager(config ?? DEFAULT_LAYER_CONFIG);
+    // Wire EmbeddingService into LayerManager if available
+    this.layers = new LayerManager(config ?? DEFAULT_LAYER_CONFIG, this.embeddingService);
     this._layersEnabled = true;
 
     // Restore persisted layer entries from SQLite after init
@@ -376,9 +377,29 @@ export class ReMEM {
         if (persisted.length > 0) {
           console.log(`[ReMEM] Restored ${persisted.length} persisted layer entries from SQLite`);
         }
+
+        // Restore entry embeddings from SQLite
+        if (this.embeddingService) {
+          for (const entry of persisted) {
+            try {
+              const stored = await this._store.getEmbedding(entry.id);
+              if (stored) {
+                const vector = EmbeddingService.decodeVector(stored.base64, stored.dimension);
+                this.layers.setEntryEmbedding(entry.id, vector);
+              }
+            } catch {
+              // Best-effort embedding restore
+            }
+          }
+        }
       } catch {
         // Layer restore is best-effort — don't fail init if it breaks
       }
+    }
+
+    // Auto-compress episodic if over capacity after restore
+    if (this.needsEpisodicCompression() && this.model) {
+      this.compressEpisodic(20).catch(() => {/* best-effort */});
     }
   }
 
@@ -394,6 +415,27 @@ export class ReMEM {
       agentId: this._agentId,
       userId: this._userId,
     });
+
+    // Generate embedding and store in LayerManager for hybrid layer scoring
+    if (this.embeddingService) {
+      const contentToEmbed = input.topics.length > 0
+        ? `[${input.topics.join(', ')}] ${input.content}`
+        : input.content;
+
+      this.embeddingService
+        .generateEmbedding(entry.id, contentToEmbed)
+        .then(async (emb) => {
+          await this._store.storeEmbedding(entry.id, emb.base64, emb.vector.length, emb.model);
+          this.layers!.setEntryEmbedding(entry.id, emb.vector);
+        })
+        .catch((err) => console.warn(`[ReMEM] Layer embedding failed for ${entry.id}: ${err}`));
+    }
+
+    // Check episodic capacity — auto-compress if needed
+    if (this.needsEpisodicCompression() && this.model) {
+      this.compressEpisodic(20).catch(() => {/* best-effort */});
+    }
+
     return {
       id: entry.id,
       content: entry.content,
@@ -407,11 +449,12 @@ export class ReMEM {
 
   /**
    * Query across layers with weighted retrieval.
+   * Uses hybrid scoring (keyword + semantic embeddings) when embedding service is available.
    */
-  queryLayers(
+  async queryLayers(
     query: string,
     options?: QueryOptions & { layers?: MemoryLayer[] }
-  ): ReturnType<LayerManager['query']> | null {
+  ): Promise<Awaited<ReturnType<LayerManager['query']>> | null> {
     if (!this.layers) return null;
     return this.layers.query(query, options);
   }

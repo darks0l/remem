@@ -1422,134 +1422,6 @@ declare class ModelAbstraction {
 }
 
 /**
- * ReMEM — Hierarchical Memory Layers
- * Episodic / Semantic / Identity / Procedural
- * with TTL-based eviction, weighted retrieval, temporal validity, and self-edit
- */
-
-declare const DEFAULT_LAYER_CONFIG: Required<LayerConfig>;
-interface SupersessionResult {
-    superseded: boolean;
-    supersededEntryId?: string;
-    newEntry?: LayeredMemoryEntry;
-    reason?: string;
-}
-declare class LayerManager {
-    private entries;
-    private config;
-    constructor(config?: Partial<LayerConfig>);
-    /**
-     * Store an entry in the appropriate layer.
-     * If layer is not specified, auto-assigns based on topics and content.
-     * For semantic layer with selfEdit=true, detects contradictions and auto-supersedes.
-     */
-    store(input: StoreMemoryInput, layer?: MemoryLayer): LayeredMemoryEntry;
-    /**
-     * Check if new input should supersede an existing semantic entry.
-     * Detects contradictions by keyword negation patterns.
-     */
-    private checkSupersession;
-    /**
-     * Store a procedural memory — a triggered behavior/rule.
-     * trigger: keyword/pattern that fires this rule
-     * condition: when this text appears in context
-     * action: what to do when triggered
-     */
-    storeProcedural(input: StoreMemoryInput, trigger: string): LayeredMemoryEntry;
-    /**
-     * Fire procedural rules matching the given context text.
-     * Returns rules whose trigger keyword appears in the context.
-     */
-    fireProcedural(context: string): LayeredMemoryEntry[];
-    /**
-     * Get an entry by ID.
-     */
-    get(id: string): LayeredMemoryEntry | null;
-    /**
-     * Get all entries across all layers.
-     * Used for duplication/export — returns all non-expired entries.
-     */
-    getAllEntries(): LayeredMemoryEntry[];
-    /**
-     * Query across all layers with weighted retrieval.
-     * Entries from higher-weight layers rank higher, but content match still matters.
-     */
-    query(text: string, options?: QueryOptions & {
-        layers?: MemoryLayer[];
-    }): {
-        results: QueryResult[];
-        totalAvailable: number;
-        layerBreakdown: Record<MemoryLayer, number>;
-    };
-    /**
-     * Get recent entries across all layers.
-     */
-    getRecent(n?: number, layers?: MemoryLayer[]): QueryResult[];
-    /**
-     * Get entries by topic across all layers.
-     */
-    getByTopic(topic: string, limit?: number): QueryResult[];
-    /**
-     * Forget an entry.
-     */
-    forget(id: string): boolean;
-    /**
-     * Restore a LayeredMemoryEntry directly into the store.
-     * Used by ReMEM.init() to restore persisted layer entries from SQLite.
-     * Does NOT re-assign layer — uses the entry's existing layer field.
-     */
-    restoreEntry(entry: LayeredMemoryEntry): void;
-    /**
-     * Evict entries from a specific layer if over maxEntries.
-     * Evicts oldest accessed entries first.
-     */
-    private evictIfNeeded;
-    /**
-     * Run TTL-based eviction. Call periodically (e.g., on init or query).
-     */
-    evictExpired(): number;
-    /**
-     * Get entries eligible for compression — oldest episodic entries.
-     * These will be LLM-compressed into a semantic summary before eviction.
-     * @param count Number of entries to return for compression
-     */
-    getEntriesForCompression(count?: number): LayeredMemoryEntry[];
-    /**
-     * Compress episodic entries into a semantic summary.
-     * Creates a new semantic layer entry that summarizes the episodic content.
-     * Returns the new semantic entry ID, or null if compression not applicable.
-     */
-    compressToSemantic(episodicEntries: LayeredMemoryEntry[], model: {
-        chat(messages: Array<{
-            role: string;
-            content: string;
-        }>, opts?: {
-            temperature?: number;
-            maxTokens?: number;
-        }): Promise<{
-            content: string;
-        }>;
-    }): Promise<{
-        compressedEntry: LayeredMemoryEntry;
-        entriesEvicted: number;
-    } | null>;
-    /**
-     * Auto-assign layer based on content analysis.
-     */
-    private autoAssignLayer;
-    /**
-     * Get stats for each layer.
-     */
-    getStats(): Record<MemoryLayer, {
-        count: number;
-        maxEntries: number;
-        ttlMs: number;
-        weight: number;
-    }>;
-    private simpleRelevance;
-}
-
-/**
  * ReMEM — Embedding Service
  * Generates and stores vector embeddings for semantic memory search.
  *
@@ -1610,6 +1482,147 @@ declare class EmbeddingService {
      * Generate and package an embedding vector for storage.
      */
     generateEmbedding(memoryId: string, text: string): Promise<EmbeddingVector>;
+}
+
+/**
+ * ReMEM — Hierarchical Memory Layers
+ * Episodic / Semantic / Identity / Procedural
+ * with TTL-based eviction, weighted retrieval, temporal validity, self-edit,
+ * episodic compression, and semantic embedding-based scoring.
+ */
+
+declare const DEFAULT_LAYER_CONFIG: Required<LayerConfig>;
+interface SupersessionResult {
+    superseded: boolean;
+    supersededEntryId?: string;
+    newEntry?: LayeredMemoryEntry;
+    reason?: string;
+}
+declare class LayerManager {
+    private entries;
+    private config;
+    private embeddingService;
+    private entryEmbeddings;
+    constructor(config?: Partial<LayerConfig>, embeddingService?: EmbeddingService | null);
+    /**
+     * Store an entry in the appropriate layer.
+     * If layer is not specified, auto-assigns based on topics and content.
+     * For semantic layer with selfEdit=true, detects contradictions and auto-supersedes.
+     */
+    store(input: StoreMemoryInput, layer?: MemoryLayer): LayeredMemoryEntry;
+    /**
+     * Check if new input should supersede an existing semantic entry.
+     * Detects contradictions by keyword negation patterns.
+     */
+    private checkSupersession;
+    /**
+     * Store a procedural memory — a triggered behavior/rule.
+     * trigger: keyword/pattern that fires this rule
+     * condition: when this text appears in context
+     * action: what to do when triggered
+     */
+    storeProcedural(input: StoreMemoryInput, trigger: string): LayeredMemoryEntry;
+    /**
+     * Fire procedural rules matching the given context text.
+     * Returns rules whose trigger keyword appears in the context.
+     */
+    fireProcedural(context: string): LayeredMemoryEntry[];
+    /**
+     * Get an entry by ID.
+     */
+    get(id: string): LayeredMemoryEntry | null;
+    /**
+     * Get all entries across all layers.
+     * Used for duplication/export — returns all non-expired entries.
+     */
+    getAllEntries(): LayeredMemoryEntry[];
+    /**
+     * Query across all layers with weighted retrieval.
+     * Entries from higher-weight layers rank higher, but content match still matters.
+     * When EmbeddingService is set, uses hybrid scoring: 40% keyword + 60% cosine similarity.
+     */
+    query(text: string, options?: QueryOptions & {
+        layers?: MemoryLayer[];
+    }): Promise<{
+        results: QueryResult[];
+        totalAvailable: number;
+        layerBreakdown: Record<MemoryLayer, number>;
+    }>;
+    /**
+     * Get recent entries across all layers.
+     */
+    getRecent(n?: number, layers?: MemoryLayer[]): QueryResult[];
+    /**
+     * Get entries by topic across all layers.
+     */
+    getByTopic(topic: string, limit?: number): QueryResult[];
+    /**
+     * Store a pre-computed embedding vector for an entry.
+     * Enables semantic similarity scoring in queries.
+     */
+    setEntryEmbedding(id: string, vector: number[]): void;
+    /**
+     * Forget an entry.
+     */
+    forget(id: string): boolean;
+    /**
+     * Restore a LayeredMemoryEntry directly into the store.
+     * Used by ReMEM.init() to restore persisted layer entries from SQLite.
+     * Does NOT re-assign layer — uses the entry's existing layer field.
+     */
+    restoreEntry(entry: LayeredMemoryEntry): void;
+    /**
+     * Evict entries from a specific layer if over maxEntries.
+     * Evicts oldest accessed entries first.
+     */
+    private evictIfNeeded;
+    /**
+     * Run TTL-based eviction. Call periodically (e.g., on init or query).
+     */
+    evictExpired(): number;
+    /**
+     * Get entries eligible for compression — oldest episodic entries.
+     * These will be LLM-compressed into a semantic summary before eviction.
+     * @param count Number of entries to return for compression
+     */
+    getEntriesForCompression(count?: number): LayeredMemoryEntry[];
+    /**
+     * Compress episodic entries into a semantic summary.
+     * Creates a new semantic layer entry that summarizes the episodic content.
+     * Returns the new semantic entry ID, or null if compression not applicable.
+     */
+    compressToSemantic(episodicEntries: LayeredMemoryEntry[], model: {
+        chat(messages: Array<{
+            role: string;
+            content: string;
+        }>, opts?: {
+            temperature?: number;
+            maxTokens?: number;
+        }): Promise<{
+            content: string;
+        }>;
+    }): Promise<{
+        compressedEntry: LayeredMemoryEntry;
+        entriesEvicted: number;
+    } | null>;
+    /**
+     * Auto-assign layer based on content analysis.
+     */
+    private autoAssignLayer;
+    /**
+     * Check if episodic layer is above 80% capacity and needs compression.
+     */
+    needsEpisodicCompression(): boolean;
+    /**
+     * Get stats for each layer.
+     */
+    getStats(): Record<MemoryLayer, {
+        count: number;
+        maxEntries: number;
+        ttlMs: number;
+        weight: number;
+    }>;
+    private simpleRelevance;
 }
 
 /**
@@ -2040,10 +2053,11 @@ declare class ReMEM {
     storeInLayer(input: StoreMemoryInput, layer: MemoryLayer): Promise<QueryResult | null>;
     /**
      * Query across layers with weighted retrieval.
+     * Uses hybrid scoring (keyword + semantic embeddings) when embedding service is available.
      */
     queryLayers(query: string, options?: QueryOptions & {
         layers?: MemoryLayer[];
-    }): ReturnType<LayerManager['query']> | null;
+    }): Promise<Awaited<ReturnType<LayerManager['query']>> | null>;
     /**
      * Get layer stats.
      */
