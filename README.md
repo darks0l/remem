@@ -10,6 +10,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-16%2F16%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
+[![v0.4.0](https://img.shields.io/badge/v0.4.0-RLM%20REPL%20-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -33,7 +34,9 @@ ReMEM does something different:
 - **Semantic search with vector embeddings** - cosine similarity via Ollama (`nomic-embed-text`), falls back to keyword + access_count scoring
 - **Persistent hierarchical layers** - episodic, semantic, identity, and procedural tiers that survive restarts
 - **An LLM-native query interface** - Describe what you want in plain English; the query engine recursively refines
-- **Temporal validity** - Tracks when facts were true, not just that they exist. Auto-supersedes outdated information
+- **Temporal validity** - Tracks when facts were true, not just that they exist. Enforced in all layer queries — expired entries are filtered out automatically
+- **Episodic compression** - When the episodic layer fills up, old entries are LLM-compressed into semantic summaries instead of lost to TTL eviction. Meaning preserved, storage reclaimed
+- **RLM-style Memory REPL** (v0.4.0) - Model writes JavaScript to navigate memory programmatically. Never sees all memory at once — only constant-size metadata. Enables arbitrarily large memory stores without context window overflow
 - **Snapshot/restore** - Full memory snapshots for long-running agents. Survive restarts, migrations, and crashes
 - **Identity duplication & infection** (v0.3.3) - Export full identity package to DARKSOL server, pull and overlay on any ReMEM-equipped agent
 - **Multi-agent scoping** - agent_id + user_id isolation for shared deployments
@@ -50,6 +53,10 @@ import { ReMEM } from '@darksol/remem';
 const memory = new ReMEM({
   // Default: SQLite at ./remem.db. Use ':memory:' for ephemeral.
   dbPath: './remem.db',
+  // LLM for RLM REPL, recursive queries, episodic compression
+  llm: { type: 'bankr', apiKey: process.env.BANKR_API_KEY },
+  // Vector embeddings for semantic search (via Ollama)
+  embeddings: { enabled: true, baseUrl: 'http://192.168.68.73:11434', model: 'nomic-embed-text' },
 });
 
 // Initialize and optionally restore persisted layer state
@@ -178,6 +185,27 @@ The infection model:
 
 ## Core Concepts
 
+### RLM-Style Memory REPL (v0.4.0)
+
+The model writes JavaScript to navigate memory. This is the key innovation: instead of retrieving and truncating (losing detail), the model explores memory programmatically.
+
+```typescript
+// Navigate memory with the RLM loop
+const { answer, observations } = await memory.replNavigate(
+  'What does the user prefer for UI theme?'
+);
+// Model wrote JS to query layers, inspect entries, recurse — all without seeing the full memory
+```
+
+How it works:
+1. Model receives **constant-size metadata** about the store (counts, recent entries, layer stats)
+2. Model generates JavaScript to query, inspect, and navigate
+3. Executor runs the code safely (only memory API exposed — no system access)
+4. Next iteration: model sees only what it observed, decides to recurse or synthesize
+5. Loop until model returns `done` or max depth (5) is reached
+
+This extends the context window **universally** — the model never holds all memory in context, it navigates it.
+
 ### Memory Layers
 
 ReMEM maintains four weighted retrieval layers. Each entry gets a weighted score: `layer_weight × content_relevance × importance`.
@@ -193,7 +221,7 @@ All layers are persisted to SQLite - they survive restarts.
 
 ### Temporal Validity (Semantic Layer)
 
-Semantic layer entries carry `validFrom`/`validUntil` timestamps. When you correct a fact, the old entry is marked as superseded with a `validUntil` - ReMEM tracks the full history.
+Semantic layer entries carry `validFrom`/`validUntil` timestamps. **Temporal validity is enforced in all layer queries** — entries with `validUntil < now` are automatically filtered out and not returned.
 
 ```typescript
 memory.enableLayers({ semantic: { selfEdit: true, temporalValidity: true } });
@@ -204,10 +232,32 @@ await memory.storeInLayer(
   'semantic'
 );
 
-// Query returns only the newest valid entry
+// Query returns only the newest valid entry — old entry filtered automatically
 const { results } = memory.queryLayers('Meta UI preferences');
-// → "Meta prefers light mode now" (old entry marked superseded)
+// → "Meta prefers light mode now" (old entry with validUntil=now is excluded)
 ```
+
+### Episodic Compression
+
+When the episodic layer fills above 80% capacity, old entries are **LLM-compressed into semantic summaries** instead of lost to TTL eviction. Meaning is preserved, storage is reclaimed.
+
+```typescript
+// Check if compression is needed
+if (memory.needsEpisodicCompression()) {
+  const result = await memory.compressEpisodic(20);
+  console.log(`Compressed ${result.entriesEvicted} entries → "${result.summary}"`);
+}
+
+// compressEpisodic is also called automatically when episodic hits maxEntries
+// during enableLayers() initialization
+```
+
+The compressor:
+1. Collects the oldest N episodic entries
+2. Sends them to the LLM with a compression prompt
+3. LLM returns a 2-4 sentence semantic summary + key facts
+4. Summary stored in semantic layer with `compressed: true` metadata
+5. Original episodic entries evicted
 
 ### Snapshot/Restore (Long-Running Agents)
 
