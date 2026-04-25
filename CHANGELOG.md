@@ -4,6 +4,23 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.4.0] — 2026-04-25
+
+### Added
+
+- **`MemoryREPL` class** — RLM-style memory navigation. Model writes JavaScript to navigate the memory store programmatically. Executor runs code safely, results feed back into next iteration. Model never sees all memory at once — only constant-size environment metadata.
+- **`ReMEM.replNavigate(query)`** — RLM-style memory navigation. Returns `{ answer: string, observations: REPLObservation[] }`. Enables arbitrarily large memory stores without context window overflow.
+- **`ReMEM.needsEpisodicCompression()`** — Returns `true` when episodic layer is above 80% capacity.
+- **`ReMEM.compressEpisodic(count)`** — LLM-compresses oldest episodic entries into semantic summaries. Meaning preserved instead of lost to TTL eviction. Returns compressed entry info.
+- **`LayerManager.getEntriesForCompression(count)`** — Returns oldest episodic entries for compression.
+- **`LayerManager.compressToSemantic(entries, model)`** — LLM-compresses episodic entries into a semantic summary entry with `compressed: true` metadata.
+- **`LayerManager.query()` temporal validity enforcement** — Entries with `validUntil < now` or `validFrom > now` are now filtered out of query results. Previously the fields existed but were not enforced.
+
+### Changed
+
+- **`query()` uses semantic search** when embeddings are enabled (from v0.3.2).
+- **Temporal validity now enforced** — `validFrom`/`validUntil` fields on semantic layer entries are respected in all layer queries.
+
 ## [0.3.2] — 2026-04-24
 
 ### Added
