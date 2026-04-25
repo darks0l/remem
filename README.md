@@ -10,7 +10,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-16%2F16%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.4.0](https://img.shields.io/badge/v0.4.0-RLM%20REPL%20-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.4.1](https://img.shields.io/badge/v0.4.1-hybrid%20scoring%20-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -31,7 +31,7 @@ LLMs are limited by their context window. Retrieval-Augmented Generation (RAG) h
 ReMEM does something different:
 
 - **A proper memory store** - SQLite-backed, event-sourced, with atomic crash-safe writes
-- **Semantic search with vector embeddings** - cosine similarity via Ollama (`nomic-embed-text`), falls back to keyword + access_count scoring
+- **Semantic search with vector embeddings** - Ollama (`nomic-embed-text`), 40% keyword + 60% cosine similarity hybrid scoring when embeddings are available (v0.4.1)
 - **Persistent hierarchical layers** - episodic, semantic, identity, and procedural tiers that survive restarts
 - **An LLM-native query interface** - Describe what you want in plain English; the query engine recursively refines
 - **Temporal validity** - Tracks when facts were true, not just that they exist. Enforced in all layer queries — expired entries are filtered out automatically
@@ -87,7 +87,7 @@ await memory.storeInLayer(
 );
 
 // Query across layers with weighted retrieval
-const { results, layerBreakdown } = memory.queryLayers('Solana trading rules');
+const { results, layerBreakdown } = await memory.queryLayers('Solana trading rules');
 
 // Fire procedural rules
 const triggered = memory.fireProcedural('User is asking about Solana DeFi');
@@ -160,7 +160,7 @@ The infection model:
 │  ReMEM (public API)                                         │
 │    ├─> QueryEngine (RLM-style REPL)                         │
 │    │     └─> ModelAbstraction (Bankr, OpenAI, Anthropic, Ollama) │
-│    ├─> EmbeddingService (Ollama /api/embeddings, v0.3.2)    │
+│    ├─> EmbeddingService (Ollama /api/embeddings, v0.4.1)    │
 │    │     └─> Vector storage in SQLite (base64url float32)  │
 │    ├─> MemoryStore (SQLite/sql.js)                          │
 │    │     ├─> memory table (core entries)                    │
@@ -210,6 +210,8 @@ This extends the context window **universally** — the model never holds all me
 
 ReMEM maintains four weighted retrieval layers. Each entry gets a weighted score: `layer_weight × content_relevance × importance`.
 
+**Hybrid scoring (v0.4.1):** When `EmbeddingService` is wired into `LayerManager`, the content relevance score is a hybrid: 40% keyword matching + 60% cosine similarity. If no embeddings are available for a layer, falls back to keyword + access_count scoring.
+
 | Layer | TTL | Weight | Purpose |
 |-------|-----|--------|---------|
 | **Episodic** | 1 hour | 0.2 | Raw recent interactions |
@@ -224,7 +226,7 @@ All layers are persisted to SQLite - they survive restarts.
 Semantic layer entries carry `validFrom`/`validUntil` timestamps. **Temporal validity is enforced in all layer queries** — entries with `validUntil < now` are automatically filtered out and not returned.
 
 ```typescript
-memory.enableLayers({ semantic: { selfEdit: true, temporalValidity: true } });
+memory.enableLayers();
 
 // Store an update - old "dark mode" fact gets superseded
 await memory.storeInLayer(
@@ -233,7 +235,7 @@ await memory.storeInLayer(
 );
 
 // Query returns only the newest valid entry — old entry filtered automatically
-const { results } = memory.queryLayers('Meta UI preferences');
+const { results } = await memory.queryLayers('Meta UI preferences');
 // → "Meta prefers light mode now" (old entry with validUntil=now is excluded)
 ```
 
@@ -396,7 +398,7 @@ await memory.enableLayers(config?)  // async - restores persisted entries
 await memory.storeInLayer(input, 'semantic')   // async
 await memory.storeProcedural(input, trigger)    // async
 
-const { results, layerBreakdown } = memory.queryLayers('query', { layers: ['semantic', 'procedural'] })
+const { results, layerBreakdown } = await memory.queryLayers('query', { layers: ['semantic', 'procedural'] });
 
 memory.fireProcedural('context string')
 
