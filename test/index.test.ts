@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ReMEM, MemoryStore } from '../src/index.js';
+import { ReMEM, MemoryStore, PostgresMemoryStore } from '../src/index.js';
 
 describe('ReMEM', () => {
   let memory: ReMEM;
@@ -90,5 +90,73 @@ describe('MemoryStore', () => {
     expect(after.results.length).toBe(0);
 
     store.close();
+  });
+
+  it('restores core memories from snapshots', async () => {
+    const store = new MemoryStore(':memory:');
+    await store.init();
+
+    const original = await store.store({
+      content: 'Snapshot should preserve core memory metadata',
+      topics: ['snapshot'],
+      metadata: { importance: 'high' },
+    });
+
+    const snapshot = await store.createSnapshot('core-memory-checkpoint');
+    expect(snapshot.memoryCount).toBe(1);
+
+    expect(await store.forget(original.id)).toBe(true);
+    expect((await store.query('Snapshot')).results.length).toBe(0);
+
+    const restored = await store.restoreSnapshot(snapshot.id);
+    expect(restored).toBe(1);
+
+    const entry = await store.get(original.id);
+    expect(entry).not.toBeNull();
+    expect(entry?.content).toBe(original.content);
+    expect(entry?.topics).toEqual(['snapshot']);
+    expect(entry?.metadata).toEqual({ importance: 'high' });
+
+    store.close();
+  });
+
+  it('exports and imports snapshots with checksum verification', async () => {
+    const source = new MemoryStore(':memory:');
+    await source.init();
+    await source.store({ content: 'Portable memory backup', topics: ['portable'] });
+    const snapshot = await source.createSnapshot('portable-checkpoint');
+    expect(snapshot.checksum).toMatch(/^[a-f0-9]{64}$/);
+
+    const exported = await source.exportSnapshot(snapshot.id);
+    expect(exported.checksum).toBe(snapshot.checksum);
+
+    const target = new MemoryStore(':memory:');
+    await target.init();
+    const imported = await target.importSnapshot(exported);
+    expect(imported.checksum).toBe(exported.checksum);
+
+    const restored = await target.restoreSnapshot(exported.id);
+    expect(restored).toBe(1);
+    expect((await target.query('Portable')).results[0].content).toBe('Portable memory backup');
+
+    await expect(target.importSnapshot({ ...exported, checksum: '0'.repeat(64) })).rejects.toThrow('checksum mismatch');
+
+    source.close();
+    target.close();
+  });
+
+  it('constructs postgres storage without connecting until init', () => {
+    const memory = new ReMEM({
+      storage: 'postgres',
+      postgres: { connectionString: 'postgres://user:pass@localhost:5432/remem_test' },
+    });
+    expect(memory.getStore()).toBeInstanceOf(PostgresMemoryStore);
+  });
+
+  it('rejects unsafe postgres identifiers', () => {
+    expect(() => new ReMEM({
+      storage: 'postgres',
+      postgres: { schema: 'bad-schema-name' },
+    })).toThrow('Invalid');
   });
 });

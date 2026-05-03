@@ -5,14 +5,14 @@
 
 import type { QueryOptions } from './types.js';
 import { storeMemoryInputSchema } from './types.js';
-import { MemoryStore } from './store.js';
+import type { MemoryStoreLike } from './storage-types.js';
 import { ModelAbstraction } from './model.js';
 import { QueryEngine } from './query.js';
 
 export interface HttpAdapterConfig {
   port?: number;
   host?: string;
-  store: MemoryStore;
+  store: MemoryStoreLike;
   model?: ModelAbstraction;
   /** Optional bearer token required for all non-OPTIONS requests. */
   authToken?: string;
@@ -30,7 +30,7 @@ interface RouteResult {
 export class HttpAdapter {
   private server?: import('http').Server;
   private engine: QueryEngine;
-  private store: MemoryStore;
+  private store: MemoryStoreLike;
   private model?: ModelAbstraction;
   private port: number;
   private host: string;
@@ -174,6 +174,28 @@ export class HttpAdapter {
       const parsed = body ? JSON.parse(body) as { label?: unknown } : {};
       const label = typeof parsed.label === 'string' && parsed.label.trim() ? parsed.label : 'snapshot';
       const snapshot = await this.store.createSnapshot(label);
+      return { status: 201, body: { snapshot } };
+    }
+
+    // GET /snapshots/:id/export — export snapshot
+    if (method === 'GET' && path.startsWith('/snapshots/') && path.endsWith('/export')) {
+      const id = path.split('/')[2];
+      const snapshot = await this.store.exportSnapshot(id);
+      return { status: 200, body: { snapshot } };
+    }
+
+    // POST /snapshots/import — import snapshot
+    if (method === 'POST' && path === '/snapshots/import') {
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const parsed = JSON.parse(body) as { snapshot?: unknown; overwrite?: unknown };
+      if (!parsed.snapshot || typeof parsed.snapshot !== 'object') {
+        return { status: 400, body: { error: 'snapshot object required' } };
+      }
+      const snapshot = await this.store.importSnapshot(
+        parsed.snapshot as Awaited<ReturnType<typeof this.store.exportSnapshot>>,
+        { overwrite: parsed.overwrite === true }
+      );
       return { status: 201, body: { snapshot } };
     }
 

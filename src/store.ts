@@ -16,7 +16,7 @@
  */
 
 import initSqlJs, { type Database as SqlJsDatabase } from 'sql.js';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import {
   type MemoryEntry,
   type MemoryEvent,
@@ -29,23 +29,9 @@ import {
   queryOptionsSchema,
 } from './types.js';
 import { EmbeddingService } from './embeddings.js';
+import type { MemoryStoreLike, SnapshotExport, SnapshotMeta, StoreMemoryOptions } from './storage-types.js';
 
-interface SnapshotMeta {
-  id: string;
-  label: string;
-  createdAt: number;
-  memoryCount: number;
-  layerCounts: Record<MemoryLayer, number>;
-  agentId: string | null;
-  userId: string | null;
-}
-
-export interface StoreMemoryOptions {
-  agentId?: string;
-  userId?: string;
-}
-
-export class MemoryStore {
+export class MemoryStore implements MemoryStoreLike {
   private db: SqlJsDatabase | null = null;
   private eventLog: Array<MemoryEvent> = [];
   private dbPath: string;
@@ -147,9 +133,11 @@ export class MemoryStore {
         memory_count INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         agent_id TEXT,
-        user_id TEXT
+        user_id TEXT,
+        checksum TEXT
       )
     `);
+    this.ensureColumn('snapshots', 'checksum', 'TEXT');
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_snap_agent ON snapshots(agent_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_snap_created ON snapshots(created_at DESC)`);
 
@@ -478,6 +466,55 @@ export class MemoryStore {
   }
 
   /**
+   * Load full core memory entries for snapshot/restore.
+   * Unlike query/getAllEntries, this preserves metadata and timestamps exactly.
+   */
+  private async loadAllMemoryEntries(opts?: StoreMemoryOptions): Promise<MemoryEntry[]> {
+    this.ensureInitialized();
+
+    let sql = 'SELECT * FROM memory WHERE 1=1';
+    const params: (string | null)[] = [];
+
+    if (opts?.agentId) { sql += ' AND (agent_id = ? OR agent_id IS NULL)'; params.push(opts.agentId); }
+    if (opts?.userId) { sql += ' AND (user_id = ? OR user_id IS NULL)'; params.push(opts.userId); }
+
+    sql += ' ORDER BY created_at DESC';
+
+    const result = this.db!.exec(sql, params);
+    if (result.length === 0) return [];
+
+    return result[0].values.map((v: unknown[]) => {
+      const row = this.rowToObject(result[0].columns, v);
+      return memoryEntrySchema.parse(row);
+    });
+  }
+
+  /**
+   * Persist a full core memory entry, preserving id/timestamps/access count.
+   * Used by snapshot restore and migration workflows.
+   */
+  private async restoreMemoryEntry(entry: MemoryEntry, opts?: StoreMemoryOptions): Promise<void> {
+    this.ensureInitialized();
+    const validated = memoryEntrySchema.parse(entry);
+
+    this.db!.run(
+      `INSERT OR REPLACE INTO memory (id, content, topics, metadata, created_at, accessed_at, access_count, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        validated.id,
+        validated.content,
+        JSON.stringify(validated.topics),
+        JSON.stringify(validated.metadata),
+        validated.createdAt,
+        validated.accessedAt,
+        validated.accessCount,
+        opts?.agentId ?? null,
+        opts?.userId ?? null,
+      ]
+    );
+  }
+
+  /**
    * Create a named snapshot of current memory state.
    * For long-running agents — take a snapshot before restarts or major operations.
    * @param label Human-readable label for this snapshot
@@ -490,13 +527,13 @@ export class MemoryStore {
 
     // Gather current state
     const layerEntries = await this.loadAllLayerEntries(opts);
-    const coreEntries = await this.query('', { limit: 10_000 });
+    const coreEntries = await this.loadAllMemoryEntries(opts);
 
     const snapshotData = {
-      version: '0.3.1',
+      version: '0.6.2',
       createdAt: now,
       layerEntries,
-      coreEntries: coreEntries.results,
+      coreEntries,
       eventCount: this.eventLog.length,
     };
 
@@ -506,28 +543,33 @@ export class MemoryStore {
       if (e.layer in layerCounts) layerCounts[e.layer]++;
     }
 
+    const serialized = JSON.stringify(snapshotData);
+    const checksum = this.snapshotChecksum(snapshotData);
+
     this.db!.run(
-      `INSERT INTO snapshots (id, label, snapshot_data, memory_count, created_at, agent_id, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO snapshots (id, label, snapshot_data, memory_count, created_at, agent_id, user_id, checksum)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         label,
-        JSON.stringify(snapshotData),
-        layerEntries.length,
+        serialized,
+        layerEntries.length + coreEntries.length,
         now,
         opts?.agentId ?? null,
         opts?.userId ?? null,
+        checksum,
       ]
     );
-    this.logEvent('snapshot.created', { id, label, memoryCount: layerEntries.length });
+    this.logEvent('snapshot.created', { id, label, memoryCount: layerEntries.length + coreEntries.length, checksum });
     this.persist();
 
     return {
       id,
       label,
       createdAt: now,
-      memoryCount: layerEntries.length,
+      memoryCount: layerEntries.length + coreEntries.length,
       layerCounts,
+      checksum,
       agentId: opts?.agentId ?? null,
       userId: opts?.userId ?? null,
     };
@@ -541,16 +583,22 @@ export class MemoryStore {
   async restoreSnapshot(snapshotId: string, opts?: StoreMemoryOptions): Promise<number> {
     this.ensureInitialized();
 
-    const result = this.db!.exec('SELECT snapshot_data, agent_id, user_id FROM snapshots WHERE id = ?', [snapshotId]);
+    const result = this.db!.exec('SELECT snapshot_data, checksum, agent_id, user_id FROM snapshots WHERE id = ?', [snapshotId]);
     if (result.length === 0 || result[0].values.length === 0) {
       throw new Error(`Snapshot not found: ${snapshotId}`);
     }
 
     const row = this.rowToObject(result[0].columns, result[0].values[0]);
-    const data = JSON.parse(row['snapshot_data'] as string) as {
+    const snapshotText = row['snapshot_data'] as string;
+    const data = JSON.parse(snapshotText) as {
       layerEntries: LayeredMemoryEntry[];
+      coreEntries?: MemoryEntry[];
       version: string;
     };
+    const expectedChecksum = row['checksum'] as string | null;
+    if (expectedChecksum && this.snapshotChecksum(data) !== expectedChecksum) {
+      throw new Error(`Snapshot checksum mismatch: ${snapshotId}`);
+    }
 
     // Filter by agent/user scope
     const scopedEntries = data.layerEntries.filter((e) => {
@@ -558,20 +606,32 @@ export class MemoryStore {
       if (opts?.userId && e.metadata?.userId !== opts.userId) return false;
       return true;
     });
+    const scopedCoreEntries = data.coreEntries ?? [];
 
-    // Clear current scoped layer entries
+    // Clear current scoped entries
     if (opts?.agentId || opts?.userId) {
       const conditions = [];
       const params: (string | null)[] = [];
       if (opts.agentId) { conditions.push('agent_id = ?'); params.push(opts.agentId); }
       if (opts.userId) { conditions.push('user_id = ?'); params.push(opts.userId); }
       this.db!.run(`DELETE FROM layered_memories WHERE ${conditions.join(' AND ')}`, params);
+      this.db!.run(`DELETE FROM memory WHERE ${conditions.join(' AND ')}`, params);
     } else {
       this.db!.run('DELETE FROM layered_memories');
+      this.db!.run('DELETE FROM memory');
     }
 
-    // Restore entries from snapshot
+    // Restore core memories from snapshot
     let restored = 0;
+    for (const entry of scopedCoreEntries) {
+      await this.restoreMemoryEntry(entry, {
+        agentId: opts?.agentId,
+        userId: opts?.userId,
+      });
+      restored++;
+    }
+
+    // Restore layered entries from snapshot
     for (const entry of scopedEntries) {
       await this.persistLayerEntry(entry, {
         agentId: opts?.agentId,
@@ -592,7 +652,7 @@ export class MemoryStore {
   async listSnapshots(opts?: StoreMemoryOptions): Promise<SnapshotMeta[]> {
     this.ensureInitialized();
 
-    let sql = 'SELECT id, label, memory_count, created_at, agent_id, user_id FROM snapshots WHERE 1=1';
+    let sql = 'SELECT id, label, memory_count, created_at, agent_id, user_id, checksum FROM snapshots WHERE 1=1';
     const params: (string | null)[] = [];
 
     if (opts?.agentId) { sql += ' AND (agent_id = ? OR agent_id IS NULL)'; params.push(opts.agentId); }
@@ -610,10 +670,84 @@ export class MemoryStore {
         createdAt: obj['createdAt'] as number,
         memoryCount: obj['memory_count'] as number,
         layerCounts: { episodic: 0, semantic: 0, identity: 0, procedural: 0 },
+        checksum: obj['checksum'] as string | null,
         agentId: obj['agent_id'] as string | null,
         userId: obj['user_id'] as string | null,
       };
     });
+  }
+
+  /**
+   * Export a snapshot as portable JSON with checksum metadata.
+   */
+  async exportSnapshot(snapshotId: string): Promise<SnapshotExport> {
+    this.ensureInitialized();
+    const result = this.db!.exec('SELECT * FROM snapshots WHERE id = ?', [snapshotId]);
+    if (result.length === 0 || result[0].values.length === 0) {
+      throw new Error(`Snapshot not found: ${snapshotId}`);
+    }
+
+    const row = this.rowToObject(result[0].columns, result[0].values[0]);
+    const snapshotData = JSON.parse(row['snapshot_data'] as string) as unknown;
+    const checksum = (row['checksum'] as string | null) ?? this.snapshotChecksum(snapshotData);
+    if (this.snapshotChecksum(snapshotData) !== checksum) {
+      throw new Error(`Snapshot checksum mismatch: ${snapshotId}`);
+    }
+
+    return {
+      id: row['id'] as string,
+      label: row['label'] as string,
+      createdAt: row['createdAt'] as number,
+      memoryCount: row['memory_count'] as number,
+      checksum,
+      agentId: row['agent_id'] as string | null,
+      userId: row['user_id'] as string | null,
+      snapshotData,
+    };
+  }
+
+  /**
+   * Import a portable snapshot JSON export into the snapshots table.
+   */
+  async importSnapshot(snapshot: SnapshotExport, opts?: { overwrite?: boolean }): Promise<SnapshotMeta> {
+    this.ensureInitialized();
+    const checksum = this.snapshotChecksum(snapshot.snapshotData);
+    if (checksum !== snapshot.checksum) {
+      throw new Error('Snapshot import checksum mismatch');
+    }
+
+    const exists = this.db!.exec('SELECT id FROM snapshots WHERE id = ?', [snapshot.id]);
+    if (exists.length > 0 && exists[0].values.length > 0 && !opts?.overwrite) {
+      throw new Error(`Snapshot already exists: ${snapshot.id}`);
+    }
+
+    const serialized = JSON.stringify(snapshot.snapshotData);
+    this.db!.run(
+      `INSERT OR REPLACE INTO snapshots (id, label, snapshot_data, memory_count, created_at, agent_id, user_id, checksum)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        snapshot.id,
+        snapshot.label,
+        serialized,
+        snapshot.memoryCount,
+        snapshot.createdAt,
+        snapshot.agentId,
+        snapshot.userId,
+        checksum,
+      ]
+    );
+    this.persist();
+
+    return {
+      id: snapshot.id,
+      label: snapshot.label,
+      createdAt: snapshot.createdAt,
+      memoryCount: snapshot.memoryCount,
+      layerCounts: { episodic: 0, semantic: 0, identity: 0, procedural: 0 },
+      checksum,
+      agentId: snapshot.agentId,
+      userId: snapshot.userId,
+    };
   }
 
   /**
@@ -813,6 +947,17 @@ export class MemoryStore {
         // Ignore if events table write fails
       }
     }
+  }
+
+  private ensureColumn(table: string, column: string, definition: string): void {
+    if (!this.db) return;
+    const info = this.db.exec(`PRAGMA table_info(${table})`);
+    const exists = info[0]?.values.some((row) => row[1] === column) ?? false;
+    if (!exists) this.db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+
+  private snapshotChecksum(snapshotData: unknown): string {
+    return createHash('sha256').update(JSON.stringify(snapshotData)).digest('hex');
   }
 
   private rowToObject(columns: string[], values: unknown[]): Record<string, unknown> {

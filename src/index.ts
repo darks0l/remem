@@ -4,6 +4,8 @@
  */
 
 import { MemoryStore } from './store.js';
+import { PostgresMemoryStore, type PostgresStoreConfig } from './postgres-store.js';
+import type { MemoryStoreLike } from './storage-types.js';
 import { ModelAbstraction } from './model.js';
 import { QueryEngine } from './query.js';
 import {
@@ -48,7 +50,7 @@ import {
  * const results = await memory.query("What UI preferences?");
  */
 export class ReMEM {
-  private _store: MemoryStore;
+  private _store: MemoryStoreLike;
   private model?: ModelAbstraction;
   private engine: QueryEngine;
   private identity?: IdentitySystem;
@@ -65,8 +67,15 @@ export class ReMEM {
 
     // Initialize storage — default to SQLite if not specified
     const storage = validated.storage ?? 'sqlite';
-    const dbPath = validated.dbPath ?? (storage === 'memory' ? ':memory:' : './remem.db');
-    this._store = new MemoryStore(dbPath);
+    if (storage === 'postgres') {
+      this._store = new PostgresMemoryStore({
+        ...(validated.storageConfig ?? {}),
+        ...(validated.postgres ?? {}),
+      } as PostgresStoreConfig);
+    } else {
+      const dbPath = validated.dbPath ?? (storage === 'memory' ? ':memory:' : './remem.db');
+      this._store = new MemoryStore(dbPath);
+    }
 
     // Agent/user scoping for multi-agent support
     this._agentId = validated.storageConfig?.agentId as string | undefined;
@@ -97,12 +106,12 @@ export class ReMEM {
 
   /**
    * Initialize the memory store. Must be called before use.
-   * Also restores persisted layer state from SQLite if layers are enabled.
+   * Also restores persisted layer state from the configured store if layers are enabled.
    */
   async init(): Promise<void> {
     await this._store.init();
 
-    // Restore persisted layer entries from SQLite
+    // Restore persisted layer entries from the configured store
     if (this._layersEnabled && this.layers) {
       const storeOpts = { agentId: this._agentId, userId: this._userId };
       const persisted = await this._store.loadAllLayerEntries(storeOpts);
@@ -110,7 +119,7 @@ export class ReMEM {
         this.layers.restoreEntry(entry);
       }
       if (persisted.length > 0) {
-        console.log(`[ReMEM] Restored ${persisted.length} persisted layer entries from SQLite`);
+        console.log(`[ReMEM] Restored ${persisted.length} persisted layer entries from storage`);
       }
     }
   }
@@ -123,13 +132,13 @@ export class ReMEM {
   async store(input: StoreMemoryInput): Promise<void> {
     const normalized = storeMemoryInputSchema.parse(input);
 
-    // Store in the underlying SQLite store to get the entry ID for embedding
+    // Store in the underlying store to get the entry ID for embedding
     const stored = await this._store.store(normalized, {
       agentId: this._agentId,
       userId: this._userId,
     });
 
-    // Also store in layers if enabled (layers are persisted to SQLite)
+    // Also store in layers if enabled (layers are persisted to the configured store)
     if (this._layersEnabled && this.layers) {
       const result = this.layers.store(normalized);
       await this._store.persistLayerEntry(result, {
@@ -642,6 +651,7 @@ export class ReMEM {
     createdAt: number;
     memoryCount: number;
     layerCounts: Record<string, number>;
+    checksum: string | null;
   }> {
     const meta = await this._store.createSnapshot(label, {
       agentId: this._agentId,
@@ -652,7 +662,7 @@ export class ReMEM {
 
   /**
    * Restore from a snapshot by ID.
-   * Restores layer entries from the snapshot into the current store.
+   * Verifies checksum, then restores core and layered entries from the snapshot into the current store.
    * @returns Number of entries restored
    */
   async restoreSnapshot(snapshotId: string): Promise<number> {
@@ -670,6 +680,7 @@ export class ReMEM {
     label: string;
     createdAt: number;
     memoryCount: number;
+    checksum: string | null;
   }>> {
     const snapshots = await this._store.listSnapshots({
       agentId: this._agentId,
@@ -680,7 +691,22 @@ export class ReMEM {
       label: s.label,
       createdAt: s.createdAt,
       memoryCount: s.memoryCount,
+      checksum: s.checksum,
     }));
+  }
+
+  /**
+   * Export a snapshot as portable JSON.
+   */
+  async exportSnapshot(snapshotId: string) {
+    return this._store.exportSnapshot(snapshotId);
+  }
+
+  /**
+   * Import a portable snapshot JSON export.
+   */
+  async importSnapshot(snapshot: Awaited<ReturnType<MemoryStoreLike['exportSnapshot']>>, opts?: { overwrite?: boolean }) {
+    return this._store.importSnapshot(snapshot, opts);
   }
 
   /**
@@ -827,7 +853,7 @@ export class ReMEM {
   /**
    * Get the underlying MemoryStore for advanced operations.
    */
-  getStore(): MemoryStore {
+  getStore(): MemoryStoreLike {
     return this._store;
   }
 
@@ -848,6 +874,8 @@ export class ReMEM {
 
 // Re-export everything
 export { MemoryStore } from './store.js';
+export { PostgresMemoryStore } from './postgres-store.js';
+export type { MemoryStoreLike, SnapshotExport, SnapshotMeta, StoreMemoryOptions } from './storage-types.js';
 export { ModelAbstraction } from './model.js';
 export { QueryEngine } from './query.js';
 export { MemoryREPL } from './repl.js';

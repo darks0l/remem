@@ -7,7 +7,7 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
 
 // src/store.ts
 import initSqlJs from "sql.js";
-import { randomUUID as randomUUID2 } from "crypto";
+import { createHash, randomUUID as randomUUID2 } from "crypto";
 
 // src/types.ts
 import { z } from "zod";
@@ -86,9 +86,17 @@ var embeddingConfigSchema = z.object({
   /** Whether to generate embeddings async in background (non-blocking store) */
   asyncEmbed: z.boolean().default(true)
 });
+var postgresStorageConfigSchema = z.object({
+  connectionString: z.string().optional(),
+  schema: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
+  tablePrefix: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
+  ssl: z.union([z.boolean(), z.record(z.unknown())]).optional(),
+  pool: z.unknown().optional()
+});
 var rememConfigSchema = z.object({
   storage: z.enum(["sqlite", "postgres", "memory"]).default("sqlite"),
   storageConfig: z.record(z.unknown()).optional(),
+  postgres: postgresStorageConfigSchema.optional(),
   llm: modelConfigSchema.optional(),
   adapter: z.string().optional(),
   dbPath: z.string().optional(),
@@ -455,9 +463,11 @@ var MemoryStore = class {
         memory_count INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         agent_id TEXT,
-        user_id TEXT
+        user_id TEXT,
+        checksum TEXT
       )
     `);
+    this.ensureColumn("snapshots", "checksum", "TEXT");
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_snap_agent ON snapshots(agent_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_snap_created ON snapshots(created_at DESC)`);
     this.db.run(`
@@ -726,6 +736,53 @@ var MemoryStore = class {
     return changes > 0;
   }
   /**
+   * Load full core memory entries for snapshot/restore.
+   * Unlike query/getAllEntries, this preserves metadata and timestamps exactly.
+   */
+  async loadAllMemoryEntries(opts) {
+    this.ensureInitialized();
+    let sql = "SELECT * FROM memory WHERE 1=1";
+    const params = [];
+    if (opts?.agentId) {
+      sql += " AND (agent_id = ? OR agent_id IS NULL)";
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(opts.userId);
+    }
+    sql += " ORDER BY created_at DESC";
+    const result = this.db.exec(sql, params);
+    if (result.length === 0) return [];
+    return result[0].values.map((v) => {
+      const row = this.rowToObject(result[0].columns, v);
+      return memoryEntrySchema.parse(row);
+    });
+  }
+  /**
+   * Persist a full core memory entry, preserving id/timestamps/access count.
+   * Used by snapshot restore and migration workflows.
+   */
+  async restoreMemoryEntry(entry, opts) {
+    this.ensureInitialized();
+    const validated = memoryEntrySchema.parse(entry);
+    this.db.run(
+      `INSERT OR REPLACE INTO memory (id, content, topics, metadata, created_at, accessed_at, access_count, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        validated.id,
+        validated.content,
+        JSON.stringify(validated.topics),
+        JSON.stringify(validated.metadata),
+        validated.createdAt,
+        validated.accessedAt,
+        validated.accessCount,
+        opts?.agentId ?? null,
+        opts?.userId ?? null
+      ]
+    );
+  }
+  /**
    * Create a named snapshot of current memory state.
    * For long-running agents — take a snapshot before restarts or major operations.
    * @param label Human-readable label for this snapshot
@@ -736,39 +793,43 @@ var MemoryStore = class {
     const now = Date.now();
     const id = randomUUID2();
     const layerEntries = await this.loadAllLayerEntries(opts);
-    const coreEntries = await this.query("", { limit: 1e4 });
+    const coreEntries = await this.loadAllMemoryEntries(opts);
     const snapshotData = {
-      version: "0.3.1",
+      version: "0.6.2",
       createdAt: now,
       layerEntries,
-      coreEntries: coreEntries.results,
+      coreEntries,
       eventCount: this.eventLog.length
     };
     const layerCounts = { episodic: 0, semantic: 0, identity: 0, procedural: 0 };
     for (const e of layerEntries) {
       if (e.layer in layerCounts) layerCounts[e.layer]++;
     }
+    const serialized = JSON.stringify(snapshotData);
+    const checksum = this.snapshotChecksum(snapshotData);
     this.db.run(
-      `INSERT INTO snapshots (id, label, snapshot_data, memory_count, created_at, agent_id, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO snapshots (id, label, snapshot_data, memory_count, created_at, agent_id, user_id, checksum)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         label,
-        JSON.stringify(snapshotData),
-        layerEntries.length,
+        serialized,
+        layerEntries.length + coreEntries.length,
         now,
         opts?.agentId ?? null,
-        opts?.userId ?? null
+        opts?.userId ?? null,
+        checksum
       ]
     );
-    this.logEvent("snapshot.created", { id, label, memoryCount: layerEntries.length });
+    this.logEvent("snapshot.created", { id, label, memoryCount: layerEntries.length + coreEntries.length, checksum });
     this.persist();
     return {
       id,
       label,
       createdAt: now,
-      memoryCount: layerEntries.length,
+      memoryCount: layerEntries.length + coreEntries.length,
       layerCounts,
+      checksum,
       agentId: opts?.agentId ?? null,
       userId: opts?.userId ?? null
     };
@@ -780,17 +841,23 @@ var MemoryStore = class {
    */
   async restoreSnapshot(snapshotId, opts) {
     this.ensureInitialized();
-    const result = this.db.exec("SELECT snapshot_data, agent_id, user_id FROM snapshots WHERE id = ?", [snapshotId]);
+    const result = this.db.exec("SELECT snapshot_data, checksum, agent_id, user_id FROM snapshots WHERE id = ?", [snapshotId]);
     if (result.length === 0 || result[0].values.length === 0) {
       throw new Error(`Snapshot not found: ${snapshotId}`);
     }
     const row = this.rowToObject(result[0].columns, result[0].values[0]);
-    const data = JSON.parse(row["snapshot_data"]);
+    const snapshotText = row["snapshot_data"];
+    const data = JSON.parse(snapshotText);
+    const expectedChecksum = row["checksum"];
+    if (expectedChecksum && this.snapshotChecksum(data) !== expectedChecksum) {
+      throw new Error(`Snapshot checksum mismatch: ${snapshotId}`);
+    }
     const scopedEntries = data.layerEntries.filter((e) => {
       if (opts?.agentId && e.metadata?.agentId !== opts.agentId) return false;
       if (opts?.userId && e.metadata?.userId !== opts.userId) return false;
       return true;
     });
+    const scopedCoreEntries = data.coreEntries ?? [];
     if (opts?.agentId || opts?.userId) {
       const conditions = [];
       const params = [];
@@ -803,10 +870,19 @@ var MemoryStore = class {
         params.push(opts.userId);
       }
       this.db.run(`DELETE FROM layered_memories WHERE ${conditions.join(" AND ")}`, params);
+      this.db.run(`DELETE FROM memory WHERE ${conditions.join(" AND ")}`, params);
     } else {
       this.db.run("DELETE FROM layered_memories");
+      this.db.run("DELETE FROM memory");
     }
     let restored = 0;
+    for (const entry of scopedCoreEntries) {
+      await this.restoreMemoryEntry(entry, {
+        agentId: opts?.agentId,
+        userId: opts?.userId
+      });
+      restored++;
+    }
     for (const entry of scopedEntries) {
       await this.persistLayerEntry(entry, {
         agentId: opts?.agentId,
@@ -823,7 +899,7 @@ var MemoryStore = class {
    */
   async listSnapshots(opts) {
     this.ensureInitialized();
-    let sql = "SELECT id, label, memory_count, created_at, agent_id, user_id FROM snapshots WHERE 1=1";
+    let sql = "SELECT id, label, memory_count, created_at, agent_id, user_id, checksum FROM snapshots WHERE 1=1";
     const params = [];
     if (opts?.agentId) {
       sql += " AND (agent_id = ? OR agent_id IS NULL)";
@@ -844,10 +920,77 @@ var MemoryStore = class {
         createdAt: obj["createdAt"],
         memoryCount: obj["memory_count"],
         layerCounts: { episodic: 0, semantic: 0, identity: 0, procedural: 0 },
+        checksum: obj["checksum"],
         agentId: obj["agent_id"],
         userId: obj["user_id"]
       };
     });
+  }
+  /**
+   * Export a snapshot as portable JSON with checksum metadata.
+   */
+  async exportSnapshot(snapshotId) {
+    this.ensureInitialized();
+    const result = this.db.exec("SELECT * FROM snapshots WHERE id = ?", [snapshotId]);
+    if (result.length === 0 || result[0].values.length === 0) {
+      throw new Error(`Snapshot not found: ${snapshotId}`);
+    }
+    const row = this.rowToObject(result[0].columns, result[0].values[0]);
+    const snapshotData = JSON.parse(row["snapshot_data"]);
+    const checksum = row["checksum"] ?? this.snapshotChecksum(snapshotData);
+    if (this.snapshotChecksum(snapshotData) !== checksum) {
+      throw new Error(`Snapshot checksum mismatch: ${snapshotId}`);
+    }
+    return {
+      id: row["id"],
+      label: row["label"],
+      createdAt: row["createdAt"],
+      memoryCount: row["memory_count"],
+      checksum,
+      agentId: row["agent_id"],
+      userId: row["user_id"],
+      snapshotData
+    };
+  }
+  /**
+   * Import a portable snapshot JSON export into the snapshots table.
+   */
+  async importSnapshot(snapshot, opts) {
+    this.ensureInitialized();
+    const checksum = this.snapshotChecksum(snapshot.snapshotData);
+    if (checksum !== snapshot.checksum) {
+      throw new Error("Snapshot import checksum mismatch");
+    }
+    const exists = this.db.exec("SELECT id FROM snapshots WHERE id = ?", [snapshot.id]);
+    if (exists.length > 0 && exists[0].values.length > 0 && !opts?.overwrite) {
+      throw new Error(`Snapshot already exists: ${snapshot.id}`);
+    }
+    const serialized = JSON.stringify(snapshot.snapshotData);
+    this.db.run(
+      `INSERT OR REPLACE INTO snapshots (id, label, snapshot_data, memory_count, created_at, agent_id, user_id, checksum)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        snapshot.id,
+        snapshot.label,
+        serialized,
+        snapshot.memoryCount,
+        snapshot.createdAt,
+        snapshot.agentId,
+        snapshot.userId,
+        checksum
+      ]
+    );
+    this.persist();
+    return {
+      id: snapshot.id,
+      label: snapshot.label,
+      createdAt: snapshot.createdAt,
+      memoryCount: snapshot.memoryCount,
+      layerCounts: { episodic: 0, semantic: 0, identity: 0, procedural: 0 },
+      checksum,
+      agentId: snapshot.agentId,
+      userId: snapshot.userId
+    };
   }
   /**
    * Delete a snapshot.
@@ -1002,6 +1145,15 @@ var MemoryStore = class {
       }
     }
   }
+  ensureColumn(table, column, definition) {
+    if (!this.db) return;
+    const info = this.db.exec(`PRAGMA table_info(${table})`);
+    const exists = info[0]?.values.some((row) => row[1] === column) ?? false;
+    if (!exists) this.db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+  snapshotChecksum(snapshotData) {
+    return createHash("sha256").update(JSON.stringify(snapshotData)).digest("hex");
+  }
   rowToObject(columns, values) {
     const obj = {};
     columns.forEach((col, i) => {
@@ -1024,6 +1176,508 @@ var MemoryStore = class {
     const terms = query.toLowerCase().split(/\s+/);
     const matches = terms.filter((t) => lower.includes(t)).length;
     return matches / terms.length;
+  }
+};
+
+// src/postgres-store.ts
+import { createHash as createHash2, randomUUID as randomUUID3 } from "crypto";
+var PostgresMemoryStore = class {
+  pool = null;
+  ownsPool = false;
+  initialized = false;
+  eventLog = [];
+  schema;
+  tablePrefix;
+  config;
+  constructor(config = {}) {
+    this.config = typeof config === "string" ? { connectionString: config } : config;
+    this.schema = this.safeIdentifier(this.config.schema ?? "public");
+    this.tablePrefix = this.config.tablePrefix ? this.safeIdentifier(this.config.tablePrefix) : "";
+  }
+  async init() {
+    if (this.initialized) return;
+    if (this.config.pool) {
+      this.pool = this.config.pool;
+    } else {
+      const pg = await import("pg").catch(() => {
+        throw new Error('PostgreSQL storage requires the optional "pg" package. Install it with: npm install pg');
+      });
+      const PoolCtor = pg.Pool ?? pg.default?.Pool;
+      if (!PoolCtor) throw new Error("PostgreSQL storage could not load pg.Pool");
+      this.pool = new PoolCtor({ connectionString: this.config.connectionString, ssl: this.config.ssl });
+      this.ownsPool = true;
+    }
+    await this.initTables();
+    this.initialized = true;
+  }
+  safeIdentifier(value) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) throw new Error(`Invalid PostgreSQL identifier: ${value}`);
+    return value;
+  }
+  table(name) {
+    return `"${this.schema}"."${this.tablePrefix}${name}"`;
+  }
+  ensureInitialized() {
+    if (!this.pool) throw new Error("PostgresMemoryStore not initialized. Call await memoryStore.init() first.");
+  }
+  async pgQuery(text, params = [], client) {
+    this.ensureInitialized();
+    return (client ?? this.pool).query(text, params);
+  }
+  async initTables() {
+    await this.pgQuery(`CREATE SCHEMA IF NOT EXISTS "${this.schema}"`);
+    await this.pgQuery(`
+      CREATE TABLE IF NOT EXISTS ${this.table("memory")} (
+        id TEXT PRIMARY KEY,
+        content TEXT NOT NULL,
+        topics JSONB NOT NULL DEFAULT '[]'::jsonb,
+        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at BIGINT NOT NULL,
+        accessed_at BIGINT NOT NULL,
+        access_count INTEGER NOT NULL DEFAULT 0,
+        agent_id TEXT,
+        user_id TEXT
+      )
+    `);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_memory_created_at" ON ${this.table("memory")} (created_at DESC)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_memory_accessed_at" ON ${this.table("memory")} (accessed_at DESC)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_memory_agent" ON ${this.table("memory")} (agent_id)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_memory_user" ON ${this.table("memory")} (user_id)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_memory_topics" ON ${this.table("memory")} USING GIN (topics)`);
+    await this.pgQuery(`
+      CREATE TABLE IF NOT EXISTS ${this.table("layered_memories")} (
+        id TEXT PRIMARY KEY,
+        content TEXT NOT NULL,
+        topics JSONB NOT NULL DEFAULT '[]'::jsonb,
+        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+        layer TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        accessed_at BIGINT NOT NULL,
+        access_count INTEGER NOT NULL DEFAULT 0,
+        expires_at BIGINT,
+        importance REAL NOT NULL DEFAULT 0.5,
+        valid_from BIGINT,
+        valid_until BIGINT,
+        supersedes TEXT,
+        superseded_by TEXT,
+        agent_id TEXT,
+        user_id TEXT,
+        created_ts BIGINT NOT NULL DEFAULT (extract(epoch from now()) * 1000)::BIGINT
+      )
+    `);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_lm_layer" ON ${this.table("layered_memories")} (layer)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_lm_expires" ON ${this.table("layered_memories")} (expires_at)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_lm_agent" ON ${this.table("layered_memories")} (agent_id)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_lm_supersedes" ON ${this.table("layered_memories")} (supersedes)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_lm_superseded_by" ON ${this.table("layered_memories")} (superseded_by)`);
+    await this.pgQuery(`
+      CREATE TABLE IF NOT EXISTS ${this.table("snapshots")} (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL DEFAULT '',
+        snapshot_data JSONB NOT NULL,
+        memory_count INTEGER NOT NULL DEFAULT 0,
+        created_at BIGINT NOT NULL,
+        agent_id TEXT,
+        user_id TEXT,
+        checksum TEXT
+      )
+    `);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_snap_agent" ON ${this.table("snapshots")} (agent_id)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_snap_created" ON ${this.table("snapshots")} (created_at DESC)`);
+    await this.pgQuery(`
+      CREATE TABLE IF NOT EXISTS ${this.table("embeddings")} (
+        id TEXT PRIMARY KEY,
+        memory_id TEXT NOT NULL,
+        vector_base64 TEXT NOT NULL,
+        dimension INTEGER NOT NULL,
+        model TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        embedding_type TEXT NOT NULL DEFAULT 'memory'
+      )
+    `);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_emb_memory" ON ${this.table("embeddings")} (memory_id)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_emb_type" ON ${this.table("embeddings")} (embedding_type)`);
+    await this.pgQuery(`
+      CREATE TABLE IF NOT EXISTS ${this.table("events")} (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        timestamp BIGINT NOT NULL,
+        payload JSONB NOT NULL
+      )
+    `);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_events_timestamp" ON ${this.table("events")} (timestamp DESC)`);
+  }
+  async store(input, opts) {
+    const now = Date.now();
+    const validated = memoryEntrySchema.parse({
+      id: randomUUID3(),
+      content: input.content,
+      topics: input.topics ?? [],
+      metadata: input.metadata ?? {},
+      createdAt: now,
+      accessedAt: now,
+      accessCount: 0
+    });
+    await this.pgQuery(
+      `INSERT INTO ${this.table("memory")} (id, content, topics, metadata, created_at, accessed_at, access_count, agent_id, user_id)
+       VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6,$7,$8,$9)`,
+      [validated.id, validated.content, JSON.stringify(validated.topics), JSON.stringify(validated.metadata), validated.createdAt, validated.accessedAt, validated.accessCount, opts?.agentId ?? null, opts?.userId ?? null]
+    );
+    await this.logEvent("memory.stored", { entry: validated });
+    return validated;
+  }
+  async get(id) {
+    await this.pgQuery(`UPDATE ${this.table("memory")} SET access_count = access_count + 1, accessed_at = $1 WHERE id = $2`, [Date.now(), id]);
+    const result = await this.pgQuery(`SELECT * FROM ${this.table("memory")} WHERE id = $1`, [id]);
+    if (result.rowCount === 0) return null;
+    await this.logEvent("memory.accessed", { id });
+    return memoryEntrySchema.parse(this.rowToMemory(result.rows[0]));
+  }
+  async query(text, options) {
+    const opts = queryOptionsSchema.parse(options ?? {});
+    const where = ["content ILIKE $1"];
+    const params = [`%${text}%`];
+    let idx = 2;
+    if (opts.topics && opts.topics.length > 0) {
+      where.push(`topics ?| $${idx}::text[]`);
+      params.push(opts.topics);
+      idx++;
+    }
+    if (opts.since) {
+      where.push(`created_at >= $${idx++}`);
+      params.push(opts.since);
+    }
+    if (opts.until) {
+      where.push(`created_at <= $${idx++}`);
+      params.push(opts.until);
+    }
+    const whereSql = `WHERE ${where.join(" AND ")}`;
+    const count = await this.pgQuery(`SELECT COUNT(*)::text AS count FROM ${this.table("memory")} ${whereSql}`, params);
+    const totalAvailable = Number(count.rows[0]?.count ?? 0);
+    params.push(opts.limit);
+    const result = await this.pgQuery(
+      `SELECT * FROM ${this.table("memory")} ${whereSql} ORDER BY access_count DESC, accessed_at DESC LIMIT $${idx}`,
+      params
+    );
+    const results = result.rows.map((row) => {
+      const entry = memoryEntrySchema.parse(this.rowToMemory(row));
+      return this.toQueryResult(entry, this.simpleRelevance(entry.content, text));
+    });
+    await this.logEvent("memory.queried", { text, options: opts, resultCount: results.length });
+    return { results, totalAvailable };
+  }
+  async getAllEntries() {
+    const result = await this.pgQuery(`SELECT * FROM ${this.table("memory")} ORDER BY created_at DESC`);
+    return result.rows.map((row) => this.toQueryResult(memoryEntrySchema.parse(this.rowToMemory(row)), 0));
+  }
+  async getRecent(n = 10) {
+    const result = await this.pgQuery(`SELECT * FROM ${this.table("memory")} ORDER BY accessed_at DESC LIMIT $1`, [n]);
+    return result.rows.map((row) => this.toQueryResult(memoryEntrySchema.parse(this.rowToMemory(row))));
+  }
+  async getByTopic(topic, limit = 20) {
+    const result = await this.pgQuery(
+      `SELECT * FROM ${this.table("memory")} WHERE topics ? $1 ORDER BY accessed_at DESC LIMIT $2`,
+      [topic, limit]
+    );
+    return result.rows.map((row) => this.toQueryResult(memoryEntrySchema.parse(this.rowToMemory(row))));
+  }
+  async forget(id) {
+    const result = await this.pgQuery(`DELETE FROM ${this.table("memory")} WHERE id = $1`, [id]);
+    const forgotten = (result.rowCount ?? 0) > 0;
+    if (forgotten) await this.logEvent("memory.forgotten", { id });
+    return forgotten;
+  }
+  async persistLayerEntry(entry, opts) {
+    await this.pgQuery(
+      `INSERT INTO ${this.table("layered_memories")}
+       (id, content, topics, metadata, layer, created_at, accessed_at, access_count, expires_at, importance, valid_from, valid_until, supersedes, superseded_by, agent_id, user_id)
+       VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       ON CONFLICT (id) DO UPDATE SET
+        content=EXCLUDED.content, topics=EXCLUDED.topics, metadata=EXCLUDED.metadata, layer=EXCLUDED.layer,
+        created_at=EXCLUDED.created_at, accessed_at=EXCLUDED.accessed_at, access_count=EXCLUDED.access_count,
+        expires_at=EXCLUDED.expires_at, importance=EXCLUDED.importance, valid_from=EXCLUDED.valid_from,
+        valid_until=EXCLUDED.valid_until, supersedes=EXCLUDED.supersedes, superseded_by=EXCLUDED.superseded_by,
+        agent_id=EXCLUDED.agent_id, user_id=EXCLUDED.user_id`,
+      [entry.id, entry.content, JSON.stringify(entry.topics), JSON.stringify(entry.metadata), entry.layer, entry.createdAt, entry.accessedAt, entry.accessCount, entry.expiresAt ?? null, entry.importance, entry.validFrom ?? null, entry.validUntil ?? null, entry.supersedes ?? null, entry.supersededBy ?? null, opts?.agentId ?? null, opts?.userId ?? null]
+    );
+  }
+  async loadAllLayerEntries(opts) {
+    const { where, params } = this.scopeWhere(opts);
+    const result = await this.pgQuery(`SELECT * FROM ${this.table("layered_memories")} ${where} ORDER BY created_at DESC`, params);
+    return result.rows.map((row) => this.rowToLayerEntry(row));
+  }
+  async forgetLayerEntry(id) {
+    const result = await this.pgQuery(`DELETE FROM ${this.table("layered_memories")} WHERE id = $1`, [id]);
+    return (result.rowCount ?? 0) > 0;
+  }
+  async loadAllMemoryEntries(opts) {
+    const { where, params } = this.scopeWhere(opts);
+    const result = await this.pgQuery(`SELECT * FROM ${this.table("memory")} ${where} ORDER BY created_at DESC`, params);
+    return result.rows.map((row) => memoryEntrySchema.parse(this.rowToMemory(row)));
+  }
+  async restoreMemoryEntry(entry, opts, client) {
+    const validated = memoryEntrySchema.parse(entry);
+    await this.pgQuery(
+      `INSERT INTO ${this.table("memory")} (id, content, topics, metadata, created_at, accessed_at, access_count, agent_id, user_id)
+       VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6,$7,$8,$9)
+       ON CONFLICT (id) DO UPDATE SET content=EXCLUDED.content, topics=EXCLUDED.topics, metadata=EXCLUDED.metadata,
+        created_at=EXCLUDED.created_at, accessed_at=EXCLUDED.accessed_at, access_count=EXCLUDED.access_count,
+        agent_id=EXCLUDED.agent_id, user_id=EXCLUDED.user_id`,
+      [validated.id, validated.content, JSON.stringify(validated.topics), JSON.stringify(validated.metadata), validated.createdAt, validated.accessedAt, validated.accessCount, opts?.agentId ?? null, opts?.userId ?? null],
+      client
+    );
+  }
+  async createSnapshot(label, opts) {
+    const now = Date.now();
+    const id = randomUUID3();
+    const layerEntries = await this.loadAllLayerEntries(opts);
+    const coreEntries = await this.loadAllMemoryEntries(opts);
+    const snapshotData = { version: "0.6.5", createdAt: now, layerEntries, coreEntries, eventCount: this.eventLog.length };
+    const checksum = this.snapshotChecksum(snapshotData);
+    const layerCounts = { episodic: 0, semantic: 0, identity: 0, procedural: 0 };
+    for (const entry of layerEntries) if (entry.layer in layerCounts) layerCounts[entry.layer]++;
+    await this.pgQuery(
+      `INSERT INTO ${this.table("snapshots")} (id, label, snapshot_data, memory_count, created_at, agent_id, user_id, checksum)
+       VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8)`,
+      [id, label, JSON.stringify(snapshotData), layerEntries.length + coreEntries.length, now, opts?.agentId ?? null, opts?.userId ?? null, checksum]
+    );
+    await this.logEvent("snapshot.created", { id, label, memoryCount: layerEntries.length + coreEntries.length, checksum });
+    return { id, label, createdAt: now, memoryCount: layerEntries.length + coreEntries.length, layerCounts, checksum, agentId: opts?.agentId ?? null, userId: opts?.userId ?? null };
+  }
+  async restoreSnapshot(snapshotId, opts) {
+    const result = await this.pgQuery(`SELECT snapshot_data, checksum FROM ${this.table("snapshots")} WHERE id = $1`, [snapshotId]);
+    if (result.rowCount === 0) throw new Error(`Snapshot not found: ${snapshotId}`);
+    const snapshotData = this.parseJson(result.rows[0].snapshot_data);
+    const checksum = result.rows[0].checksum;
+    if (checksum && this.snapshotChecksum(snapshotData) !== checksum) throw new Error(`Snapshot checksum mismatch: ${snapshotId}`);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await this.clearScoped(opts, client);
+      let restored = 0;
+      for (const entry of snapshotData.coreEntries ?? []) {
+        await this.restoreMemoryEntry(entry, opts, client);
+        restored++;
+      }
+      for (const entry of snapshotData.layerEntries) {
+        await this.persistLayerEntryWithClient(entry, opts, client);
+        restored++;
+      }
+      await client.query("COMMIT");
+      await this.logEvent("snapshot.restored", { snapshotId, restored });
+      return restored;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  async listSnapshots(opts) {
+    const { where, params } = this.scopeWhere(opts);
+    const result = await this.pgQuery(`SELECT id, label, memory_count, created_at, agent_id, user_id, checksum FROM ${this.table("snapshots")} ${where} ORDER BY created_at DESC`, params);
+    return result.rows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      createdAt: Number(row.created_at),
+      memoryCount: Number(row.memory_count),
+      layerCounts: { episodic: 0, semantic: 0, identity: 0, procedural: 0 },
+      checksum: row.checksum,
+      agentId: row.agent_id,
+      userId: row.user_id
+    }));
+  }
+  async exportSnapshot(snapshotId) {
+    const result = await this.pgQuery(`SELECT * FROM ${this.table("snapshots")} WHERE id = $1`, [snapshotId]);
+    if (result.rowCount === 0) throw new Error(`Snapshot not found: ${snapshotId}`);
+    const row = result.rows[0];
+    const snapshotData = this.parseJson(row.snapshot_data);
+    const checksum = row.checksum ?? this.snapshotChecksum(snapshotData);
+    if (this.snapshotChecksum(snapshotData) !== checksum) throw new Error(`Snapshot checksum mismatch: ${snapshotId}`);
+    return { id: row.id, label: row.label, createdAt: Number(row.created_at), memoryCount: Number(row.memory_count), checksum, agentId: row.agent_id, userId: row.user_id, snapshotData };
+  }
+  async importSnapshot(snapshot, opts) {
+    const checksum = this.snapshotChecksum(snapshot.snapshotData);
+    if (checksum !== snapshot.checksum) throw new Error("Snapshot import checksum mismatch");
+    const existing = await this.pgQuery(`SELECT id FROM ${this.table("snapshots")} WHERE id = $1`, [snapshot.id]);
+    if ((existing.rowCount ?? 0) > 0 && !opts?.overwrite) throw new Error(`Snapshot already exists: ${snapshot.id}`);
+    await this.pgQuery(
+      `INSERT INTO ${this.table("snapshots")} (id, label, snapshot_data, memory_count, created_at, agent_id, user_id, checksum)
+       VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8)
+       ON CONFLICT (id) DO UPDATE SET label=EXCLUDED.label, snapshot_data=EXCLUDED.snapshot_data, memory_count=EXCLUDED.memory_count,
+        created_at=EXCLUDED.created_at, agent_id=EXCLUDED.agent_id, user_id=EXCLUDED.user_id, checksum=EXCLUDED.checksum`,
+      [snapshot.id, snapshot.label, JSON.stringify(snapshot.snapshotData), snapshot.memoryCount, snapshot.createdAt, snapshot.agentId, snapshot.userId, checksum]
+    );
+    return { id: snapshot.id, label: snapshot.label, createdAt: snapshot.createdAt, memoryCount: snapshot.memoryCount, layerCounts: { episodic: 0, semantic: 0, identity: 0, procedural: 0 }, checksum, agentId: snapshot.agentId, userId: snapshot.userId };
+  }
+  async deleteSnapshot(snapshotId) {
+    const result = await this.pgQuery(`DELETE FROM ${this.table("snapshots")} WHERE id = $1`, [snapshotId]);
+    return (result.rowCount ?? 0) > 0;
+  }
+  async storeEmbedding(memoryId, base64, dimension, model, type = "memory") {
+    await this.pgQuery(
+      `INSERT INTO ${this.table("embeddings")} (id, memory_id, vector_base64, dimension, model, created_at, embedding_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (id) DO UPDATE SET memory_id=EXCLUDED.memory_id, vector_base64=EXCLUDED.vector_base64,
+        dimension=EXCLUDED.dimension, model=EXCLUDED.model, embedding_type=EXCLUDED.embedding_type`,
+      [randomUUID3(), memoryId, base64, dimension, model, Date.now(), type]
+    );
+  }
+  async getEmbedding(memoryId) {
+    const result = await this.pgQuery(`SELECT vector_base64, dimension FROM ${this.table("embeddings")} WHERE memory_id = $1 LIMIT 1`, [memoryId]);
+    if (result.rowCount === 0) return null;
+    return { base64: result.rows[0].vector_base64, dimension: Number(result.rows[0].dimension) };
+  }
+  async deleteEmbedding(memoryId) {
+    await this.pgQuery(`DELETE FROM ${this.table("embeddings")} WHERE memory_id = $1`, [memoryId]);
+  }
+  async semanticQuery(queryText, queryVector, opts) {
+    const limit = opts?.limit ?? 10;
+    const where = [];
+    const params = [];
+    let idx = 1;
+    if (opts?.topics && opts.topics.length > 0) {
+      where.push(`topics ?| $${idx}::text[]`);
+      params.push(opts.topics);
+      idx++;
+    }
+    if (opts?.since) {
+      where.push(`created_at >= $${idx++}`);
+      params.push(opts.since);
+    }
+    if (opts?.until) {
+      where.push(`created_at <= $${idx++}`);
+      params.push(opts.until);
+    }
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const result = await this.pgQuery(`SELECT id, content, topics, created_at, accessed_at, access_count FROM ${this.table("memory")} ${whereSql}`, params);
+    const scored = [];
+    for (const row of result.rows) {
+      let relevanceScore;
+      const embedding = await this.getEmbedding(row.id);
+      if (queryVector && embedding) {
+        try {
+          relevanceScore = EmbeddingService.cosineSimilarity(queryVector, EmbeddingService.decodeVector(embedding.base64, embedding.dimension));
+        } catch {
+          relevanceScore = this.simpleRelevance(row.content, queryText);
+        }
+      } else {
+        relevanceScore = this.simpleRelevance(row.content, queryText);
+      }
+      scored.push({ id: row.id, content: row.content, topics: this.parseJson(row.topics), relevanceScore, createdAt: Number(row.created_at), accessedAt: Number(row.accessed_at), accessCount: Number(row.access_count) });
+    }
+    scored.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+    return { results: scored.slice(0, limit), totalAvailable: scored.length };
+  }
+  getEventLog(limit = 100) {
+    return this.eventLog.slice(0, limit);
+  }
+  persist() {
+  }
+  async close() {
+    if (this.pool && this.ownsPool) await this.pool.end();
+    this.pool = null;
+    this.initialized = false;
+  }
+  async persistLayerEntryWithClient(entry, opts, client) {
+    await this.pgQuery(
+      `INSERT INTO ${this.table("layered_memories")}
+       (id, content, topics, metadata, layer, created_at, accessed_at, access_count, expires_at, importance, valid_from, valid_until, supersedes, superseded_by, agent_id, user_id)
+       VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       ON CONFLICT (id) DO UPDATE SET content=EXCLUDED.content, topics=EXCLUDED.topics, metadata=EXCLUDED.metadata, layer=EXCLUDED.layer,
+        created_at=EXCLUDED.created_at, accessed_at=EXCLUDED.accessed_at, access_count=EXCLUDED.access_count,
+        expires_at=EXCLUDED.expires_at, importance=EXCLUDED.importance, valid_from=EXCLUDED.valid_from,
+        valid_until=EXCLUDED.valid_until, supersedes=EXCLUDED.supersedes, superseded_by=EXCLUDED.superseded_by,
+        agent_id=EXCLUDED.agent_id, user_id=EXCLUDED.user_id`,
+      [entry.id, entry.content, JSON.stringify(entry.topics), JSON.stringify(entry.metadata), entry.layer, entry.createdAt, entry.accessedAt, entry.accessCount, entry.expiresAt ?? null, entry.importance, entry.validFrom ?? null, entry.validUntil ?? null, entry.supersedes ?? null, entry.supersededBy ?? null, opts?.agentId ?? null, opts?.userId ?? null],
+      client
+    );
+  }
+  async clearScoped(opts, client) {
+    if (opts?.agentId || opts?.userId) {
+      const where = [];
+      const params = [];
+      let idx = 1;
+      if (opts.agentId) {
+        where.push(`agent_id = $${idx++}`);
+        params.push(opts.agentId);
+      }
+      if (opts.userId) {
+        where.push(`user_id = $${idx++}`);
+        params.push(opts.userId);
+      }
+      await this.pgQuery(`DELETE FROM ${this.table("layered_memories")} WHERE ${where.join(" AND ")}`, params, client);
+      await this.pgQuery(`DELETE FROM ${this.table("memory")} WHERE ${where.join(" AND ")}`, params, client);
+    } else {
+      await this.pgQuery(`DELETE FROM ${this.table("layered_memories")}`, [], client);
+      await this.pgQuery(`DELETE FROM ${this.table("memory")}`, [], client);
+    }
+  }
+  scopeWhere(opts) {
+    const conditions = [];
+    const params = [];
+    let idx = 1;
+    if (opts?.agentId) {
+      conditions.push(`(agent_id = $${idx++} OR agent_id IS NULL)`);
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      conditions.push(`(user_id = $${idx++} OR user_id IS NULL)`);
+      params.push(opts.userId);
+    }
+    return { where: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "", params };
+  }
+  rowToMemory(row) {
+    return {
+      id: row.id,
+      content: row.content,
+      topics: this.parseJson(row.topics),
+      metadata: this.parseJson(row.metadata),
+      createdAt: Number(row.created_at),
+      accessedAt: Number(row.accessed_at),
+      accessCount: Number(row.access_count)
+    };
+  }
+  rowToLayerEntry(row) {
+    return {
+      id: row.id,
+      content: row.content,
+      topics: this.parseJson(row.topics),
+      metadata: this.parseJson(row.metadata),
+      layer: row.layer,
+      createdAt: Number(row.created_at),
+      accessedAt: Number(row.accessed_at),
+      accessCount: Number(row.access_count),
+      expiresAt: row.expires_at == null ? void 0 : Number(row.expires_at),
+      importance: row.importance == null ? 0.5 : Number(row.importance),
+      validFrom: row.valid_from == null ? void 0 : Number(row.valid_from),
+      validUntil: row.valid_until == null ? void 0 : Number(row.valid_until),
+      supersedes: row.supersedes,
+      supersededBy: row.superseded_by
+    };
+  }
+  toQueryResult(entry, relevanceScore) {
+    return { id: entry.id, content: entry.content, topics: entry.topics, relevanceScore, createdAt: entry.createdAt, accessedAt: entry.accessedAt, accessCount: entry.accessCount };
+  }
+  parseJson(value) {
+    return typeof value === "string" ? JSON.parse(value) : value;
+  }
+  snapshotChecksum(snapshotData) {
+    return createHash2("sha256").update(JSON.stringify(snapshotData)).digest("hex");
+  }
+  simpleRelevance(content, query) {
+    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return 0;
+    const lower = content.toLowerCase();
+    return terms.filter((term) => lower.includes(term)).length / terms.length;
+  }
+  async logEvent(type, payload) {
+    const event = { id: randomUUID3(), type, timestamp: Date.now(), payload };
+    this.eventLog.push(event);
+    await this.pgQuery(
+      `INSERT INTO ${this.table("events")} (id, type, timestamp, payload) VALUES ($1,$2,$3,$4::jsonb)`,
+      [event.id, event.type, event.timestamp, JSON.stringify(event.payload)]
+    ).catch(() => void 0);
   }
 };
 
@@ -1394,7 +2048,7 @@ ${contextParts.join("\n---\n")}`
 };
 
 // src/identity.ts
-import { randomUUID as randomUUID3 } from "crypto";
+import { randomUUID as randomUUID4 } from "crypto";
 var ConstitutionManager = class {
   constitution;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1436,7 +2090,7 @@ var ConstitutionManager = class {
         const lines = content.split(/\n|•|-|\*/).map((l) => l.trim()).filter((l) => l.length > 10);
         for (const line of lines) {
           const statement = {
-            id: randomUUID3(),
+            id: randomUUID4(),
             text: line,
             category,
             weight: 0.5,
@@ -1455,7 +2109,7 @@ var ConstitutionManager = class {
       const lines = text.split(/\n/).map((l) => l.replace(/^#+\s*/, "").trim()).filter((l) => l.length > 15 && !l.startsWith("["));
       for (const line of lines.slice(0, 20)) {
         const statement = {
-          id: randomUUID3(),
+          id: randomUUID4(),
           text: line,
           category: "values",
           weight: 0.3,
@@ -1477,7 +2131,7 @@ var ConstitutionManager = class {
    */
   addStatement(text, category, weight = 0.5, source) {
     const statement = {
-      id: randomUUID3(),
+      id: randomUUID4(),
       text,
       category,
       weight,
@@ -1777,7 +2431,7 @@ function createIdentitySystem(config) {
 }
 
 // src/layers.ts
-import { randomUUID as randomUUID4 } from "crypto";
+import { randomUUID as randomUUID5 } from "crypto";
 var DEFAULT_LAYER_CONFIG = {
   episodic: { ttlMs: 36e5, maxEntries: 1e3, weight: 0.2 },
   // 1 hour
@@ -1825,7 +2479,7 @@ var LayerManager = class {
       }
     }
     const entry = {
-      id: randomUUID4(),
+      id: randomUUID5(),
       content: input.content,
       topics: input.topics ?? [],
       metadata: input.metadata ?? {},
@@ -2867,6 +3521,24 @@ var HttpAdapter = class {
       const snapshot = await this.store.createSnapshot(label);
       return { status: 201, body: { snapshot } };
     }
+    if (method === "GET" && path.startsWith("/snapshots/") && path.endsWith("/export")) {
+      const id = path.split("/")[2];
+      const snapshot = await this.store.exportSnapshot(id);
+      return { status: 200, body: { snapshot } };
+    }
+    if (method === "POST" && path === "/snapshots/import") {
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = JSON.parse(body);
+      if (!parsed.snapshot || typeof parsed.snapshot !== "object") {
+        return { status: 400, body: { error: "snapshot object required" } };
+      }
+      const snapshot = await this.store.importSnapshot(
+        parsed.snapshot,
+        { overwrite: parsed.overwrite === true }
+      );
+      return { status: 201, body: { snapshot } };
+    }
     if (method === "POST" && path.startsWith("/snapshots/") && path.endsWith("/restore")) {
       const id = path.split("/")[2];
       const restored = await this.store.restoreSnapshot(id);
@@ -3241,7 +3913,7 @@ ${newer.content}`;
 };
 
 // src/episodic-capture.ts
-import { randomUUID as randomUUID5 } from "crypto";
+import { randomUUID as randomUUID6 } from "crypto";
 var HIGH_IMPORTANCE_PATTERNS = [
   "decision",
   "agreed",
@@ -3379,7 +4051,7 @@ var EpisodicCapturePipeline = class {
     this.eventCount++;
     const enriched = {
       ...event,
-      id: event.id ?? randomUUID5(),
+      id: event.id ?? randomUUID6(),
       timestamp: event.timestamp ?? now
     };
     if (!enriched.noDedup) {
@@ -3676,8 +4348,15 @@ var ReMEM = class {
   constructor(config) {
     const validated = rememConfigSchema.parse(config);
     const storage = validated.storage ?? "sqlite";
-    const dbPath = validated.dbPath ?? (storage === "memory" ? ":memory:" : "./remem.db");
-    this._store = new MemoryStore(dbPath);
+    if (storage === "postgres") {
+      this._store = new PostgresMemoryStore({
+        ...validated.storageConfig ?? {},
+        ...validated.postgres ?? {}
+      });
+    } else {
+      const dbPath = validated.dbPath ?? (storage === "memory" ? ":memory:" : "./remem.db");
+      this._store = new MemoryStore(dbPath);
+    }
     this._agentId = validated.storageConfig?.agentId;
     this._userId = validated.storageConfig?.userId;
     if (validated.llm) {
@@ -3699,7 +4378,7 @@ var ReMEM = class {
   }
   /**
    * Initialize the memory store. Must be called before use.
-   * Also restores persisted layer state from SQLite if layers are enabled.
+   * Also restores persisted layer state from the configured store if layers are enabled.
    */
   async init() {
     await this._store.init();
@@ -3710,7 +4389,7 @@ var ReMEM = class {
         this.layers.restoreEntry(entry);
       }
       if (persisted.length > 0) {
-        console.log(`[ReMEM] Restored ${persisted.length} persisted layer entries from SQLite`);
+        console.log(`[ReMEM] Restored ${persisted.length} persisted layer entries from storage`);
       }
     }
   }
@@ -4138,7 +4817,7 @@ var ReMEM = class {
   }
   /**
    * Restore from a snapshot by ID.
-   * Restores layer entries from the snapshot into the current store.
+   * Verifies checksum, then restores core and layered entries from the snapshot into the current store.
    * @returns Number of entries restored
    */
   async restoreSnapshot(snapshotId) {
@@ -4159,8 +4838,21 @@ var ReMEM = class {
       id: s.id,
       label: s.label,
       createdAt: s.createdAt,
-      memoryCount: s.memoryCount
+      memoryCount: s.memoryCount,
+      checksum: s.checksum
     }));
+  }
+  /**
+   * Export a snapshot as portable JSON.
+   */
+  async exportSnapshot(snapshotId) {
+    return this._store.exportSnapshot(snapshotId);
+  }
+  /**
+   * Import a portable snapshot JSON export.
+   */
+  async importSnapshot(snapshot, opts) {
+    return this._store.importSnapshot(snapshot, opts);
   }
   /**
    * Delete a snapshot.
@@ -4300,6 +4992,7 @@ export {
   MemoryREPL,
   MemoryStore,
   ModelAbstraction,
+  PostgresMemoryStore,
   QueryEngine,
   ReMEM,
   buildIdentityPackage,
@@ -4328,6 +5021,7 @@ export {
   memoryEventSchema,
   memoryLayerSchema,
   modelConfigSchema,
+  postgresStorageConfigSchema,
   queryOptionsSchema,
   queryResponseSchema,
   queryResultSchema,

@@ -19,7 +19,7 @@
  */
 
 import type { LLMMessage, QueryResult } from './types.js';
-import { MemoryStore } from './store.js';
+import type { MemoryStoreLike } from './storage-types.js';
 import { LayerManager } from './layers.js';
 import { ModelAbstraction } from './model.js';
 
@@ -38,7 +38,7 @@ interface REPLObservation {
 
 interface MemoryREPLOptions {
   /** Memory store for actual operations */
-  store: MemoryStore;
+  store: MemoryStoreLike;
   /** Layer manager (optional — enables layer-aware navigation) */
   layers?: LayerManager;
   /** LLM for the REPL loop */
@@ -90,7 +90,7 @@ IMPORTANT:
 MAX DEPTH: If you reach the recursion limit without enough information, fall back to your best direct query and answer.`;
 
 export class MemoryREPL {
-  private store: MemoryStore;
+  private store: MemoryStoreLike;
   private layers?: LayerManager;
   private model?: ModelAbstraction;
   private maxDepth: number;

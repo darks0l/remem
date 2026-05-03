@@ -4,11 +4,11 @@
  */
 
 import type { LLMMessage, QueryOptions, QueryResponse, QueryResult, StoreMemoryInput } from './types.js';
-import { MemoryStore } from './store.js';
+import type { MemoryStoreLike } from './storage-types.js';
 import { ModelAbstraction } from './model.js';
 
 export interface QueryEngineConfig {
-  store: MemoryStore;
+  store: MemoryStoreLike;
   model?: ModelAbstraction;
   systemPrompt?: string;
 }
@@ -31,7 +31,7 @@ Memory entries have these fields:
 Respond with a query plan in JSON.`;
 
 export class QueryEngine {
-  private _store: MemoryStore;
+  private _store: MemoryStoreLike;
   private model?: ModelAbstraction;
   private systemPrompt: string;
 

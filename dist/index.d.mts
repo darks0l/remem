@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Pool } from 'pg';
 
 /**
  * ReMEM — Core Types
@@ -14,16 +15,16 @@ declare const memoryEntrySchema: z.ZodObject<{
     accessedAt: z.ZodNumber;
     accessCount: z.ZodDefault<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
-    id: string;
     content: string;
     topics: string[];
     metadata: Record<string, unknown>;
+    id: string;
     createdAt: number;
     accessedAt: number;
     accessCount: number;
 }, {
-    id: string;
     content: string;
+    id: string;
     createdAt: number;
     accessedAt: number;
     topics?: string[] | undefined;
@@ -74,17 +75,17 @@ declare const queryResultSchema: z.ZodObject<{
     accessedAt: z.ZodNumber;
     accessCount: z.ZodNumber;
 }, "strip", z.ZodTypeAny, {
-    id: string;
     content: string;
     topics: string[];
+    id: string;
     createdAt: number;
     accessedAt: number;
     accessCount: number;
     relevanceScore?: number | undefined;
 }, {
-    id: string;
     content: string;
     topics: string[];
+    id: string;
     createdAt: number;
     accessedAt: number;
     accessCount: number;
@@ -101,17 +102,17 @@ declare const queryResponseSchema: z.ZodObject<{
         accessedAt: z.ZodNumber;
         accessCount: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
-        id: string;
         content: string;
         topics: string[];
+        id: string;
         createdAt: number;
         accessedAt: number;
         accessCount: number;
         relevanceScore?: number | undefined;
     }, {
-        id: string;
         content: string;
         topics: string[];
+        id: string;
         createdAt: number;
         accessedAt: number;
         accessCount: number;
@@ -122,9 +123,9 @@ declare const queryResponseSchema: z.ZodObject<{
     tookMs: z.ZodNumber;
 }, "strip", z.ZodTypeAny, {
     results: {
-        id: string;
         content: string;
         topics: string[];
+        id: string;
         createdAt: number;
         accessedAt: number;
         accessCount: number;
@@ -135,9 +136,9 @@ declare const queryResponseSchema: z.ZodObject<{
     tookMs: number;
 }, {
     results: {
-        id: string;
         content: string;
         topics: string[];
+        id: string;
         createdAt: number;
         accessedAt: number;
         accessCount: number;
@@ -244,9 +245,48 @@ declare const embeddingConfigSchema: z.ZodObject<{
     asyncEmbed?: boolean | undefined;
 }>;
 type EmbeddingConfig$1 = z.infer<typeof embeddingConfigSchema>;
+declare const postgresStorageConfigSchema: z.ZodObject<{
+    connectionString: z.ZodOptional<z.ZodString>;
+    schema: z.ZodOptional<z.ZodString>;
+    tablePrefix: z.ZodOptional<z.ZodString>;
+    ssl: z.ZodOptional<z.ZodUnion<[z.ZodBoolean, z.ZodRecord<z.ZodString, z.ZodUnknown>]>>;
+    pool: z.ZodOptional<z.ZodUnknown>;
+}, "strip", z.ZodTypeAny, {
+    connectionString?: string | undefined;
+    schema?: string | undefined;
+    tablePrefix?: string | undefined;
+    ssl?: boolean | Record<string, unknown> | undefined;
+    pool?: unknown;
+}, {
+    connectionString?: string | undefined;
+    schema?: string | undefined;
+    tablePrefix?: string | undefined;
+    ssl?: boolean | Record<string, unknown> | undefined;
+    pool?: unknown;
+}>;
+type PostgresStorageConfig = z.infer<typeof postgresStorageConfigSchema>;
 declare const rememConfigSchema: z.ZodObject<{
     storage: z.ZodDefault<z.ZodEnum<["sqlite", "postgres", "memory"]>>;
     storageConfig: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+    postgres: z.ZodOptional<z.ZodObject<{
+        connectionString: z.ZodOptional<z.ZodString>;
+        schema: z.ZodOptional<z.ZodString>;
+        tablePrefix: z.ZodOptional<z.ZodString>;
+        ssl: z.ZodOptional<z.ZodUnion<[z.ZodBoolean, z.ZodRecord<z.ZodString, z.ZodUnknown>]>>;
+        pool: z.ZodOptional<z.ZodUnknown>;
+    }, "strip", z.ZodTypeAny, {
+        connectionString?: string | undefined;
+        schema?: string | undefined;
+        tablePrefix?: string | undefined;
+        ssl?: boolean | Record<string, unknown> | undefined;
+        pool?: unknown;
+    }, {
+        connectionString?: string | undefined;
+        schema?: string | undefined;
+        tablePrefix?: string | undefined;
+        ssl?: boolean | Record<string, unknown> | undefined;
+        pool?: unknown;
+    }>>;
     llm: z.ZodOptional<z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
         type: z.ZodLiteral<"bankr">;
         apiKey: z.ZodString;
@@ -330,6 +370,13 @@ declare const rememConfigSchema: z.ZodObject<{
     }>>;
 }, "strip", z.ZodTypeAny, {
     storage: "sqlite" | "postgres" | "memory";
+    postgres?: {
+        connectionString?: string | undefined;
+        schema?: string | undefined;
+        tablePrefix?: string | undefined;
+        ssl?: boolean | Record<string, unknown> | undefined;
+        pool?: unknown;
+    } | undefined;
     storageConfig?: Record<string, unknown> | undefined;
     llm?: {
         type: "bankr";
@@ -360,6 +407,13 @@ declare const rememConfigSchema: z.ZodObject<{
         dimension?: number | undefined;
     } | undefined;
 }, {
+    postgres?: {
+        connectionString?: string | undefined;
+        schema?: string | undefined;
+        tablePrefix?: string | undefined;
+        ssl?: boolean | Record<string, unknown> | undefined;
+        pool?: unknown;
+    } | undefined;
     storage?: "sqlite" | "postgres" | "memory" | undefined;
     storageConfig?: Record<string, unknown> | undefined;
     llm?: {
@@ -858,10 +912,10 @@ declare const layeredMemoryEntrySchema: z.ZodObject<{
     supersedes: z.ZodOptional<z.ZodString>;
     supersededBy: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    id: string;
     content: string;
     topics: string[];
     metadata: Record<string, unknown>;
+    id: string;
     createdAt: number;
     accessedAt: number;
     accessCount: number;
@@ -873,8 +927,8 @@ declare const layeredMemoryEntrySchema: z.ZodObject<{
     supersedes?: string | undefined;
     supersededBy?: string | undefined;
 }, {
-    id: string;
     content: string;
+    id: string;
     createdAt: number;
     accessedAt: number;
     topics?: string[] | undefined;
@@ -1055,10 +1109,10 @@ declare const identityPackageSchema: z.ZodObject<{
         supersedes: z.ZodOptional<z.ZodString>;
         supersededBy: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
-        id: string;
         content: string;
         topics: string[];
         metadata: Record<string, unknown>;
+        id: string;
         createdAt: number;
         accessedAt: number;
         accessCount: number;
@@ -1070,8 +1124,8 @@ declare const identityPackageSchema: z.ZodObject<{
         supersedes?: string | undefined;
         supersededBy?: string | undefined;
     }, {
-        id: string;
         content: string;
+        id: string;
         createdAt: number;
         accessedAt: number;
         topics?: string[] | undefined;
@@ -1124,10 +1178,10 @@ declare const identityPackageSchema: z.ZodObject<{
     };
     exportedAt: number;
     memories: {
-        id: string;
         content: string;
         topics: string[];
         metadata: Record<string, unknown>;
+        id: string;
         createdAt: number;
         accessedAt: number;
         accessCount: number;
@@ -1139,12 +1193,12 @@ declare const identityPackageSchema: z.ZodObject<{
         supersedes?: string | undefined;
         supersededBy?: string | undefined;
     }[];
-    agentId?: string | undefined;
-    userId?: string | undefined;
     identity?: {
         content: string;
         source?: string | undefined;
     } | undefined;
+    agentId?: string | undefined;
+    userId?: string | undefined;
     soul?: {
         content: string;
         source?: string | undefined;
@@ -1165,8 +1219,8 @@ declare const identityPackageSchema: z.ZodObject<{
     };
     exportedAt: number;
     memories: {
-        id: string;
         content: string;
+        id: string;
         createdAt: number;
         accessedAt: number;
         topics?: string[] | undefined;
@@ -1180,13 +1234,13 @@ declare const identityPackageSchema: z.ZodObject<{
         supersedes?: string | undefined;
         supersededBy?: string | undefined;
     }[];
-    agentId?: string | undefined;
-    userId?: string | undefined;
     metadata?: Record<string, unknown> | undefined;
     identity?: {
         content: string;
         source?: string | undefined;
     } | undefined;
+    agentId?: string | undefined;
+    userId?: string | undefined;
     version?: string | undefined;
     soul?: {
         content: string;
@@ -1276,132 +1330,66 @@ type InfectionResult = {
     liveConnection: boolean;
 };
 
-/**
- * ReMEM — MemoryStore
- * SQLite-backed persistent memory store with event sourcing
- * Uses sql.js (WebAssembly) for cross-platform SQLite without native compilation
- *
- * v0.3.1 adds:
- * - layered_memories table (persists LayerManager entries to SQLite)
- * - snapshots table (snapshot/restore for long-running agents)
- * - agent_id/user_id scoping (multi-agent support)
- * - WAL mode for better concurrent write handling
- * - Atomic persist with rename
- *
- * v0.3.2 adds:
- * - embeddings table (vector storage for semantic search)
- * - semanticQuery() for cosine similarity search
- */
-
 interface SnapshotMeta {
     id: string;
     label: string;
     createdAt: number;
     memoryCount: number;
     layerCounts: Record<MemoryLayer, number>;
+    checksum: string | null;
     agentId: string | null;
     userId: string | null;
+}
+interface SnapshotExport {
+    id: string;
+    label: string;
+    createdAt: number;
+    memoryCount: number;
+    checksum: string;
+    agentId: string | null;
+    userId: string | null;
+    snapshotData: unknown;
 }
 interface StoreMemoryOptions {
     agentId?: string;
     userId?: string;
 }
-declare class MemoryStore {
-    private db;
-    private eventLog;
-    private dbPath;
-    private initialized;
-    constructor(dbPath?: string);
+interface MemoryStoreLike {
     init(): Promise<void>;
-    private initTables;
-    private ensureInitialized;
     store(input: StoreMemoryInput, opts?: StoreMemoryOptions): Promise<MemoryEntry>;
     get(id: string): Promise<MemoryEntry | null>;
     query(text: string, options?: QueryOptions): Promise<{
         results: QueryResult[];
         totalAvailable: number;
     }>;
-    /**
-     * Get all memory entries (no text filter, ignores limit).
-     * Used internally by the duplication/export feature.
-     */
     getAllEntries(): Promise<QueryResult[]>;
     getRecent(n?: number): Promise<QueryResult[]>;
     getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
     forget(id: string): Promise<boolean>;
-    /**
-     * Persist a LayerManager entry to SQLite.
-     * This is what makes layers survive process restarts.
-     */
     persistLayerEntry(entry: LayeredMemoryEntry, opts?: StoreMemoryOptions): Promise<void>;
-    /**
-     * Load all persisted layer entries from SQLite.
-     * Called on ReMEM.init() to restore layer state.
-     */
     loadAllLayerEntries(opts?: StoreMemoryOptions): Promise<LayeredMemoryEntry[]>;
-    /**
-     * Delete a layered memory entry.
-     */
     forgetLayerEntry(id: string): Promise<boolean>;
-    /**
-     * Create a named snapshot of current memory state.
-     * For long-running agents — take a snapshot before restarts or major operations.
-     * @param label Human-readable label for this snapshot
-     * @param opts Agent/user scope
-     */
     createSnapshot(label: string, opts?: StoreMemoryOptions): Promise<SnapshotMeta>;
-    /**
-     * Restore from a snapshot by ID.
-     * Overwrites current layer state with snapshot state.
-     * @returns Number of entries restored
-     */
     restoreSnapshot(snapshotId: string, opts?: StoreMemoryOptions): Promise<number>;
-    /**
-     * List available snapshots.
-     */
     listSnapshots(opts?: StoreMemoryOptions): Promise<SnapshotMeta[]>;
-    /**
-     * Delete a snapshot.
-     */
+    exportSnapshot(snapshotId: string): Promise<SnapshotExport>;
+    importSnapshot(snapshot: SnapshotExport, opts?: {
+        overwrite?: boolean;
+    }): Promise<SnapshotMeta>;
     deleteSnapshot(snapshotId: string): Promise<boolean>;
-    /**
-     * Store a vector embedding for a memory entry.
-     * Called after MemoryStore.store() when embeddings are enabled.
-     */
     storeEmbedding(memoryId: string, base64: string, dimension: number, model: string, type?: 'memory' | 'layered'): Promise<void>;
-    /**
-     * Get embedding for a memory entry.
-     */
     getEmbedding(memoryId: string): Promise<{
         base64: string;
         dimension: number;
     } | null>;
-    /**
-     * Delete embedding for a memory entry.
-     */
     deleteEmbedding(memoryId: string): Promise<void>;
-    /**
-     * Hybrid semantic search: cosine similarity over embeddings + keyword fallback.
-     *
-     * Strategy:
-     * 1. If Ollama is available and we have stored embeddings: compute cosine similarity
-     * 2. Fall back to keyword + access_count scoring when no embeddings exist
-     *
-     * @param queryText     The search query
-     * @param queryVector   Pre-computed embedding of the query (if available)
-     * @param opts          Query options (limit, topics, etc.)
-     * @returns             Top results scored by semantic similarity
-     */
     semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions): Promise<{
         results: QueryResult[];
         totalAvailable: number;
     }>;
     getEventLog(limit?: number): MemoryEvent[];
     persist(): void;
-    close(): void;
-    private logEvent;
-    private rowToObject;
-    private simpleRelevance;
+    close(): void | Promise<void>;
 }
 
 /**
@@ -1626,12 +1614,219 @@ declare class LayerManager {
 }
 
 /**
+ * ReMEM — MemoryStore
+ * SQLite-backed persistent memory store with event sourcing
+ * Uses sql.js (WebAssembly) for cross-platform SQLite without native compilation
+ *
+ * v0.3.1 adds:
+ * - layered_memories table (persists LayerManager entries to SQLite)
+ * - snapshots table (snapshot/restore for long-running agents)
+ * - agent_id/user_id scoping (multi-agent support)
+ * - WAL mode for better concurrent write handling
+ * - Atomic persist with rename
+ *
+ * v0.3.2 adds:
+ * - embeddings table (vector storage for semantic search)
+ * - semanticQuery() for cosine similarity search
+ */
+
+declare class MemoryStore implements MemoryStoreLike {
+    private db;
+    private eventLog;
+    private dbPath;
+    private initialized;
+    constructor(dbPath?: string);
+    init(): Promise<void>;
+    private initTables;
+    private ensureInitialized;
+    store(input: StoreMemoryInput, opts?: StoreMemoryOptions): Promise<MemoryEntry>;
+    get(id: string): Promise<MemoryEntry | null>;
+    query(text: string, options?: QueryOptions): Promise<{
+        results: QueryResult[];
+        totalAvailable: number;
+    }>;
+    /**
+     * Get all memory entries (no text filter, ignores limit).
+     * Used internally by the duplication/export feature.
+     */
+    getAllEntries(): Promise<QueryResult[]>;
+    getRecent(n?: number): Promise<QueryResult[]>;
+    getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
+    forget(id: string): Promise<boolean>;
+    /**
+     * Persist a LayerManager entry to SQLite.
+     * This is what makes layers survive process restarts.
+     */
+    persistLayerEntry(entry: LayeredMemoryEntry, opts?: StoreMemoryOptions): Promise<void>;
+    /**
+     * Load all persisted layer entries from SQLite.
+     * Called on ReMEM.init() to restore layer state.
+     */
+    loadAllLayerEntries(opts?: StoreMemoryOptions): Promise<LayeredMemoryEntry[]>;
+    /**
+     * Delete a layered memory entry.
+     */
+    forgetLayerEntry(id: string): Promise<boolean>;
+    /**
+     * Load full core memory entries for snapshot/restore.
+     * Unlike query/getAllEntries, this preserves metadata and timestamps exactly.
+     */
+    private loadAllMemoryEntries;
+    /**
+     * Persist a full core memory entry, preserving id/timestamps/access count.
+     * Used by snapshot restore and migration workflows.
+     */
+    private restoreMemoryEntry;
+    /**
+     * Create a named snapshot of current memory state.
+     * For long-running agents — take a snapshot before restarts or major operations.
+     * @param label Human-readable label for this snapshot
+     * @param opts Agent/user scope
+     */
+    createSnapshot(label: string, opts?: StoreMemoryOptions): Promise<SnapshotMeta>;
+    /**
+     * Restore from a snapshot by ID.
+     * Overwrites current layer state with snapshot state.
+     * @returns Number of entries restored
+     */
+    restoreSnapshot(snapshotId: string, opts?: StoreMemoryOptions): Promise<number>;
+    /**
+     * List available snapshots.
+     */
+    listSnapshots(opts?: StoreMemoryOptions): Promise<SnapshotMeta[]>;
+    /**
+     * Export a snapshot as portable JSON with checksum metadata.
+     */
+    exportSnapshot(snapshotId: string): Promise<SnapshotExport>;
+    /**
+     * Import a portable snapshot JSON export into the snapshots table.
+     */
+    importSnapshot(snapshot: SnapshotExport, opts?: {
+        overwrite?: boolean;
+    }): Promise<SnapshotMeta>;
+    /**
+     * Delete a snapshot.
+     */
+    deleteSnapshot(snapshotId: string): Promise<boolean>;
+    /**
+     * Store a vector embedding for a memory entry.
+     * Called after MemoryStore.store() when embeddings are enabled.
+     */
+    storeEmbedding(memoryId: string, base64: string, dimension: number, model: string, type?: 'memory' | 'layered'): Promise<void>;
+    /**
+     * Get embedding for a memory entry.
+     */
+    getEmbedding(memoryId: string): Promise<{
+        base64: string;
+        dimension: number;
+    } | null>;
+    /**
+     * Delete embedding for a memory entry.
+     */
+    deleteEmbedding(memoryId: string): Promise<void>;
+    /**
+     * Hybrid semantic search: cosine similarity over embeddings + keyword fallback.
+     *
+     * Strategy:
+     * 1. If Ollama is available and we have stored embeddings: compute cosine similarity
+     * 2. Fall back to keyword + access_count scoring when no embeddings exist
+     *
+     * @param queryText     The search query
+     * @param queryVector   Pre-computed embedding of the query (if available)
+     * @param opts          Query options (limit, topics, etc.)
+     * @returns             Top results scored by semantic similarity
+     */
+    semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions): Promise<{
+        results: QueryResult[];
+        totalAvailable: number;
+    }>;
+    getEventLog(limit?: number): MemoryEvent[];
+    persist(): void;
+    close(): void;
+    private logEvent;
+    private ensureColumn;
+    private snapshotChecksum;
+    private rowToObject;
+    private simpleRelevance;
+}
+
+interface PostgresStoreConfig {
+    connectionString?: string;
+    pool?: Pool;
+    schema?: string;
+    tablePrefix?: string;
+    ssl?: boolean | Record<string, unknown>;
+}
+declare class PostgresMemoryStore implements MemoryStoreLike {
+    private pool;
+    private ownsPool;
+    private initialized;
+    private eventLog;
+    private readonly schema;
+    private readonly tablePrefix;
+    private readonly config;
+    constructor(config?: string | PostgresStoreConfig);
+    init(): Promise<void>;
+    private safeIdentifier;
+    private table;
+    private ensureInitialized;
+    private pgQuery;
+    private initTables;
+    store(input: StoreMemoryInput, opts?: StoreMemoryOptions): Promise<MemoryEntry>;
+    get(id: string): Promise<MemoryEntry | null>;
+    query(text: string, options?: QueryOptions): Promise<{
+        results: QueryResult[];
+        totalAvailable: number;
+    }>;
+    getAllEntries(): Promise<QueryResult[]>;
+    getRecent(n?: number): Promise<QueryResult[]>;
+    getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
+    forget(id: string): Promise<boolean>;
+    persistLayerEntry(entry: LayeredMemoryEntry, opts?: StoreMemoryOptions): Promise<void>;
+    loadAllLayerEntries(opts?: StoreMemoryOptions): Promise<LayeredMemoryEntry[]>;
+    forgetLayerEntry(id: string): Promise<boolean>;
+    private loadAllMemoryEntries;
+    private restoreMemoryEntry;
+    createSnapshot(label: string, opts?: StoreMemoryOptions): Promise<SnapshotMeta>;
+    restoreSnapshot(snapshotId: string, opts?: StoreMemoryOptions): Promise<number>;
+    listSnapshots(opts?: StoreMemoryOptions): Promise<SnapshotMeta[]>;
+    exportSnapshot(snapshotId: string): Promise<SnapshotExport>;
+    importSnapshot(snapshot: SnapshotExport, opts?: {
+        overwrite?: boolean;
+    }): Promise<SnapshotMeta>;
+    deleteSnapshot(snapshotId: string): Promise<boolean>;
+    storeEmbedding(memoryId: string, base64: string, dimension: number, model: string, type?: 'memory' | 'layered'): Promise<void>;
+    getEmbedding(memoryId: string): Promise<{
+        base64: string;
+        dimension: number;
+    } | null>;
+    deleteEmbedding(memoryId: string): Promise<void>;
+    semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions): Promise<{
+        results: QueryResult[];
+        totalAvailable: number;
+    }>;
+    getEventLog(limit?: number): MemoryEvent[];
+    persist(): void;
+    close(): Promise<void>;
+    private persistLayerEntryWithClient;
+    private clearScoped;
+    private scopeWhere;
+    private rowToMemory;
+    private rowToLayerEntry;
+    private toQueryResult;
+    private parseJson;
+    private snapshotChecksum;
+    private simpleRelevance;
+    private logEvent;
+}
+
+/**
  * ReMEM — Query Engine
  * RLM-style REPL for navigating memory programmatically
  */
 
 interface QueryEngineConfig {
-    store: MemoryStore;
+    store: MemoryStoreLike;
     model?: ModelAbstraction;
     systemPrompt?: string;
 }
@@ -1716,7 +1911,7 @@ interface REPLObservation {
 }
 interface MemoryREPLOptions {
     /** Memory store for actual operations */
-    store: MemoryStore;
+    store: MemoryStoreLike;
     /** Layer manager (optional — enables layer-aware navigation) */
     layers?: LayerManager;
     /** LLM for the REPL loop */
@@ -1779,7 +1974,7 @@ declare class MemoryREPL {
 interface HttpAdapterConfig {
     port?: number;
     host?: string;
-    store: MemoryStore;
+    store: MemoryStoreLike;
     model?: ModelAbstraction;
     /** Optional bearer token required for all non-OPTIONS requests. */
     authToken?: string;
@@ -2186,7 +2381,7 @@ declare function createIdentitySystem(config?: IdentityConfig): IdentitySystem;
  * Use `uploadPackage()` to send to the server.
  */
 declare function buildIdentityPackage(params: {
-    store: MemoryStore;
+    store: MemoryStoreLike;
     layers?: LayerManager;
     identity?: IdentitySystem;
     soulText?: string;
@@ -2205,7 +2400,7 @@ declare function uploadPackage(pkg: IdentityPackage, config: DuplicationConfig):
  * Returns upload confirmation details.
  */
 declare function duplicate(params: {
-    store: MemoryStore;
+    store: MemoryStoreLike;
     layers?: LayerManager;
     identity?: IdentitySystem;
     soulText?: string;
@@ -2222,7 +2417,7 @@ declare function downloadPackage(config: InfectionConfig): Promise<IdentityPacka
  * and optionally stores memories in the appropriate layers.
  */
 declare function infect(params: {
-    store: MemoryStore;
+    store: MemoryStoreLike;
     layers?: LayerManager;
     identity?: IdentitySystem;
     pkg: IdentityPackage;
@@ -2233,7 +2428,7 @@ declare function infect(params: {
  * Downloads from server and applies the identity package locally.
  */
 declare function infectFromServer(params: {
-    store: MemoryStore;
+    store: MemoryStoreLike;
     layers?: LayerManager;
     identity?: IdentitySystem;
     config: InfectionConfig;
@@ -2267,7 +2462,7 @@ declare class ReMEM {
     constructor(config: ReMEMConfig);
     /**
      * Initialize the memory store. Must be called before use.
-     * Also restores persisted layer state from SQLite if layers are enabled.
+     * Also restores persisted layer state from the configured store if layers are enabled.
      */
     init(): Promise<void>;
     /**
@@ -2442,10 +2637,11 @@ declare class ReMEM {
         createdAt: number;
         memoryCount: number;
         layerCounts: Record<string, number>;
+        checksum: string | null;
     }>;
     /**
      * Restore from a snapshot by ID.
-     * Restores layer entries from the snapshot into the current store.
+     * Verifies checksum, then restores core and layered entries from the snapshot into the current store.
      * @returns Number of entries restored
      */
     restoreSnapshot(snapshotId: string): Promise<number>;
@@ -2457,7 +2653,18 @@ declare class ReMEM {
         label: string;
         createdAt: number;
         memoryCount: number;
+        checksum: string | null;
     }>>;
+    /**
+     * Export a snapshot as portable JSON.
+     */
+    exportSnapshot(snapshotId: string): Promise<SnapshotExport>;
+    /**
+     * Import a portable snapshot JSON export.
+     */
+    importSnapshot(snapshot: Awaited<ReturnType<MemoryStoreLike['exportSnapshot']>>, opts?: {
+        overwrite?: boolean;
+    }): Promise<SnapshotMeta>;
     /**
      * Delete a snapshot.
      */
@@ -2534,7 +2741,7 @@ declare class ReMEM {
     /**
      * Get the underlying MemoryStore for advanced operations.
      */
-    getStore(): MemoryStore;
+    getStore(): MemoryStoreLike;
     /**
      * Get the model name if configured.
      */
@@ -2545,4 +2752,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryREPL, MemoryStore, ModelAbstraction, type ModelConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type StoreMemoryInput, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema, uploadPackage };
+export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryREPL, MemoryStore, type MemoryStoreLike, ModelAbstraction, type ModelConfig, PostgresMemoryStore, type PostgresStorageConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SnapshotExport, type SnapshotMeta, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, postgresStorageConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema, uploadPackage };

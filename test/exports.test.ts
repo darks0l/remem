@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ReMEM,
   MemoryStore,
+  PostgresMemoryStore,
   ModelAbstraction,
   QueryEngine,
   MemoryREPL,
@@ -21,6 +22,7 @@ describe('package exports', () => {
   it('exports documented public APIs from the root entrypoint', () => {
     expect(ReMEM).toBeTypeOf('function');
     expect(MemoryStore).toBeTypeOf('function');
+    expect(PostgresMemoryStore).toBeTypeOf('function');
     expect(ModelAbstraction).toBeTypeOf('function');
     expect(QueryEngine).toBeTypeOf('function');
     expect(MemoryREPL).toBeTypeOf('function');

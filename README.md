@@ -9,8 +9,8 @@
 [![npm version](https://img.shields.io/npm/v/@darksol/remem?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.npmjs.com/package/@darksol/remem)
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
-[![Test Status](https://img.shields.io/badge/tests-67%2F67%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.6.1](https://img.shields.io/badge/v0.6.1-memory%20consolidation%20-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![Test Status](https://img.shields.io/badge/tests-71%2F71%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
+[![v0.6.5](https://img.shields.io/badge/v0.6.5-postgres%20backend%20-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -30,7 +30,7 @@ LLMs are limited by their context window. Retrieval-Augmented Generation (RAG) h
 
 ReMEM does something different:
 
-- **A proper memory store** - SQLite-backed, event-sourced, with atomic crash-safe writes
+- **A proper memory store** - SQLite-backed by default, event-sourced, with atomic crash-safe writes; PostgreSQL backend available for server/shared deployments (v0.6.5)
 - **Semantic search with vector embeddings** - Ollama (`nomic-embed-text`), 40% keyword + 60% cosine similarity hybrid scoring when embeddings are available (v0.4.1)
 - **Persistent hierarchical layers** - episodic, semantic, identity, and procedural tiers that survive restarts
 - **An LLM-native query interface** - Describe what you want in plain English; the query engine recursively refines
@@ -39,7 +39,7 @@ ReMEM does something different:
 - **Memory consolidation** (v0.6.1) - Cross-layer deduplication via embedding/keyword similarity, conflict resolution with contradiction detection, cross-layer promotion of frequently-accessed episodic entries to semantic layer, and configurable merge strategies (newer_wins, older_wins, concatenate, supersede)
 - **Episodic compression** - When the episodic layer fills up, old entries are LLM-compressed into semantic summaries instead of lost to TTL eviction. Meaning preserved, storage reclaimed
 - **RLM-style Memory REPL** (v0.4.0) - Model writes JavaScript to navigate memory programmatically. Never sees all memory at once — only constant-size metadata. Enables arbitrarily large memory stores without context window overflow
-- **Snapshot/restore** - Full memory snapshots for long-running agents. Survive restarts, migrations, and crashes
+- **Snapshot/restore** (v0.6.2) - Full core + layered memory snapshots with SHA-256 integrity checks and portable export/import for long-running agents. Survive restarts, migrations, and crashes
 - **Identity duplication & infection** (v0.3.3) - Export full identity package to DARKSOL server, pull and overlay on any ReMEM-equipped agent
 - **Multi-agent scoping** - agent_id + user_id isolation for shared deployments
 - **Plug-and-play LLM abstraction** - Bankr, OpenAI, Anthropic, Ollama - swap without changing your code
@@ -311,7 +311,11 @@ await memory.restoreSnapshot(snap.id);
 
 // List all snapshots
 const snapshots = await memory.listSnapshots();
-// → [{ id: '...', label: 'checkpoint-before-update', memoryCount: 47, createdAt: 1745532000 }]
+// → [{ id: '...', label: 'checkpoint-before-update', memoryCount: 47, createdAt: 1745532000, checksum: '...' }]
+
+// Export/import snapshots between machines or agents
+const exported = await memory.exportSnapshot(snap.id);
+await anotherMemory.importSnapshot(exported);
 ```
 
 ### Semantic Search with Vector Embeddings
@@ -395,14 +399,43 @@ if (drift.level !== 'aligned') {
 
 ```typescript
 const memory = new ReMEM({
-  storage: 'sqlite',         // 'sqlite' | 'memory' | 'postgres' (postgres planned)
-  dbPath: './remem.db',      // ignored for ':memory:'
+  storage: 'sqlite',         // 'sqlite' | 'memory' | 'postgres'
+  dbPath: './remem.db',      // SQLite only; ignored for ':memory:'
   llm: { type: 'bankr', apiKey: '...' },  // optional
   storageConfig: {
     agentId: 'agent-001',   // optional: scope memories to this agent
     userId: 'user-042',     // optional: scope memories to this user
   },
 });
+```
+
+### PostgreSQL Storage (v0.6.5)
+
+Postgres is optional. Install `pg` in the host app when you use it:
+
+```bash
+npm install pg
+```
+
+```typescript
+const memory = new ReMEM({
+  storage: 'postgres',
+  postgres: {
+    connectionString: process.env.DATABASE_URL,
+    schema: 'public',      // optional
+    tablePrefix: 'remem_', // optional, for shared databases
+    ssl: true,             // optional, or provider-specific SSL object
+  },
+  storageConfig: {
+    agentId: 'agent-001',
+    userId: 'user-042',
+  },
+});
+
+await memory.init(); // creates tables + indexes if needed
+```
+
+The Postgres backend supports core memories, layer persistence, embeddings, events, snapshots, checksum-verified export/import, and scoped restore.
 ```
 
 ### Core Operations
@@ -450,13 +483,18 @@ memory.getLayerStats()
 
 ```typescript
 const snap = await memory.createSnapshot('pre-deploy-label')
-// → { id, label, createdAt, memoryCount, layerCounts }
+// → { id, label, createdAt, memoryCount, layerCounts, checksum }
 
 const restored = await memory.restoreSnapshot(snap.id)
-// → number of entries restored
+// → number of entries restored after checksum verification
+
+const exported = await memory.exportSnapshot(snap.id)
+// → portable JSON payload with snapshotData + checksum
+
+await memory.importSnapshot(exported, { overwrite: false })
 
 const snapshots = await memory.listSnapshots()
-// → [{ id, label, createdAt, memoryCount }]
+// → [{ id, label, createdAt, memoryCount, checksum }]
 
 await memory.deleteSnapshot(snapId)
 ```
@@ -520,7 +558,13 @@ curl -X POST "http://localhost:8787/snapshots" \
   -H "Authorization: Bearer $REMEM_TOKEN" \
   -d '{"label": "pre-deploy"}'
 
-# Restore / delete snapshots
+# Export / import / restore / delete snapshots
+curl -H "Authorization: Bearer $REMEM_TOKEN" \
+  "http://localhost:8787/snapshots/{id}/export"
+curl -X POST "http://localhost:8787/snapshots/import" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -d '{"snapshot": { ... }, "overwrite": false}'
 curl -X POST -H "Authorization: Bearer $REMEM_TOKEN" \
   "http://localhost:8787/snapshots/{id}/restore"
 curl -X DELETE -H "Authorization: Bearer $REMEM_TOKEN" \
@@ -564,18 +608,18 @@ const memory = new ReMEM({ llm: { type: 'ollama', baseUrl: 'http://localhost:114
 ## Storage Details
 
 - **SQLite via sql.js** - WebAssembly-compiled SQLite. No native binaries. Cross-platform by default.
+- **PostgreSQL via optional `pg` peer dependency** - Server/shared deployment backend with JSONB topic/metadata fields, GIN topic index, event log, embeddings table, layered memory table, and snapshot export/import support.
 - **Atomic writes** - Data written to `.tmp` then renamed. Crash-safe.
 - **WAL mode** - Enables `PRAGMA journal_mode=WAL` for better concurrent write handling.
 - **Layer persistence** - `layered_memories` table ensures layer data survives process restarts.
-- **Snapshots** - Full memory state serialized to JSON in `snapshots` table. Ideal for backup/restore and migration.
+- **Snapshots** - Full core + layered memory state serialized to JSON in `snapshots` table with SHA-256 checksums. Ideal for backup/restore and migration.
 - **Event sourcing** - Append-only `events` table. All mutations logged with timestamps and payloads.
 
 ---
 
-## Limitations (v0.3.1)
+## Limitations (v0.6.5)
 
-- **No vector embeddings** - Retrieval uses keyword matching + LLM reranking. For production semantic search, consider pairing with a vector DB (sqlite-vss, pgvector) in a future release.
-- **No PostgreSQL backend** - The config schema accepts `postgres` but only `sqlite` and `memory` are implemented.
+- **PostgreSQL vector search is brute-force for now** - embeddings are stored in Postgres, but semantic search currently computes cosine similarity in application memory. pgvector indexing is a future optimization.
 - **Procedural layer uses keyword triggers** - `fireProcedural()` is simple `ctx.includes(trigger)`. Not a full rule engine.
 - **Drift detection pattern-matching is fragile** - Only fires on specific negation patterns (`prefer not`, `no longer`, `changed to`, etc.). LLM fallback requires a separate eval model.
 - **Episodic layer TTL is short (1h)** - May need tuning for long-running automation agents.

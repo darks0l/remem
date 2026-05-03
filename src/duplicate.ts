@@ -23,7 +23,7 @@ import {
 
 // Re-export types for public API
 export type { DuplicateResult, InfectionResult } from './types.js';
-import { MemoryStore } from './store.js';
+import type { MemoryStoreLike } from './storage-types.js';
 import { LayerManager } from './layers.js';
 import type { IdentitySystem } from './identity.js';
 
@@ -35,7 +35,7 @@ import type { IdentitySystem } from './identity.js';
  * Use `uploadPackage()` to send to the server.
  */
 export async function buildIdentityPackage(params: {
-  store: MemoryStore;
+  store: MemoryStoreLike;
   layers?: LayerManager;
   identity?: IdentitySystem;
   soulText?: string;
@@ -138,7 +138,7 @@ export async function uploadPackage(
  * Returns upload confirmation details.
  */
 export async function duplicate(params: {
-  store: MemoryStore;
+  store: MemoryStoreLike;
   layers?: LayerManager;
   identity?: IdentitySystem;
   soulText?: string;
@@ -195,7 +195,7 @@ export async function downloadPackage(
  * and optionally stores memories in the appropriate layers.
  */
 export async function infect(params: {
-  store: MemoryStore;
+  store: MemoryStoreLike;
   layers?: LayerManager;
   identity?: IdentitySystem;
   pkg: IdentityPackage;
@@ -272,7 +272,7 @@ export async function infect(params: {
  * Downloads from server and applies the identity package locally.
  */
 export async function infectFromServer(params: {
-  store: MemoryStore;
+  store: MemoryStoreLike;
   layers?: LayerManager;
   identity?: IdentitySystem;
   config: InfectionConfig;

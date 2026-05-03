@@ -136,9 +136,20 @@ export const embeddingConfigSchema = z.object({
 
 export type EmbeddingConfig = z.infer<typeof embeddingConfigSchema>;
 
+export const postgresStorageConfigSchema = z.object({
+  connectionString: z.string().optional(),
+  schema: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
+  tablePrefix: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
+  ssl: z.union([z.boolean(), z.record(z.unknown())]).optional(),
+  pool: z.unknown().optional(),
+});
+
+export type PostgresStorageConfig = z.infer<typeof postgresStorageConfigSchema>;
+
 export const rememConfigSchema = z.object({
   storage: z.enum(['sqlite', 'postgres', 'memory']).default('sqlite'),
   storageConfig: z.record(z.unknown()).optional(),
+  postgres: postgresStorageConfigSchema.optional(),
   llm: modelConfigSchema.optional(),
   adapter: z.string().optional(),
   dbPath: z.string().optional(), // for sqlite

@@ -4,6 +4,38 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.6.5] — 2026-05-02
+
+### Added
+
+- Added `PostgresMemoryStore` with optional `pg` peer dependency for server/shared deployments.
+- Added `storage: 'postgres'` support in `ReMEM`, with `postgres.connectionString`, `schema`, `tablePrefix`, `ssl`, and injectable `pool` config.
+- Added PostgreSQL schema bootstrap for core memory, layered memory, snapshots, embeddings, and events tables.
+- Added JSONB topic/metadata storage plus indexes for scoped agent/user queries and topic filters.
+- Exported storage interfaces/types from the package root: `MemoryStoreLike`, `SnapshotMeta`, `SnapshotExport`, and `StoreMemoryOptions`.
+
+### Changed
+
+- Generalized internal store consumers (`QueryEngine`, `HttpAdapter`, REPL, duplication helpers, `ReMEM`) to depend on `MemoryStoreLike` instead of the SQLite-only class.
+- Snapshot payload version now uses `0.6.5` when created by the Postgres backend.
+
+## [0.6.2] — 2026-05-02
+
+### Added
+
+- Added SHA-256 snapshot checksums and checksum verification before restore/export/import.
+- Added portable snapshot `exportSnapshot(id)` and `importSnapshot(snapshot)` APIs.
+- Added HTTP snapshot export/import routes.
+
+### Fixed
+
+- Fixed snapshot/restore to include and restore core `store()` memories, not just layered memories.
+- Snapshot metadata now counts both core memories and layered memories.
+- Snapshot payloads now preserve core memory ids, topics, metadata, timestamps, and access counts for migration-safe restores.
+- Added regression coverage for core memory snapshot restore and snapshot export/import checksum verification.
+- `storage: 'postgres'` now throws a clear not-implemented error instead of behaving like SQLite.
+- Refreshed package lock metadata to match the published package version.
+
 ## [0.6.1] — 2026-04-25
 
 ### Fixed
