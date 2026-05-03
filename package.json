@@ -1,6 +1,6 @@
 {
   "name": "@darksol/remem",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "description": "Recursive Memory for AI Agents — RLM-style queryable memory substrate with semantic vector search, persistent layers, identity duplication/infection, snapshots, and multi-agent scoping",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -55,6 +55,11 @@
   "files": [
     "dist",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "benchmarks/README.md",
+    "benchmarks/PUBLIC-RESULTS-2026-05-03.md",
+    "benchmarks/context-window-suite.mjs",
+    "benchmarks/results/*.json",
+    "benchmarks/results/*.md"
   ]
 }

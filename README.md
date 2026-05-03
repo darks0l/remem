@@ -10,13 +10,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-71%2F71%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.6.5](https://img.shields.io/badge/v0.6.5-postgres%20backend%20-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.6.6](https://img.shields.io/badge/v0.6.6-benchmarks-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
 > ⚠️ **IN TESTING** - This project is under active development. API surface may change.
 
-**Recursively extend any LLM's context window by treating memory as an external, queryable environment.**
+**Give AI agents searchable external memory that reaches far beyond the active prompt window.**
 
 ReMEM is a lightweight, framework-agnostic memory substrate for AI agents. It applies the core insight from [Recursive Language Models (RLMs)](https://arxiv.org/pdf/2512.24601) - that prompts should be external environment variables, not direct context - to the problem of persistent, queryable agent memory.
 
@@ -45,6 +45,29 @@ ReMEM does something different:
 - **Plug-and-play LLM abstraction** - Bankr, OpenAI, Anthropic, Ollama - swap without changing your code
 - **Framework adapters** (v0.6.1) - Dependency-free helpers for Vercel AI SDK, LangGraph-style stores, and OpenClaw/session memory
 - **Framework-agnostic** - Works as a library (Node.js/Deno), CLI tool, or HTTP microservice
+
+---
+
+## Benchmark: External Memory Beyond Active Context
+
+ReMEM does **not** change a model's native context length. It gives agents an external memory layer they can query, so the prompt can stay small while the agent retrieves relevant older facts on demand.
+
+A reproducible synthetic benchmark is included in [`benchmarks/`](./benchmarks). It stores deterministic memories, simulates a fixed recent-context window, then asks for facts that are deliberately outside that active window.
+
+Latest local benchmark result, v0.6.6:
+
+- **50,000 memories**
+- Approx **3,625,526 stored tokens**
+- Simulated active context: **7,264 tokens**
+- Corpus/window pressure: **499x**
+- Fixed recent-context recall: **0%**
+- ReMEM exact-codename lookup: **99.4% recall@1**, **100% recall@5**
+- Avg query latency: **49.98ms** local in-memory sql.js run
+- Small embedding-backed semantic run: **100% recall@1/@5** on 80 memories, with embedding ingestion identified as the current bottleneck
+
+Read the full claim boundaries and raw result references in [`benchmarks/PUBLIC-RESULTS-2026-05-03.md`](./benchmarks/PUBLIC-RESULTS-2026-05-03.md).
+
+Safe wording: ReMEM lets agents retrieve relevant memories from a stored corpus much larger than the active context window. Do **not** claim infinite context or universal semantic recall.
 
 ---
 

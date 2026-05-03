@@ -4,6 +4,19 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.6.6] — 2026-05-03
+
+### Added
+
+- Added reproducible `benchmarks/context-window-suite.mjs` for fixed-context-window pressure testing.
+- Added raw benchmark result artifacts for 2k, 10k, 50k, and small semantic-embedding runs.
+- Added public-facing benchmark documentation with explicit claim boundaries and limitations.
+
+### Changed
+
+- README now summarizes the benchmark honestly: ReMEM provides searchable external memory beyond the active prompt window, not native infinite context.
+- npm package now includes benchmark harness/docs/results for reproducibility.
+
 ## [0.6.5] — 2026-05-02
 
 ### Added

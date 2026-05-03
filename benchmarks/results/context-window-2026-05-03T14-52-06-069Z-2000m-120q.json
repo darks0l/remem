@@ -1,0 +1,160 @@
+{
+  "benchmark": "remem-context-window-suite-v1",
+  "timestamp": "2026-05-03T14:52:04.965Z",
+  "config": {
+    "totalMemories": 2000,
+    "queryCount": 120,
+    "contextEntries": 100,
+    "limit": 5,
+    "seed": 1337
+  },
+  "contextPressure": {
+    "corpusApproxTokens": 143650,
+    "fixedWindowApproxTokens": 7214,
+    "effectiveCorpusToWindowMultiple": 19.91
+  },
+  "scenarios": [
+    {
+      "name": "core exact codename",
+      "queryStyle": "exact-code",
+      "embeddings": false,
+      "queryTopics": false,
+      "metrics": {
+        "fixedContextRecallAt1": 0,
+        "rememRecallAt1": 1,
+        "rememRecallAtK": 1,
+        "rememMRR": 1,
+        "avgReturned": 1.01,
+        "storeMs": 188.12,
+        "avgStoreMsPerMemory": 0.09,
+        "storeFailures": 0,
+        "avgQueryMs": 1.94,
+        "p50QueryMs": 1.97,
+        "p95QueryMs": 2.49
+      },
+      "misses": []
+    },
+    {
+      "name": "core natural language no embeddings",
+      "queryStyle": "natural",
+      "embeddings": false,
+      "queryTopics": false,
+      "metrics": {
+        "fixedContextRecallAt1": 0,
+        "rememRecallAt1": 0,
+        "rememRecallAtK": 0,
+        "rememMRR": 0,
+        "avgReturned": 0,
+        "storeMs": 138.12,
+        "avgStoreMsPerMemory": 0.07,
+        "storeFailures": 0,
+        "avgQueryMs": 1.46,
+        "p50QueryMs": 1.43,
+        "p95QueryMs": 1.59
+      },
+      "misses": [
+        {
+          "id": "fact-1483",
+          "query": "What is the verification PIN for indexer record fact-1483 with codename black-claw-01483?",
+          "expectedPin": "141768",
+          "top": []
+        },
+        {
+          "id": "fact-1548",
+          "query": "What is the verification PIN for memory record fact-1548 with codename signal-switch-01548?",
+          "expectedPin": "983579",
+          "top": []
+        },
+        {
+          "id": "fact-727",
+          "query": "What is the verification PIN for indexer record fact-727 with codename silver-comet-00727?",
+          "expectedPin": "991459",
+          "top": []
+        },
+        {
+          "id": "fact-199",
+          "query": "What is the verification PIN for vault record fact-199 with codename iron-claw-00199?",
+          "expectedPin": "895271",
+          "top": []
+        },
+        {
+          "id": "fact-399",
+          "query": "What is the verification PIN for memory record fact-399 with codename signal-switch-00399?",
+          "expectedPin": "991970",
+          "top": []
+        }
+      ]
+    },
+    {
+      "name": "core topic-filtered exact id",
+      "queryStyle": "exact-id",
+      "embeddings": false,
+      "queryTopics": true,
+      "metrics": {
+        "fixedContextRecallAt1": 0,
+        "rememRecallAt1": 0.9083,
+        "rememRecallAtK": 0.9083,
+        "rememMRR": 0.9083,
+        "avgReturned": 1.37,
+        "storeMs": 135.51,
+        "avgStoreMsPerMemory": 0.07,
+        "storeFailures": 0,
+        "avgQueryMs": 1.61,
+        "p50QueryMs": 1.57,
+        "p95QueryMs": 1.77
+      },
+      "misses": [
+        {
+          "id": "fact-199",
+          "query": "fact-199",
+          "expectedPin": "895271",
+          "top": [
+            "FACT_ID fact-1990: The bridge restore test record has recovery codename amber-shard-01990. Its verification PIN is 528464, checksum 1c45770, and canonical answer token ANSWER_1990_",
+            "FACT_ID fact-1991: The vault recover test record has recovery codename signal-shard-01991. Its verification PIN is 786109, checksum acef56, and canonical answer token ANSWER_1991_7",
+            "FACT_ID fact-1992: The card audit test record has recovery codename rapid-engine-01992. Its verification PIN is 140495, checksum 36ceac2, and canonical answer token ANSWER_1992_140"
+          ]
+        },
+        {
+          "id": "fact-16",
+          "query": "fact-16",
+          "expectedPin": "903872",
+          "top": [
+            "FACT_ID fact-1686: The indexer verify test record has recovery codename amber-mirror-01686. Its verification PIN is 640034, checksum 566d8da, and canonical answer token ANSWER_1686",
+            "FACT_ID fact-1687: The oracle route test record has recovery codename amber-raven-01687. Its verification PIN is 579348, checksum 4299490, and canonical answer token ANSWER_1687_57",
+            "FACT_ID fact-1688: The wallet hydrate test record has recovery codename violet-ember-01688. Its verification PIN is 754583, checksum 3fbc04d, and canonical answer token ANSWER_1688"
+          ]
+        },
+        {
+          "id": "fact-133",
+          "query": "fact-133",
+          "expectedPin": "560806",
+          "top": [
+            "FACT_ID fact-1339: The card settle test record has recovery codename violet-comet-01339. Its verification PIN is 182452, checksum 29f77f9, and canonical answer token ANSWER_1339_18",
+            "FACT_ID fact-1330: The card settle test record has recovery codename signal-cipher-01330. Its verification PIN is 383373, checksum 2707cfa, and canonical answer token ANSWER_1330_3",
+            "FACT_ID fact-1331: The vault compact test record has recovery codename violet-cipher-01331. Its verification PIN is 444916, checksum 5611351, and canonical answer token ANSWER_1331"
+          ]
+        },
+        {
+          "id": "fact-188",
+          "query": "fact-188",
+          "expectedPin": "377553",
+          "top": [
+            "FACT_ID fact-1889: The memory verify test record has recovery codename neon-comet-01889. Its verification PIN is 136680, checksum 13eeba2, and canonical answer token ANSWER_1889_13",
+            "FACT_ID fact-1880: The terminal route test record has recovery codename quiet-mirror-01880. Its verification PIN is 385335, checksum aa3f67, and canonical answer token ANSWER_1880_",
+            "FACT_ID fact-1881: The wallet settle test record has recovery codename silver-engine-01881. Its verification PIN is 431959, checksum 295fe61, and canonical answer token ANSWER_1881"
+          ]
+        },
+        {
+          "id": "fact-124",
+          "query": "fact-124",
+          "expectedPin": "676779",
+          "top": [
+            "FACT_ID fact-1240: The card audit test record has recovery codename amber-engine-01240. Its verification PIN is 358528, checksum 4b67721, and canonical answer token ANSWER_1240_358",
+            "FACT_ID fact-1241: The card compact test record has recovery codename amber-claw-01241. Its verification PIN is 806972, checksum 4e3abd0, and canonical answer token ANSWER_1241_806",
+            "FACT_ID fact-1242: The vault settle test record has recovery codename ghost-cipher-01242. Its verification PIN is 959383, checksum 14adeb3, and canonical answer token ANSWER_1242_9"
+          ]
+        }
+      ]
+    }
+  ]
+}

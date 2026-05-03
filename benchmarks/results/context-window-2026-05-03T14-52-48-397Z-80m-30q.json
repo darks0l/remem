@@ -1,0 +1,153 @@
+{
+  "benchmark": "remem-context-window-suite-v1",
+  "timestamp": "2026-05-03T14:52:42.534Z",
+  "config": {
+    "totalMemories": 80,
+    "queryCount": 30,
+    "contextEntries": 10,
+    "limit": 5,
+    "seed": 1337
+  },
+  "contextPressure": {
+    "corpusApproxTokens": 5681,
+    "fixedWindowApproxTokens": 711,
+    "effectiveCorpusToWindowMultiple": 8
+  },
+  "scenarios": [
+    {
+      "name": "core exact codename",
+      "queryStyle": "exact-code",
+      "embeddings": false,
+      "queryTopics": false,
+      "metrics": {
+        "fixedContextRecallAt1": 0,
+        "rememRecallAt1": 1,
+        "rememRecallAtK": 1,
+        "rememMRR": 1,
+        "avgReturned": 1,
+        "storeMs": 27.94,
+        "avgStoreMsPerMemory": 0.35,
+        "storeFailures": 0,
+        "avgQueryMs": 0.42,
+        "p50QueryMs": 0.31,
+        "p95QueryMs": 0.84
+      },
+      "misses": []
+    },
+    {
+      "name": "core natural language no embeddings",
+      "queryStyle": "natural",
+      "embeddings": false,
+      "queryTopics": false,
+      "metrics": {
+        "fixedContextRecallAt1": 0,
+        "rememRecallAt1": 0,
+        "rememRecallAtK": 0,
+        "rememMRR": 0,
+        "avgReturned": 0,
+        "storeMs": 16.74,
+        "avgStoreMsPerMemory": 0.21,
+        "storeFailures": 0,
+        "avgQueryMs": 0.24,
+        "p50QueryMs": 0.17,
+        "p95QueryMs": 0.26
+      },
+      "misses": [
+        {
+          "id": "fact-54",
+          "query": "What is the verification PIN for wallet record fact-54 with codename neon-raven-00054?",
+          "expectedPin": "643943",
+          "top": []
+        },
+        {
+          "id": "fact-57",
+          "query": "What is the verification PIN for indexer record fact-57 with codename violet-cipher-00057?",
+          "expectedPin": "953559",
+          "top": []
+        },
+        {
+          "id": "fact-26",
+          "query": "What is the verification PIN for terminal record fact-26 with codename lunar-anchor-00026?",
+          "expectedPin": "425193",
+          "top": []
+        },
+        {
+          "id": "fact-7",
+          "query": "What is the verification PIN for card record fact-7 with codename quiet-ember-00007?",
+          "expectedPin": "240735",
+          "top": []
+        },
+        {
+          "id": "fact-14",
+          "query": "What is the verification PIN for vault record fact-14 with codename black-claw-00014?",
+          "expectedPin": "475650",
+          "top": []
+        }
+      ]
+    },
+    {
+      "name": "core topic-filtered exact id",
+      "queryStyle": "exact-id",
+      "embeddings": false,
+      "queryTopics": true,
+      "metrics": {
+        "fixedContextRecallAt1": 0,
+        "rememRecallAt1": 0.9333,
+        "rememRecallAtK": 0.9333,
+        "rememMRR": 0.9333,
+        "avgReturned": 1.27,
+        "storeMs": 13.36,
+        "avgStoreMsPerMemory": 0.17,
+        "storeFailures": 0,
+        "avgQueryMs": 0.29,
+        "p50QueryMs": 0.25,
+        "p95QueryMs": 0.46
+      },
+      "misses": [
+        {
+          "id": "fact-7",
+          "query": "fact-7",
+          "expectedPin": "240735",
+          "top": [
+            "FACT_ID fact-74: The router route test record has recovery codename crimson-claw-00074. Its verification PIN is 923897, checksum bc2f1e, and canonical answer token ANSWER_74_923897",
+            "FACT_ID fact-75: The indexer recover test record has recovery codename signal-claw-00075. Its verification PIN is 556127, checksum 4c168e1, and canonical answer token ANSWER_75_556",
+            "FACT_ID fact-76: The terminal audit test record has recovery codename amber-shard-00076. Its verification PIN is 963009, checksum 4484978, and canonical answer token ANSWER_76_9630"
+          ]
+        },
+        {
+          "id": "fact-4",
+          "query": "fact-4",
+          "expectedPin": "607828",
+          "top": [
+            "FACT_ID fact-44: The oracle route test record has recovery codename neon-mirror-00044. Its verification PIN is 869219, checksum 1588155, and canonical answer token ANSWER_44_869219",
+            "FACT_ID fact-45: The oracle route test record has recovery codename black-ember-00045. Its verification PIN is 946854, checksum 59828ff, and canonical answer token ANSWER_45_946854",
+            "FACT_ID fact-46: The card audit test record has recovery codename neon-cipher-00046. Its verification PIN is 381367, checksum 45b874e, and canonical answer token ANSWER_46_381367. "
+          ]
+        }
+      ]
+    },
+    {
+      "name": "core semantic embeddings",
+      "queryStyle": "semantic",
+      "embeddings": {
+        "baseUrl": "http://192.168.68.69:11434",
+        "model": "nomic-embed-text"
+      },
+      "queryTopics": false,
+      "metrics": {
+        "fixedContextRecallAt1": 0,
+        "rememRecallAt1": 1,
+        "rememRecallAtK": 1,
+        "rememMRR": 1,
+        "avgReturned": 5,
+        "storeMs": 4743.33,
+        "avgStoreMsPerMemory": 59.29,
+        "storeFailures": 0,
+        "avgQueryMs": 32.93,
+        "p50QueryMs": 31.97,
+        "p95QueryMs": 39.16
+      },
+      "misses": []
+    }
+  ]
+}
