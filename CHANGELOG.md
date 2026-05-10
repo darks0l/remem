@@ -4,6 +4,13 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.7.0] — 2026-05-10
+
+### Changed
+
+- Minor release pass to roll up the latest benchmark/documentation packaging updates under a fresh publish version.
+- Refreshed release metadata and README version references for the current npm/GitHub ship.
+
 ## [0.6.6] — 2026-05-03
 
 ### Added

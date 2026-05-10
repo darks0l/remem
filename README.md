@@ -10,7 +10,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-71%2F71%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.6.6](https://img.shields.io/badge/v0.6.6-benchmarks-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.7.0](https://img.shields.io/badge/v0.7.0-benchmarks-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -54,7 +54,7 @@ ReMEM does **not** change a model's native context length. It gives agents an ex
 
 A reproducible synthetic benchmark is included in [`benchmarks/`](./benchmarks). It stores deterministic memories, simulates a fixed recent-context window, then asks for facts that are deliberately outside that active window.
 
-Latest local benchmark result, v0.6.6:
+Latest local benchmark result, v0.7.0:
 
 - **50,000 memories**
 - Approx **3,625,526 stored tokens**
