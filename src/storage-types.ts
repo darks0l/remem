@@ -1,5 +1,8 @@
 import type {
   LayeredMemoryEntry,
+  LinkedMemoryQueryOptions,
+  MemoryLink,
+  MemoryLinkInput,
   MemoryEntry,
   MemoryEvent,
   MemoryLayer,
@@ -44,6 +47,10 @@ export interface MemoryStoreLike {
   getRecent(n?: number): Promise<QueryResult[]>;
   getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
   forget(id: string): Promise<boolean>;
+  createLink(input: MemoryLinkInput, opts?: StoreMemoryOptions): Promise<MemoryLink>;
+  getLinks(memoryId: string, options?: LinkedMemoryQueryOptions, opts?: StoreMemoryOptions): Promise<MemoryLink[]>;
+  deleteLink(linkId: string): Promise<boolean>;
+  getEntryById(id: string, opts?: StoreMemoryOptions): Promise<QueryResult | null>;
   persistLayerEntry(entry: LayeredMemoryEntry, opts?: StoreMemoryOptions): Promise<void>;
   loadAllLayerEntries(opts?: StoreMemoryOptions): Promise<LayeredMemoryEntry[]>;
   forgetLayerEntry(id: string): Promise<boolean>;

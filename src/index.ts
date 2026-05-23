@@ -22,7 +22,12 @@ import {
 import { EmbeddingService, type EmbeddingConfig as EmbedServiceConfig } from './embeddings.js';
 import { MemoryREPL } from './repl.js';
 import {
+  linkedMemoryQueryOptionsSchema,
+  queryWithNeighborsOptionsSchema,
   rememConfigSchema,
+  type LinkedMemoryQueryOptions,
+  type MemoryLink,
+  type QueryWithNeighborsOptions,
   type ReMEMConfig,
   type StoreMemoryInput,
   type QueryOptions,
@@ -199,6 +204,86 @@ export class ReMEM {
 
     // Fallback: standard keyword + access_count query
     return this.engine.query(query, options);
+  }
+
+  async linkMemories(fromId: string, toId: string, type: string, metadata: Record<string, unknown> = {}): Promise<MemoryLink> {
+    return this._store.createLink({ fromId, toId, type, metadata }, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
+  }
+
+  async getLinkedMemories(memoryId: string, options?: LinkedMemoryQueryOptions): Promise<Array<{ link: MemoryLink; memory: QueryResult | null }>> {
+    const opts = linkedMemoryQueryOptionsSchema.parse(options ?? {});
+    const links = await this._store.getLinks(memoryId, opts, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
+
+    return Promise.all(links.map(async (link) => {
+      const otherId = link.fromId === memoryId ? link.toId : link.fromId;
+      return {
+        link,
+        memory: await this._store.getEntryById(otherId, {
+          agentId: this._agentId,
+          userId: this._userId,
+        }),
+      };
+    }));
+  }
+
+  async unlinkMemories(linkId: string): Promise<boolean> {
+    return this._store.deleteLink(linkId);
+  }
+
+  async queryWithNeighbors(query: string, options?: QueryWithNeighborsOptions): Promise<QueryResponse & { linksTraversed: number }> {
+    const opts = queryWithNeighborsOptionsSchema.parse(options ?? {});
+    const base = await this.query(query, opts);
+    const merged = new Map<string, QueryResult>();
+
+    if (opts.includeBaseResults) {
+      for (const result of base.results) merged.set(result.id, result);
+    }
+
+    let frontier = base.results.map((r) => r.id);
+    const seen = new Set(frontier);
+    let linksTraversed = 0;
+
+    for (let hop = 0; hop < opts.hops; hop++) {
+      const nextFrontier: string[] = [];
+      for (const id of frontier) {
+        const neighbors = await this.getLinkedMemories(id, {
+          direction: 'both',
+          types: opts.linkTypes,
+          limit: opts.neighborLimit,
+        });
+        linksTraversed += neighbors.length;
+
+        for (const neighbor of neighbors) {
+          if (!neighbor.memory || seen.has(neighbor.memory.id)) continue;
+          seen.add(neighbor.memory.id);
+          nextFrontier.push(neighbor.memory.id);
+          merged.set(neighbor.memory.id, {
+            ...neighbor.memory,
+            relevanceScore: Math.max(neighbor.memory.relevanceScore ?? 0, 0.6 - (hop * 0.15)),
+          });
+        }
+      }
+      frontier = nextFrontier;
+      if (frontier.length === 0) break;
+    }
+
+    const results = Array.from(merged.values())
+      .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0))
+      .slice(0, opts.limit);
+
+    return {
+      results,
+      totalAvailable: results.length,
+      query,
+      tookMs: base.tookMs,
+      linksTraversed,
+    };
   }
 
   /**

@@ -57,6 +57,33 @@ describe('ReMEM', () => {
   it('closes cleanly', () => {
     memory.close();
   });
+
+  it('links memories and resolves neighbors', async () => {
+    await memory.store({ content: 'Meta likes dark mode', topics: ['preferences'] });
+    await memory.store({ content: 'Dark mode belongs in project obsidian', topics: ['project-obsidian'] });
+
+    const base = await memory.query('dark mode');
+    const fromId = base.results[0].id;
+    const toId = base.results[1].id;
+
+    const link = await memory.linkMemories(fromId, toId, 'about', { source: 'test' });
+    expect(link.type).toBe('about');
+
+    const neighbors = await memory.getLinkedMemories(fromId);
+    expect(neighbors.length).toBe(1);
+    expect(neighbors[0].memory?.id).toBe(toId);
+  });
+
+  it('expands query results with linked neighbors', async () => {
+    await memory.store({ content: 'Primary memory about Meta', topics: ['meta'] });
+    const linked = await memory.storeInLayer({ content: 'Layered follow-up detail', topics: ['meta-detail'] }, 'semantic');
+    const base = await memory.query('Primary memory');
+    await memory.linkMemories(base.results[0].id, linked!.id, 'supports');
+
+    const expanded = await memory.queryWithNeighbors('Primary memory', { hops: 1, limit: 10 });
+    expect(expanded.results.some((r) => r.id === linked!.id)).toBe(true);
+    expect(expanded.linksTraversed).toBeGreaterThan(0);
+  });
 });
 
 describe('MemoryStore', () => {
@@ -89,6 +116,19 @@ describe('MemoryStore', () => {
     const after = await store.query('forgotten');
     expect(after.results.length).toBe(0);
 
+    store.close();
+  });
+
+  it('stores and deletes memory links', async () => {
+    const store = new MemoryStore(':memory:');
+    await store.init();
+    const a = await store.store({ content: 'A memory', topics: ['a'] });
+    const b = await store.store({ content: 'B memory', topics: ['b'] });
+    const link = await store.createLink({ fromId: a.id, toId: b.id, type: 'supports' });
+    const links = await store.getLinks(a.id, { direction: 'outgoing' });
+    expect(links).toHaveLength(1);
+    expect(links[0].id).toBe(link.id);
+    expect(await store.deleteLink(link.id)).toBe(true);
     store.close();
   });
 

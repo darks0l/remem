@@ -65,6 +65,58 @@ export const queryResponseSchema = z.object({
 export type QueryResponse = z.infer<typeof queryResponseSchema>;
 
 // ============================================================================
+// Memory Link Types
+// ============================================================================
+
+export const defaultMemoryLinkTypes = [
+  'about',
+  'caused_by',
+  'contradicts',
+  'supports',
+  'follows',
+  'same_session',
+  'same_project',
+  'same_person',
+] as const;
+
+export const memoryLinkSchema = z.object({
+  id: z.string().uuid(),
+  fromId: z.string().uuid(),
+  toId: z.string().uuid(),
+  type: z.string().min(1),
+  metadata: z.record(z.unknown()).default({}),
+  createdAt: z.number(),
+});
+
+export type MemoryLink = z.infer<typeof memoryLinkSchema>;
+
+export const memoryLinkInputSchema = z.object({
+  fromId: z.string().uuid(),
+  toId: z.string().uuid(),
+  type: z.string().min(1),
+  metadata: z.record(z.unknown()).optional().default({}),
+});
+
+export type MemoryLinkInput = z.infer<typeof memoryLinkInputSchema>;
+
+export const linkedMemoryQueryOptionsSchema = z.object({
+  direction: z.enum(['outgoing', 'incoming', 'both']).default('both'),
+  types: z.array(z.string()).optional(),
+  limit: z.number().min(1).max(100).default(20),
+});
+
+export type LinkedMemoryQueryOptions = z.infer<typeof linkedMemoryQueryOptionsSchema>;
+
+export const queryWithNeighborsOptionsSchema = queryOptionsSchema.extend({
+  hops: z.union([z.literal(1), z.literal(2)]).default(1),
+  linkTypes: z.array(z.string()).optional(),
+  includeBaseResults: z.boolean().default(true),
+  neighborLimit: z.number().min(1).max(100).default(25),
+});
+
+export type QueryWithNeighborsOptions = z.infer<typeof queryWithNeighborsOptionsSchema>;
+
+// ============================================================================
 // Model Abstraction Types
 // ============================================================================
 
@@ -167,6 +219,8 @@ export const eventTypeSchema = z.enum([
   'memory.queried',
   'memory.accessed',
   'memory.forgotten',
+  'memory.linked',
+  'memory.unlinked',
   'memory.superseded',
   'snapshot.created',
   'snapshot.restored',

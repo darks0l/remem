@@ -50,6 +50,41 @@ var queryResponseSchema = z.object({
   query: z.string(),
   tookMs: z.number()
 });
+var defaultMemoryLinkTypes = [
+  "about",
+  "caused_by",
+  "contradicts",
+  "supports",
+  "follows",
+  "same_session",
+  "same_project",
+  "same_person"
+];
+var memoryLinkSchema = z.object({
+  id: z.string().uuid(),
+  fromId: z.string().uuid(),
+  toId: z.string().uuid(),
+  type: z.string().min(1),
+  metadata: z.record(z.unknown()).default({}),
+  createdAt: z.number()
+});
+var memoryLinkInputSchema = z.object({
+  fromId: z.string().uuid(),
+  toId: z.string().uuid(),
+  type: z.string().min(1),
+  metadata: z.record(z.unknown()).optional().default({})
+});
+var linkedMemoryQueryOptionsSchema = z.object({
+  direction: z.enum(["outgoing", "incoming", "both"]).default("both"),
+  types: z.array(z.string()).optional(),
+  limit: z.number().min(1).max(100).default(20)
+});
+var queryWithNeighborsOptionsSchema = queryOptionsSchema.extend({
+  hops: z.union([z.literal(1), z.literal(2)]).default(1),
+  linkTypes: z.array(z.string()).optional(),
+  includeBaseResults: z.boolean().default(true),
+  neighborLimit: z.number().min(1).max(100).default(25)
+});
 var modelConfigSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("bankr"),
@@ -108,6 +143,8 @@ var eventTypeSchema = z.enum([
   "memory.queried",
   "memory.accessed",
   "memory.forgotten",
+  "memory.linked",
+  "memory.unlinked",
   "memory.superseded",
   "snapshot.created",
   "snapshot.restored",
@@ -430,6 +467,22 @@ var MemoryStore = class {
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_agent ON memory(agent_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_user ON memory(user_id)`);
     this.db.run(`
+      CREATE TABLE IF NOT EXISTS memory_links (
+        id TEXT PRIMARY KEY,
+        from_id TEXT NOT NULL,
+        to_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        metadata TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        agent_id TEXT,
+        user_id TEXT
+      )
+    `);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_ml_from ON memory_links(from_id)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_ml_to ON memory_links(to_id)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_ml_type ON memory_links(type)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_ml_agent ON memory_links(agent_id)`);
+    this.db.run(`
       CREATE TABLE IF NOT EXISTS layered_memories (
         id TEXT PRIMARY KEY,
         content TEXT NOT NULL,
@@ -653,6 +706,105 @@ var MemoryStore = class {
     }
     return false;
   }
+  async createLink(input, opts) {
+    this.ensureInitialized();
+    const validated = memoryLinkInputSchema.parse(input);
+    const link = memoryLinkSchema.parse({
+      id: randomUUID2(),
+      fromId: validated.fromId,
+      toId: validated.toId,
+      type: validated.type,
+      metadata: validated.metadata ?? {},
+      createdAt: Date.now()
+    });
+    this.db.run(
+      `INSERT INTO memory_links (id, from_id, to_id, type, metadata, created_at, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        link.id,
+        link.fromId,
+        link.toId,
+        link.type,
+        JSON.stringify(link.metadata),
+        link.createdAt,
+        opts?.agentId ?? null,
+        opts?.userId ?? null
+      ]
+    );
+    this.logEvent("memory.linked", { link });
+    this.persist();
+    return link;
+  }
+  async getLinks(memoryId, options, opts) {
+    this.ensureInitialized();
+    const query = linkedMemoryQueryOptionsSchema.parse(options ?? {});
+    let sql = "SELECT * FROM memory_links WHERE 1=1";
+    const params = [];
+    if (query.direction === "outgoing") {
+      sql += " AND from_id = ?";
+      params.push(memoryId);
+    } else if (query.direction === "incoming") {
+      sql += " AND to_id = ?";
+      params.push(memoryId);
+    } else {
+      sql += " AND (from_id = ? OR to_id = ?)";
+      params.push(memoryId, memoryId);
+    }
+    if (query.types && query.types.length > 0) {
+      sql += ` AND type IN (${query.types.map(() => "?").join(", ")})`;
+      params.push(...query.types);
+    }
+    if (opts?.agentId) {
+      sql += " AND (agent_id = ? OR agent_id IS NULL)";
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(opts.userId);
+    }
+    sql += " ORDER BY created_at DESC LIMIT ?";
+    params.push(query.limit);
+    const result = this.db.exec(sql, params);
+    if (result.length === 0) return [];
+    return result[0].values.map((v) => this.rowToLink(result[0].columns, v));
+  }
+  async deleteLink(linkId) {
+    this.ensureInitialized();
+    this.db.run("DELETE FROM memory_links WHERE id = ?", [linkId]);
+    const changes = this.db.getRowsModified();
+    if (changes > 0) {
+      this.logEvent("memory.unlinked", { linkId });
+      this.persist();
+      return true;
+    }
+    return false;
+  }
+  async getEntryById(id) {
+    this.ensureInitialized();
+    const core = this.db.exec("SELECT * FROM memory WHERE id = ?", [id]);
+    if (core.length > 0 && core[0].values.length > 0) {
+      const entry = memoryEntrySchema.parse(this.rowToObject(core[0].columns, core[0].values[0]));
+      return {
+        id: entry.id,
+        content: entry.content,
+        topics: entry.topics,
+        createdAt: entry.createdAt,
+        accessedAt: entry.accessedAt,
+        accessCount: entry.accessCount
+      };
+    }
+    const layered = this.db.exec("SELECT * FROM layered_memories WHERE id = ?", [id]);
+    if (layered.length === 0 || layered[0].values.length === 0) return null;
+    const obj = this.rowToObject(layered[0].columns, layered[0].values[0]);
+    return {
+      id: obj["id"],
+      content: obj["content"],
+      topics: Array.isArray(obj["topics"]) ? obj["topics"] : JSON.parse(String(obj["topics"] ?? "[]")),
+      createdAt: obj["createdAt"],
+      accessedAt: obj["accessedAt"],
+      accessCount: obj["accessCount"]
+    };
+  }
   // ─── Layered Memory Persistence (v0.3.1) ─────────────────────────────────
   /**
    * Persist a LayerManager entry to SQLite.
@@ -795,10 +947,11 @@ var MemoryStore = class {
     const layerEntries = await this.loadAllLayerEntries(opts);
     const coreEntries = await this.loadAllMemoryEntries(opts);
     const snapshotData = {
-      version: "0.6.2",
+      version: "0.8.0",
       createdAt: now,
       layerEntries,
       coreEntries,
+      links: await this.loadAllLinks(opts),
       eventCount: this.eventLog.length
     };
     const layerCounts = { episodic: 0, semantic: 0, identity: 0, procedural: 0 };
@@ -871,9 +1024,11 @@ var MemoryStore = class {
       }
       this.db.run(`DELETE FROM layered_memories WHERE ${conditions.join(" AND ")}`, params);
       this.db.run(`DELETE FROM memory WHERE ${conditions.join(" AND ")}`, params);
+      this.db.run(`DELETE FROM memory_links WHERE ${conditions.join(" AND ")}`, params);
     } else {
       this.db.run("DELETE FROM layered_memories");
       this.db.run("DELETE FROM memory");
+      this.db.run("DELETE FROM memory_links");
     }
     let restored = 0;
     for (const entry of scopedCoreEntries) {
@@ -889,6 +1044,12 @@ var MemoryStore = class {
         userId: opts?.userId
       });
       restored++;
+    }
+    for (const link of data.links ?? []) {
+      await this.restoreLink(link, {
+        agentId: opts?.agentId,
+        userId: opts?.userId
+      });
     }
     this.logEvent("snapshot.restored", { snapshotId, restored });
     this.persist();
@@ -1154,6 +1315,52 @@ var MemoryStore = class {
   snapshotChecksum(snapshotData) {
     return createHash("sha256").update(JSON.stringify(snapshotData)).digest("hex");
   }
+  async loadAllLinks(opts) {
+    this.ensureInitialized();
+    let sql = "SELECT * FROM memory_links WHERE 1=1";
+    const params = [];
+    if (opts?.agentId) {
+      sql += " AND (agent_id = ? OR agent_id IS NULL)";
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(opts.userId);
+    }
+    sql += " ORDER BY created_at DESC";
+    const result = this.db.exec(sql, params);
+    if (result.length === 0) return [];
+    return result[0].values.map((v) => this.rowToLink(result[0].columns, v));
+  }
+  async restoreLink(link, opts) {
+    this.ensureInitialized();
+    const validated = memoryLinkSchema.parse(link);
+    this.db.run(
+      `INSERT OR REPLACE INTO memory_links (id, from_id, to_id, type, metadata, created_at, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        validated.id,
+        validated.fromId,
+        validated.toId,
+        validated.type,
+        JSON.stringify(validated.metadata),
+        validated.createdAt,
+        opts?.agentId ?? null,
+        opts?.userId ?? null
+      ]
+    );
+  }
+  rowToLink(columns, values) {
+    const obj = this.rowToObject(columns, values);
+    return memoryLinkSchema.parse({
+      id: obj["id"],
+      fromId: obj["from_id"],
+      toId: obj["to_id"],
+      type: obj["type"],
+      metadata: typeof obj["metadata"] === "string" ? JSON.parse(obj["metadata"]) : obj["metadata"],
+      createdAt: obj["createdAt"]
+    });
+  }
   rowToObject(columns, values) {
     const obj = {};
     columns.forEach((col, i) => {
@@ -1244,6 +1451,21 @@ var PostgresMemoryStore = class {
     await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_memory_agent" ON ${this.table("memory")} (agent_id)`);
     await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_memory_user" ON ${this.table("memory")} (user_id)`);
     await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_memory_topics" ON ${this.table("memory")} USING GIN (topics)`);
+    await this.pgQuery(`
+      CREATE TABLE IF NOT EXISTS ${this.table("memory_links")} (
+        id TEXT PRIMARY KEY,
+        from_id TEXT NOT NULL,
+        to_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at BIGINT NOT NULL,
+        agent_id TEXT,
+        user_id TEXT
+      )
+    `);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_ml_from" ON ${this.table("memory_links")} (from_id)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_ml_to" ON ${this.table("memory_links")} (to_id)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_ml_type" ON ${this.table("memory_links")} (type)`);
     await this.pgQuery(`
       CREATE TABLE IF NOT EXISTS ${this.table("layered_memories")} (
         id TEXT PRIMARY KEY,
@@ -1387,6 +1609,85 @@ var PostgresMemoryStore = class {
     if (forgotten) await this.logEvent("memory.forgotten", { id });
     return forgotten;
   }
+  async createLink(input, opts) {
+    const validated = memoryLinkInputSchema.parse(input);
+    const link = memoryLinkSchema.parse({
+      id: randomUUID3(),
+      fromId: validated.fromId,
+      toId: validated.toId,
+      type: validated.type,
+      metadata: validated.metadata ?? {},
+      createdAt: Date.now()
+    });
+    await this.pgQuery(
+      `INSERT INTO ${this.table("memory_links")} (id, from_id, to_id, type, metadata, created_at, agent_id, user_id)
+       VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`,
+      [link.id, link.fromId, link.toId, link.type, JSON.stringify(link.metadata), link.createdAt, opts?.agentId ?? null, opts?.userId ?? null]
+    );
+    await this.logEvent("memory.linked", { link });
+    return link;
+  }
+  async getLinks(memoryId, options, opts) {
+    const query = linkedMemoryQueryOptionsSchema.parse(options ?? {});
+    const where = [];
+    const params = [];
+    let idx = 1;
+    if (query.direction === "outgoing") {
+      where.push(`from_id = $${idx++}`);
+      params.push(memoryId);
+    } else if (query.direction === "incoming") {
+      where.push(`to_id = $${idx++}`);
+      params.push(memoryId);
+    } else {
+      where.push(`(from_id = $${idx} OR to_id = $${idx + 1})`);
+      params.push(memoryId, memoryId);
+      idx += 2;
+    }
+    if (query.types && query.types.length > 0) {
+      where.push(`type = ANY($${idx++}::text[])`);
+      params.push(query.types);
+    }
+    if (opts?.agentId) {
+      where.push(`(agent_id = $${idx} OR agent_id IS NULL)`);
+      params.push(opts.agentId);
+      idx++;
+    }
+    if (opts?.userId) {
+      where.push(`(user_id = $${idx} OR user_id IS NULL)`);
+      params.push(opts.userId);
+      idx++;
+    }
+    params.push(query.limit);
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const result = await this.pgQuery(
+      `SELECT * FROM ${this.table("memory_links")} ${whereSql} ORDER BY created_at DESC LIMIT $${idx}`,
+      params
+    );
+    return result.rows.map((row) => this.rowToLink(row));
+  }
+  async deleteLink(linkId) {
+    const result = await this.pgQuery(`DELETE FROM ${this.table("memory_links")} WHERE id = $1`, [linkId]);
+    const deleted = (result.rowCount ?? 0) > 0;
+    if (deleted) await this.logEvent("memory.unlinked", { linkId });
+    return deleted;
+  }
+  async getEntryById(id) {
+    let result = await this.pgQuery(`SELECT * FROM ${this.table("memory")} WHERE id = $1`, [id]);
+    if ((result.rowCount ?? 0) > 0) {
+      return this.toQueryResult(memoryEntrySchema.parse(this.rowToMemory(result.rows[0])));
+    }
+    result = await this.pgQuery(`SELECT * FROM ${this.table("layered_memories")} WHERE id = $1`, [id]);
+    if ((result.rowCount ?? 0) === 0) return null;
+    const entry = this.rowToLayerEntry(result.rows[0]);
+    return {
+      id: entry.id,
+      content: entry.content,
+      topics: entry.topics,
+      createdAt: entry.createdAt,
+      accessedAt: entry.accessedAt,
+      accessCount: entry.accessCount
+    };
+  }
   async persistLayerEntry(entry, opts) {
     await this.pgQuery(
       `INSERT INTO ${this.table("layered_memories")}
@@ -1432,7 +1733,8 @@ var PostgresMemoryStore = class {
     const id = randomUUID3();
     const layerEntries = await this.loadAllLayerEntries(opts);
     const coreEntries = await this.loadAllMemoryEntries(opts);
-    const snapshotData = { version: "0.6.5", createdAt: now, layerEntries, coreEntries, eventCount: this.eventLog.length };
+    const links = await this.loadAllLinks(opts);
+    const snapshotData = { version: "0.8.0", createdAt: now, layerEntries, coreEntries, links, eventCount: this.eventLog.length };
     const checksum = this.snapshotChecksum(snapshotData);
     const layerCounts = { episodic: 0, semantic: 0, identity: 0, procedural: 0 };
     for (const entry of layerEntries) if (entry.layer in layerCounts) layerCounts[entry.layer]++;
@@ -1462,6 +1764,9 @@ var PostgresMemoryStore = class {
       for (const entry of snapshotData.layerEntries) {
         await this.persistLayerEntryWithClient(entry, opts, client);
         restored++;
+      }
+      for (const link of snapshotData.links ?? []) {
+        await this.restoreLinkWithClient(link, opts, client);
       }
       await client.query("COMMIT");
       await this.logEvent("snapshot.restored", { snapshotId, restored });
@@ -1608,9 +1913,11 @@ var PostgresMemoryStore = class {
       }
       await this.pgQuery(`DELETE FROM ${this.table("layered_memories")} WHERE ${where.join(" AND ")}`, params, client);
       await this.pgQuery(`DELETE FROM ${this.table("memory")} WHERE ${where.join(" AND ")}`, params, client);
+      await this.pgQuery(`DELETE FROM ${this.table("memory_links")} WHERE ${where.join(" AND ")}`, params, client);
     } else {
       await this.pgQuery(`DELETE FROM ${this.table("layered_memories")}`, [], client);
       await this.pgQuery(`DELETE FROM ${this.table("memory")}`, [], client);
+      await this.pgQuery(`DELETE FROM ${this.table("memory_links")}`, [], client);
     }
   }
   scopeWhere(opts) {
@@ -1658,6 +1965,31 @@ var PostgresMemoryStore = class {
   }
   toQueryResult(entry, relevanceScore) {
     return { id: entry.id, content: entry.content, topics: entry.topics, relevanceScore, createdAt: entry.createdAt, accessedAt: entry.accessedAt, accessCount: entry.accessCount };
+  }
+  async loadAllLinks(opts) {
+    const { where, params } = this.scopeWhere(opts);
+    const result = await this.pgQuery(`SELECT * FROM ${this.table("memory_links")} ${where} ORDER BY created_at DESC`, params);
+    return result.rows.map((row) => this.rowToLink(row));
+  }
+  rowToLink(row) {
+    return memoryLinkSchema.parse({
+      id: row.id,
+      fromId: row.from_id,
+      toId: row.to_id,
+      type: row.type,
+      metadata: this.parseJson(row.metadata),
+      createdAt: Number(row.created_at)
+    });
+  }
+  async restoreLinkWithClient(link, opts, client) {
+    const validated = memoryLinkSchema.parse(link);
+    await this.pgQuery(
+      `INSERT INTO ${this.table("memory_links")} (id, from_id, to_id, type, metadata, created_at, agent_id, user_id)
+       VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)
+       ON CONFLICT (id) DO UPDATE SET from_id=EXCLUDED.from_id, to_id=EXCLUDED.to_id, type=EXCLUDED.type, metadata=EXCLUDED.metadata, created_at=EXCLUDED.created_at, agent_id=EXCLUDED.agent_id, user_id=EXCLUDED.user_id`,
+      [validated.id, validated.fromId, validated.toId, validated.type, JSON.stringify(validated.metadata), validated.createdAt, opts?.agentId ?? null, opts?.userId ?? null],
+      client
+    );
   }
   parseJson(value) {
     return typeof value === "string" ? JSON.parse(value) : value;
@@ -4449,6 +4781,73 @@ var ReMEM = class {
     }
     return this.engine.query(query, options);
   }
+  async linkMemories(fromId, toId, type, metadata = {}) {
+    return this._store.createLink({ fromId, toId, type, metadata }, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
+  }
+  async getLinkedMemories(memoryId, options) {
+    const opts = linkedMemoryQueryOptionsSchema.parse(options ?? {});
+    const links = await this._store.getLinks(memoryId, opts, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
+    return Promise.all(links.map(async (link) => {
+      const otherId = link.fromId === memoryId ? link.toId : link.fromId;
+      return {
+        link,
+        memory: await this._store.getEntryById(otherId, {
+          agentId: this._agentId,
+          userId: this._userId
+        })
+      };
+    }));
+  }
+  async unlinkMemories(linkId) {
+    return this._store.deleteLink(linkId);
+  }
+  async queryWithNeighbors(query, options) {
+    const opts = queryWithNeighborsOptionsSchema.parse(options ?? {});
+    const base = await this.query(query, opts);
+    const merged = /* @__PURE__ */ new Map();
+    if (opts.includeBaseResults) {
+      for (const result of base.results) merged.set(result.id, result);
+    }
+    let frontier = base.results.map((r) => r.id);
+    const seen = new Set(frontier);
+    let linksTraversed = 0;
+    for (let hop = 0; hop < opts.hops; hop++) {
+      const nextFrontier = [];
+      for (const id of frontier) {
+        const neighbors = await this.getLinkedMemories(id, {
+          direction: "both",
+          types: opts.linkTypes,
+          limit: opts.neighborLimit
+        });
+        linksTraversed += neighbors.length;
+        for (const neighbor of neighbors) {
+          if (!neighbor.memory || seen.has(neighbor.memory.id)) continue;
+          seen.add(neighbor.memory.id);
+          nextFrontier.push(neighbor.memory.id);
+          merged.set(neighbor.memory.id, {
+            ...neighbor.memory,
+            relevanceScore: Math.max(neighbor.memory.relevanceScore ?? 0, 0.6 - hop * 0.15)
+          });
+        }
+      }
+      frontier = nextFrontier;
+      if (frontier.length === 0) break;
+    }
+    const results = Array.from(merged.values()).sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0)).slice(0, opts.limit);
+    return {
+      results,
+      totalAvailable: results.length,
+      query,
+      tookMs: base.tookMs,
+      linksTraversed
+    };
+  }
   /**
    * Returns true if semantic embeddings are enabled and configured.
    */
@@ -5002,6 +5401,7 @@ export {
   createLangGraphStoreAdapter,
   createOpenClawAdapter,
   createVercelAIAdapter,
+  defaultMemoryLinkTypes,
   downloadPackage,
   driftEventSchema,
   driftResultSchema,
@@ -5017,14 +5417,18 @@ export {
   infectionConfigSchema,
   layerConfigSchema,
   layeredMemoryEntrySchema,
+  linkedMemoryQueryOptionsSchema,
   memoryEntrySchema,
   memoryEventSchema,
   memoryLayerSchema,
+  memoryLinkInputSchema,
+  memoryLinkSchema,
   modelConfigSchema,
   postgresStorageConfigSchema,
   queryOptionsSchema,
   queryResponseSchema,
   queryResultSchema,
+  queryWithNeighborsOptionsSchema,
   rememConfigSchema,
   storeMemoryInputSchema,
   uploadPackage

@@ -1,5 +1,7 @@
 # ReMEM - Recursive Memory for AI Agents
 
+Built by DARKSOL 🌑
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/darks0l/remem/main/assets/darksol-banner.png" alt="DARKSOL" width="800"/>
 </p>
@@ -9,8 +11,8 @@
 [![npm version](https://img.shields.io/npm/v/@darksol/remem?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.npmjs.com/package/@darksol/remem)
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
-[![Test Status](https://img.shields.io/badge/tests-71%2F71%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.7.0](https://img.shields.io/badge/v0.7.0-benchmarks-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![Test Status](https://img.shields.io/badge/tests-74%2F74%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
+[![v0.8.0](https://img.shields.io/badge/v0.8.0-memory--links-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -44,6 +46,7 @@ ReMEM does something different:
 - **Multi-agent scoping** - agent_id + user_id isolation for shared deployments
 - **Plug-and-play LLM abstraction** - Bankr, OpenAI, Anthropic, Ollama - swap without changing your code
 - **Framework adapters** (v0.6.1) - Dependency-free helpers for Vercel AI SDK, LangGraph-style stores, and OpenClaw/session memory
+- **Memory links + neighbor-aware retrieval** (v0.8.0) - Explicit typed links between memories (`about`, `supports`, `contradicts`, etc.), graph-adjacent recall, and snapshot portability for linked memory graphs
 - **Framework-agnostic** - Works as a library (Node.js/Deno), CLI tool, or HTTP microservice
 
 ---
@@ -54,7 +57,7 @@ ReMEM does **not** change a model's native context length. It gives agents an ex
 
 A reproducible synthetic benchmark is included in [`benchmarks/`](./benchmarks). It stores deterministic memories, simulates a fixed recent-context window, then asks for facts that are deliberately outside that active window.
 
-Latest local benchmark result, v0.7.0:
+Latest local benchmark result, v0.8.0:
 
 - **50,000 memories**
 - Approx **3,625,526 stored tokens**
@@ -101,6 +104,27 @@ await memory.store({
 const { results } = await memory.query('what does the user like?');
 console.log(results[0].content);
 // → "Meta prefers dark mode UI and vibe-based communication"
+```
+
+### Memory Links
+
+```typescript
+const memories = await memory.query('dark mode');
+const primary = memories.results[0];
+const related = memories.results[1];
+
+await memory.linkMemories(primary.id, related.id, 'about', { source: 'manual-review' });
+
+const neighbors = await memory.getLinkedMemories(primary.id, {
+  direction: 'both',
+  types: ['about', 'supports'],
+});
+
+const expanded = await memory.queryWithNeighbors('dark mode', {
+  hops: 1,
+  linkTypes: ['about', 'supports'],
+  neighborLimit: 10,
+});
 ```
 
 ### With Layers
@@ -640,7 +664,7 @@ const memory = new ReMEM({ llm: { type: 'ollama', baseUrl: 'http://localhost:114
 
 ---
 
-## Limitations (v0.6.5)
+## Limitations (v0.8.0)
 
 - **PostgreSQL vector search is brute-force for now** - embeddings are stored in Postgres, but semantic search currently computes cosine similarity in application memory. pgvector indexing is a future optimization.
 - **Procedural layer uses keyword triggers** - `fireProcedural()` is simple `ctx.includes(trigger)`. Not a full rule engine.

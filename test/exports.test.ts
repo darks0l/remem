@@ -13,6 +13,7 @@ import {
   HttpAdapter,
   MemoryConsolidator,
   EpisodicCapturePipeline,
+  defaultMemoryLinkTypes,
   createVercelAIAdapter,
   createLangGraphStoreAdapter,
   createOpenClawAdapter,
@@ -29,6 +30,7 @@ describe('package exports', () => {
     expect(HttpAdapter).toBeTypeOf('function');
     expect(MemoryConsolidator).toBeTypeOf('function');
     expect(EpisodicCapturePipeline).toBeTypeOf('function');
+    expect(Array.isArray(defaultMemoryLinkTypes)).toBe(true);
     expect(createVercelAIAdapter).toBeTypeOf('function');
     expect(createLangGraphStoreAdapter).toBeTypeOf('function');
     expect(createOpenClawAdapter).toBeTypeOf('function');

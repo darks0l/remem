@@ -18,6 +18,9 @@
 import initSqlJs, { type Database as SqlJsDatabase } from 'sql.js';
 import { createHash, randomUUID } from 'crypto';
 import {
+  type LinkedMemoryQueryOptions,
+  type MemoryLink,
+  type MemoryLinkInput,
   type MemoryEntry,
   type MemoryEvent,
   type QueryOptions,
@@ -25,6 +28,9 @@ import {
   type StoreMemoryInput,
   type LayeredMemoryEntry,
   type MemoryLayer,
+  linkedMemoryQueryOptionsSchema,
+  memoryLinkInputSchema,
+  memoryLinkSchema,
   memoryEntrySchema,
   queryOptionsSchema,
 } from './types.js';
@@ -94,6 +100,23 @@ export class MemoryStore implements MemoryStoreLike {
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_accessed_at ON memory(accessed_at DESC)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_agent ON memory(agent_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_user ON memory(user_id)`);
+
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS memory_links (
+        id TEXT PRIMARY KEY,
+        from_id TEXT NOT NULL,
+        to_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        metadata TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        agent_id TEXT,
+        user_id TEXT
+      )
+    `);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_ml_from ON memory_links(from_id)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_ml_to ON memory_links(to_id)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_ml_type ON memory_links(type)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_ml_agent ON memory_links(agent_id)`);
 
     // Layered memory table — persists LayerManager entries to SQLite
     // This ensures layers survive process restarts (critical fix for v0.3.1)
@@ -374,6 +397,118 @@ export class MemoryStore implements MemoryStoreLike {
     return false;
   }
 
+  async createLink(input: MemoryLinkInput, opts?: StoreMemoryOptions): Promise<MemoryLink> {
+    this.ensureInitialized();
+    const validated = memoryLinkInputSchema.parse(input);
+    const link = memoryLinkSchema.parse({
+      id: randomUUID(),
+      fromId: validated.fromId,
+      toId: validated.toId,
+      type: validated.type,
+      metadata: validated.metadata ?? {},
+      createdAt: Date.now(),
+    });
+
+    this.db!.run(
+      `INSERT INTO memory_links (id, from_id, to_id, type, metadata, created_at, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        link.id,
+        link.fromId,
+        link.toId,
+        link.type,
+        JSON.stringify(link.metadata),
+        link.createdAt,
+        opts?.agentId ?? null,
+        opts?.userId ?? null,
+      ]
+    );
+
+    this.logEvent('memory.linked', { link });
+    this.persist();
+    return link;
+  }
+
+  async getLinks(memoryId: string, options?: LinkedMemoryQueryOptions, opts?: StoreMemoryOptions): Promise<MemoryLink[]> {
+    this.ensureInitialized();
+    const query = linkedMemoryQueryOptionsSchema.parse(options ?? {});
+    let sql = 'SELECT * FROM memory_links WHERE 1=1';
+    const params: (string | number | null)[] = [];
+
+    if (query.direction === 'outgoing') {
+      sql += ' AND from_id = ?';
+      params.push(memoryId);
+    } else if (query.direction === 'incoming') {
+      sql += ' AND to_id = ?';
+      params.push(memoryId);
+    } else {
+      sql += ' AND (from_id = ? OR to_id = ?)';
+      params.push(memoryId, memoryId);
+    }
+
+    if (query.types && query.types.length > 0) {
+      sql += ` AND type IN (${query.types.map(() => '?').join(', ')})`;
+      params.push(...query.types);
+    }
+    if (opts?.agentId) {
+      sql += ' AND (agent_id = ? OR agent_id IS NULL)';
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += ' AND (user_id = ? OR user_id IS NULL)';
+      params.push(opts.userId);
+    }
+
+    sql += ' ORDER BY created_at DESC LIMIT ?';
+    params.push(query.limit);
+
+    const result = this.db!.exec(sql, params);
+    if (result.length === 0) return [];
+
+    return result[0].values.map((v: unknown[]) => this.rowToLink(result[0].columns, v));
+  }
+
+  async deleteLink(linkId: string): Promise<boolean> {
+    this.ensureInitialized();
+    this.db!.run('DELETE FROM memory_links WHERE id = ?', [linkId]);
+    const changes = this.db!.getRowsModified();
+    if (changes > 0) {
+      this.logEvent('memory.unlinked', { linkId });
+      this.persist();
+      return true;
+    }
+    return false;
+  }
+
+  async getEntryById(id: string): Promise<QueryResult | null> {
+    this.ensureInitialized();
+
+    const core = this.db!.exec('SELECT * FROM memory WHERE id = ?', [id]);
+    if (core.length > 0 && core[0].values.length > 0) {
+      const entry = memoryEntrySchema.parse(this.rowToObject(core[0].columns, core[0].values[0]));
+      return {
+        id: entry.id,
+        content: entry.content,
+        topics: entry.topics,
+        createdAt: entry.createdAt,
+        accessedAt: entry.accessedAt,
+        accessCount: entry.accessCount,
+      };
+    }
+
+    const layered = this.db!.exec('SELECT * FROM layered_memories WHERE id = ?', [id]);
+    if (layered.length === 0 || layered[0].values.length === 0) return null;
+    const obj = this.rowToObject(layered[0].columns, layered[0].values[0]);
+    return {
+      id: obj['id'] as string,
+      content: obj['content'] as string,
+      topics: Array.isArray(obj['topics']) ? obj['topics'] as string[] : JSON.parse(String(obj['topics'] ?? '[]')),
+      createdAt: obj['createdAt'] as number,
+      accessedAt: obj['accessedAt'] as number,
+      accessCount: obj['accessCount'] as number,
+    };
+  }
+
   // ─── Layered Memory Persistence (v0.3.1) ─────────────────────────────────
 
   /**
@@ -530,10 +665,11 @@ export class MemoryStore implements MemoryStoreLike {
     const coreEntries = await this.loadAllMemoryEntries(opts);
 
     const snapshotData = {
-      version: '0.6.2',
+      version: '0.8.0',
       createdAt: now,
       layerEntries,
       coreEntries,
+      links: await this.loadAllLinks(opts),
       eventCount: this.eventLog.length,
     };
 
@@ -593,6 +729,7 @@ export class MemoryStore implements MemoryStoreLike {
     const data = JSON.parse(snapshotText) as {
       layerEntries: LayeredMemoryEntry[];
       coreEntries?: MemoryEntry[];
+      links?: MemoryLink[];
       version: string;
     };
     const expectedChecksum = row['checksum'] as string | null;
@@ -616,9 +753,11 @@ export class MemoryStore implements MemoryStoreLike {
       if (opts.userId) { conditions.push('user_id = ?'); params.push(opts.userId); }
       this.db!.run(`DELETE FROM layered_memories WHERE ${conditions.join(' AND ')}`, params);
       this.db!.run(`DELETE FROM memory WHERE ${conditions.join(' AND ')}`, params);
+      this.db!.run(`DELETE FROM memory_links WHERE ${conditions.join(' AND ')}`, params);
     } else {
       this.db!.run('DELETE FROM layered_memories');
       this.db!.run('DELETE FROM memory');
+      this.db!.run('DELETE FROM memory_links');
     }
 
     // Restore core memories from snapshot
@@ -638,6 +777,13 @@ export class MemoryStore implements MemoryStoreLike {
         userId: opts?.userId,
       });
       restored++;
+    }
+
+    for (const link of data.links ?? []) {
+      await this.restoreLink(link, {
+        agentId: opts?.agentId,
+        userId: opts?.userId,
+      });
     }
 
     this.logEvent('snapshot.restored', { snapshotId, restored });
@@ -958,6 +1104,49 @@ export class MemoryStore implements MemoryStoreLike {
 
   private snapshotChecksum(snapshotData: unknown): string {
     return createHash('sha256').update(JSON.stringify(snapshotData)).digest('hex');
+  }
+
+  private async loadAllLinks(opts?: StoreMemoryOptions): Promise<MemoryLink[]> {
+    this.ensureInitialized();
+    let sql = 'SELECT * FROM memory_links WHERE 1=1';
+    const params: (string | null)[] = [];
+    if (opts?.agentId) { sql += ' AND (agent_id = ? OR agent_id IS NULL)'; params.push(opts.agentId); }
+    if (opts?.userId) { sql += ' AND (user_id = ? OR user_id IS NULL)'; params.push(opts.userId); }
+    sql += ' ORDER BY created_at DESC';
+    const result = this.db!.exec(sql, params);
+    if (result.length === 0) return [];
+    return result[0].values.map((v: unknown[]) => this.rowToLink(result[0].columns, v));
+  }
+
+  private async restoreLink(link: MemoryLink, opts?: StoreMemoryOptions): Promise<void> {
+    this.ensureInitialized();
+    const validated = memoryLinkSchema.parse(link);
+    this.db!.run(
+      `INSERT OR REPLACE INTO memory_links (id, from_id, to_id, type, metadata, created_at, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        validated.id,
+        validated.fromId,
+        validated.toId,
+        validated.type,
+        JSON.stringify(validated.metadata),
+        validated.createdAt,
+        opts?.agentId ?? null,
+        opts?.userId ?? null,
+      ]
+    );
+  }
+
+  private rowToLink(columns: string[], values: unknown[]): MemoryLink {
+    const obj = this.rowToObject(columns, values);
+    return memoryLinkSchema.parse({
+      id: obj['id'],
+      fromId: obj['from_id'],
+      toId: obj['to_id'],
+      type: obj['type'],
+      metadata: typeof obj['metadata'] === 'string' ? JSON.parse(obj['metadata'] as string) : obj['metadata'],
+      createdAt: obj['createdAt'],
+    });
   }
 
   private rowToObject(columns: string[], values: unknown[]): Record<string, unknown> {

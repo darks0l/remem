@@ -2,13 +2,19 @@ import { createHash, randomUUID } from 'crypto';
 import type { Pool, PoolClient, QueryResult as PgQueryResult, QueryResultRow } from 'pg';
 import {
   type LayeredMemoryEntry,
+  type LinkedMemoryQueryOptions,
   type MemoryEntry,
   type MemoryEvent,
   type MemoryLayer,
+  type MemoryLink,
+  type MemoryLinkInput,
   type QueryOptions,
   type QueryResult,
   type StoreMemoryInput,
+  linkedMemoryQueryOptionsSchema,
   memoryEntrySchema,
+  memoryLinkInputSchema,
+  memoryLinkSchema,
   queryOptionsSchema,
 } from './types.js';
 import { EmbeddingService } from './embeddings.js';
@@ -97,6 +103,22 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_memory_agent" ON ${this.table('memory')} (agent_id)`);
     await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_memory_user" ON ${this.table('memory')} (user_id)`);
     await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_memory_topics" ON ${this.table('memory')} USING GIN (topics)`);
+
+    await this.pgQuery(`
+      CREATE TABLE IF NOT EXISTS ${this.table('memory_links')} (
+        id TEXT PRIMARY KEY,
+        from_id TEXT NOT NULL,
+        to_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at BIGINT NOT NULL,
+        agent_id TEXT,
+        user_id TEXT
+      )
+    `);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_ml_from" ON ${this.table('memory_links')} (from_id)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_ml_to" ON ${this.table('memory_links')} (to_id)`);
+    await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_ml_type" ON ${this.table('memory_links')} (type)`);
 
     await this.pgQuery(`
       CREATE TABLE IF NOT EXISTS ${this.table('layered_memories')} (
@@ -250,6 +272,82 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     return forgotten;
   }
 
+  async createLink(input: MemoryLinkInput, opts?: StoreMemoryOptions): Promise<MemoryLink> {
+    const validated = memoryLinkInputSchema.parse(input);
+    const link = memoryLinkSchema.parse({
+      id: randomUUID(),
+      fromId: validated.fromId,
+      toId: validated.toId,
+      type: validated.type,
+      metadata: validated.metadata ?? {},
+      createdAt: Date.now(),
+    });
+    await this.pgQuery(
+      `INSERT INTO ${this.table('memory_links')} (id, from_id, to_id, type, metadata, created_at, agent_id, user_id)
+       VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`,
+      [link.id, link.fromId, link.toId, link.type, JSON.stringify(link.metadata), link.createdAt, opts?.agentId ?? null, opts?.userId ?? null]
+    );
+    await this.logEvent('memory.linked', { link });
+    return link;
+  }
+
+  async getLinks(memoryId: string, options?: LinkedMemoryQueryOptions, opts?: StoreMemoryOptions): Promise<MemoryLink[]> {
+    const query = linkedMemoryQueryOptionsSchema.parse(options ?? {});
+    const where: string[] = [];
+    const params: unknown[] = [];
+    let idx = 1;
+
+    if (query.direction === 'outgoing') {
+      where.push(`from_id = $${idx++}`);
+      params.push(memoryId);
+    } else if (query.direction === 'incoming') {
+      where.push(`to_id = $${idx++}`);
+      params.push(memoryId);
+    } else {
+      where.push(`(from_id = $${idx} OR to_id = $${idx + 1})`);
+      params.push(memoryId, memoryId);
+      idx += 2;
+    }
+    if (query.types && query.types.length > 0) {
+      where.push(`type = ANY($${idx++}::text[])`);
+      params.push(query.types);
+    }
+    if (opts?.agentId) { where.push(`(agent_id = $${idx} OR agent_id IS NULL)`); params.push(opts.agentId); idx++; }
+    if (opts?.userId) { where.push(`(user_id = $${idx} OR user_id IS NULL)`); params.push(opts.userId); idx++; }
+    params.push(query.limit);
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const result = await this.pgQuery<Record<string, unknown>>(
+      `SELECT * FROM ${this.table('memory_links')} ${whereSql} ORDER BY created_at DESC LIMIT $${idx}`,
+      params
+    );
+    return result.rows.map((row) => this.rowToLink(row));
+  }
+
+  async deleteLink(linkId: string): Promise<boolean> {
+    const result = await this.pgQuery(`DELETE FROM ${this.table('memory_links')} WHERE id = $1`, [linkId]);
+    const deleted = (result.rowCount ?? 0) > 0;
+    if (deleted) await this.logEvent('memory.unlinked', { linkId });
+    return deleted;
+  }
+
+  async getEntryById(id: string): Promise<QueryResult | null> {
+    let result = await this.pgQuery<Record<string, unknown>>(`SELECT * FROM ${this.table('memory')} WHERE id = $1`, [id]);
+    if ((result.rowCount ?? 0) > 0) {
+      return this.toQueryResult(memoryEntrySchema.parse(this.rowToMemory(result.rows[0])));
+    }
+    result = await this.pgQuery<Record<string, unknown>>(`SELECT * FROM ${this.table('layered_memories')} WHERE id = $1`, [id]);
+    if ((result.rowCount ?? 0) === 0) return null;
+    const entry = this.rowToLayerEntry(result.rows[0]);
+    return {
+      id: entry.id,
+      content: entry.content,
+      topics: entry.topics,
+      createdAt: entry.createdAt,
+      accessedAt: entry.accessedAt,
+      accessCount: entry.accessCount,
+    };
+  }
+
   async persistLayerEntry(entry: LayeredMemoryEntry, opts?: StoreMemoryOptions): Promise<void> {
     await this.pgQuery(
       `INSERT INTO ${this.table('layered_memories')}
@@ -300,7 +398,8 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     const id = randomUUID();
     const layerEntries = await this.loadAllLayerEntries(opts);
     const coreEntries = await this.loadAllMemoryEntries(opts);
-    const snapshotData = { version: '0.6.5', createdAt: now, layerEntries, coreEntries, eventCount: this.eventLog.length };
+    const links = await this.loadAllLinks(opts);
+    const snapshotData = { version: '0.8.0', createdAt: now, layerEntries, coreEntries, links, eventCount: this.eventLog.length };
     const checksum = this.snapshotChecksum(snapshotData);
     const layerCounts = { episodic: 0, semantic: 0, identity: 0, procedural: 0 } as Record<MemoryLayer, number>;
     for (const entry of layerEntries) if (entry.layer in layerCounts) layerCounts[entry.layer]++;
@@ -317,7 +416,7 @@ export class PostgresMemoryStore implements MemoryStoreLike {
   async restoreSnapshot(snapshotId: string, opts?: StoreMemoryOptions): Promise<number> {
     const result = await this.pgQuery<Record<string, unknown>>(`SELECT snapshot_data, checksum FROM ${this.table('snapshots')} WHERE id = $1`, [snapshotId]);
     if (result.rowCount === 0) throw new Error(`Snapshot not found: ${snapshotId}`);
-    const snapshotData = this.parseJson(result.rows[0].snapshot_data) as { layerEntries: LayeredMemoryEntry[]; coreEntries?: MemoryEntry[]; version: string };
+    const snapshotData = this.parseJson(result.rows[0].snapshot_data) as { layerEntries: LayeredMemoryEntry[]; coreEntries?: MemoryEntry[]; links?: MemoryLink[]; version: string };
     const checksum = result.rows[0].checksum as string | null;
     if (checksum && this.snapshotChecksum(snapshotData) !== checksum) throw new Error(`Snapshot checksum mismatch: ${snapshotId}`);
 
@@ -328,6 +427,7 @@ export class PostgresMemoryStore implements MemoryStoreLike {
       let restored = 0;
       for (const entry of snapshotData.coreEntries ?? []) { await this.restoreMemoryEntry(entry, opts, client); restored++; }
       for (const entry of snapshotData.layerEntries) { await this.persistLayerEntryWithClient(entry, opts, client); restored++; }
+      for (const link of snapshotData.links ?? []) { await this.restoreLinkWithClient(link, opts, client); }
       await client.query('COMMIT');
       await this.logEvent('snapshot.restored', { snapshotId, restored });
       return restored;
@@ -468,9 +568,11 @@ export class PostgresMemoryStore implements MemoryStoreLike {
       if (opts.userId) { where.push(`user_id = $${idx++}`); params.push(opts.userId); }
       await this.pgQuery(`DELETE FROM ${this.table('layered_memories')} WHERE ${where.join(' AND ')}`, params, client);
       await this.pgQuery(`DELETE FROM ${this.table('memory')} WHERE ${where.join(' AND ')}`, params, client);
+      await this.pgQuery(`DELETE FROM ${this.table('memory_links')} WHERE ${where.join(' AND ')}`, params, client);
     } else {
       await this.pgQuery(`DELETE FROM ${this.table('layered_memories')}`, [], client);
       await this.pgQuery(`DELETE FROM ${this.table('memory')}`, [], client);
+      await this.pgQuery(`DELETE FROM ${this.table('memory_links')}`, [], client);
     }
   }
 
@@ -516,6 +618,34 @@ export class PostgresMemoryStore implements MemoryStoreLike {
 
   private toQueryResult(entry: MemoryEntry, relevanceScore?: number): QueryResult {
     return { id: entry.id, content: entry.content, topics: entry.topics, relevanceScore, createdAt: entry.createdAt, accessedAt: entry.accessedAt, accessCount: entry.accessCount };
+  }
+
+  private async loadAllLinks(opts?: StoreMemoryOptions): Promise<MemoryLink[]> {
+    const { where, params } = this.scopeWhere(opts);
+    const result = await this.pgQuery<Record<string, unknown>>(`SELECT * FROM ${this.table('memory_links')} ${where} ORDER BY created_at DESC`, params);
+    return result.rows.map((row) => this.rowToLink(row));
+  }
+
+  private rowToLink(row: Record<string, unknown>): MemoryLink {
+    return memoryLinkSchema.parse({
+      id: row.id,
+      fromId: row.from_id,
+      toId: row.to_id,
+      type: row.type,
+      metadata: this.parseJson(row.metadata) as Record<string, unknown>,
+      createdAt: Number(row.created_at),
+    });
+  }
+
+  private async restoreLinkWithClient(link: MemoryLink, opts: StoreMemoryOptions | undefined, client: Queryable): Promise<void> {
+    const validated = memoryLinkSchema.parse(link);
+    await this.pgQuery(
+      `INSERT INTO ${this.table('memory_links')} (id, from_id, to_id, type, metadata, created_at, agent_id, user_id)
+       VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)
+       ON CONFLICT (id) DO UPDATE SET from_id=EXCLUDED.from_id, to_id=EXCLUDED.to_id, type=EXCLUDED.type, metadata=EXCLUDED.metadata, created_at=EXCLUDED.created_at, agent_id=EXCLUDED.agent_id, user_id=EXCLUDED.user_id`,
+      [validated.id, validated.fromId, validated.toId, validated.type, JSON.stringify(validated.metadata), validated.createdAt, opts?.agentId ?? null, opts?.userId ?? null],
+      client
+    );
   }
 
   private parseJson(value: unknown): unknown {

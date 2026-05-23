@@ -149,6 +149,94 @@ declare const queryResponseSchema: z.ZodObject<{
     tookMs: number;
 }>;
 type QueryResponse = z.infer<typeof queryResponseSchema>;
+declare const defaultMemoryLinkTypes: readonly ["about", "caused_by", "contradicts", "supports", "follows", "same_session", "same_project", "same_person"];
+declare const memoryLinkSchema: z.ZodObject<{
+    id: z.ZodString;
+    fromId: z.ZodString;
+    toId: z.ZodString;
+    type: z.ZodString;
+    metadata: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+    createdAt: z.ZodNumber;
+}, "strip", z.ZodTypeAny, {
+    type: string;
+    metadata: Record<string, unknown>;
+    id: string;
+    createdAt: number;
+    fromId: string;
+    toId: string;
+}, {
+    type: string;
+    id: string;
+    createdAt: number;
+    fromId: string;
+    toId: string;
+    metadata?: Record<string, unknown> | undefined;
+}>;
+type MemoryLink = z.infer<typeof memoryLinkSchema>;
+declare const memoryLinkInputSchema: z.ZodObject<{
+    fromId: z.ZodString;
+    toId: z.ZodString;
+    type: z.ZodString;
+    metadata: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>>;
+}, "strip", z.ZodTypeAny, {
+    type: string;
+    metadata: Record<string, unknown>;
+    fromId: string;
+    toId: string;
+}, {
+    type: string;
+    fromId: string;
+    toId: string;
+    metadata?: Record<string, unknown> | undefined;
+}>;
+type MemoryLinkInput = z.infer<typeof memoryLinkInputSchema>;
+declare const linkedMemoryQueryOptionsSchema: z.ZodObject<{
+    direction: z.ZodDefault<z.ZodEnum<["outgoing", "incoming", "both"]>>;
+    types: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+    limit: z.ZodDefault<z.ZodNumber>;
+}, "strip", z.ZodTypeAny, {
+    limit: number;
+    direction: "outgoing" | "incoming" | "both";
+    types?: string[] | undefined;
+}, {
+    limit?: number | undefined;
+    direction?: "outgoing" | "incoming" | "both" | undefined;
+    types?: string[] | undefined;
+}>;
+type LinkedMemoryQueryOptions = z.infer<typeof linkedMemoryQueryOptionsSchema>;
+declare const queryWithNeighborsOptionsSchema: z.ZodObject<{
+    limit: z.ZodDefault<z.ZodNumber>;
+    topics: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+    minAccessCount: z.ZodOptional<z.ZodNumber>;
+    since: z.ZodOptional<z.ZodNumber>;
+    until: z.ZodOptional<z.ZodNumber>;
+} & {
+    hops: z.ZodDefault<z.ZodUnion<[z.ZodLiteral<1>, z.ZodLiteral<2>]>>;
+    linkTypes: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+    includeBaseResults: z.ZodDefault<z.ZodBoolean>;
+    neighborLimit: z.ZodDefault<z.ZodNumber>;
+}, "strip", z.ZodTypeAny, {
+    limit: number;
+    hops: 1 | 2;
+    includeBaseResults: boolean;
+    neighborLimit: number;
+    topics?: string[] | undefined;
+    minAccessCount?: number | undefined;
+    since?: number | undefined;
+    until?: number | undefined;
+    linkTypes?: string[] | undefined;
+}, {
+    topics?: string[] | undefined;
+    limit?: number | undefined;
+    minAccessCount?: number | undefined;
+    since?: number | undefined;
+    until?: number | undefined;
+    hops?: 1 | 2 | undefined;
+    linkTypes?: string[] | undefined;
+    includeBaseResults?: boolean | undefined;
+    neighborLimit?: number | undefined;
+}>;
+type QueryWithNeighborsOptions = z.infer<typeof queryWithNeighborsOptionsSchema>;
 declare const modelConfigSchema: z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
     type: z.ZodLiteral<"bankr">;
     apiKey: z.ZodString;
@@ -446,20 +534,20 @@ declare const rememConfigSchema: z.ZodObject<{
     } | undefined;
 }>;
 type ReMEMConfig = z.infer<typeof rememConfigSchema>;
-declare const eventTypeSchema: z.ZodEnum<["memory.stored", "memory.queried", "memory.accessed", "memory.forgotten", "memory.superseded", "snapshot.created", "snapshot.restored", "identity.constitution_updated", "identity.drift_detected", "identity.drift_correction_injected"]>;
+declare const eventTypeSchema: z.ZodEnum<["memory.stored", "memory.queried", "memory.accessed", "memory.forgotten", "memory.linked", "memory.unlinked", "memory.superseded", "snapshot.created", "snapshot.restored", "identity.constitution_updated", "identity.drift_detected", "identity.drift_correction_injected"]>;
 type EventType = z.infer<typeof eventTypeSchema>;
 declare const memoryEventSchema: z.ZodObject<{
     id: z.ZodString;
-    type: z.ZodEnum<["memory.stored", "memory.queried", "memory.accessed", "memory.forgotten", "memory.superseded", "snapshot.created", "snapshot.restored", "identity.constitution_updated", "identity.drift_detected", "identity.drift_correction_injected"]>;
+    type: z.ZodEnum<["memory.stored", "memory.queried", "memory.accessed", "memory.forgotten", "memory.linked", "memory.unlinked", "memory.superseded", "snapshot.created", "snapshot.restored", "identity.constitution_updated", "identity.drift_detected", "identity.drift_correction_injected"]>;
     timestamp: z.ZodNumber;
     payload: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }, "strip", z.ZodTypeAny, {
-    type: "memory.stored" | "memory.queried" | "memory.accessed" | "memory.forgotten" | "memory.superseded" | "snapshot.created" | "snapshot.restored" | "identity.constitution_updated" | "identity.drift_detected" | "identity.drift_correction_injected";
+    type: "memory.stored" | "memory.queried" | "memory.accessed" | "memory.forgotten" | "memory.linked" | "memory.unlinked" | "memory.superseded" | "snapshot.created" | "snapshot.restored" | "identity.constitution_updated" | "identity.drift_detected" | "identity.drift_correction_injected";
     id: string;
     timestamp: number;
     payload: Record<string, unknown>;
 }, {
-    type: "memory.stored" | "memory.queried" | "memory.accessed" | "memory.forgotten" | "memory.superseded" | "snapshot.created" | "snapshot.restored" | "identity.constitution_updated" | "identity.drift_detected" | "identity.drift_correction_injected";
+    type: "memory.stored" | "memory.queried" | "memory.accessed" | "memory.forgotten" | "memory.linked" | "memory.unlinked" | "memory.superseded" | "snapshot.created" | "snapshot.restored" | "identity.constitution_updated" | "identity.drift_detected" | "identity.drift_correction_injected";
     id: string;
     timestamp: number;
     payload: Record<string, unknown>;
@@ -1366,6 +1454,10 @@ interface MemoryStoreLike {
     getRecent(n?: number): Promise<QueryResult[]>;
     getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
     forget(id: string): Promise<boolean>;
+    createLink(input: MemoryLinkInput, opts?: StoreMemoryOptions): Promise<MemoryLink>;
+    getLinks(memoryId: string, options?: LinkedMemoryQueryOptions, opts?: StoreMemoryOptions): Promise<MemoryLink[]>;
+    deleteLink(linkId: string): Promise<boolean>;
+    getEntryById(id: string, opts?: StoreMemoryOptions): Promise<QueryResult | null>;
     persistLayerEntry(entry: LayeredMemoryEntry, opts?: StoreMemoryOptions): Promise<void>;
     loadAllLayerEntries(opts?: StoreMemoryOptions): Promise<LayeredMemoryEntry[]>;
     forgetLayerEntry(id: string): Promise<boolean>;
@@ -1653,6 +1745,10 @@ declare class MemoryStore implements MemoryStoreLike {
     getRecent(n?: number): Promise<QueryResult[]>;
     getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
     forget(id: string): Promise<boolean>;
+    createLink(input: MemoryLinkInput, opts?: StoreMemoryOptions): Promise<MemoryLink>;
+    getLinks(memoryId: string, options?: LinkedMemoryQueryOptions, opts?: StoreMemoryOptions): Promise<MemoryLink[]>;
+    deleteLink(linkId: string): Promise<boolean>;
+    getEntryById(id: string): Promise<QueryResult | null>;
     /**
      * Persist a LayerManager entry to SQLite.
      * This is what makes layers survive process restarts.
@@ -1746,6 +1842,9 @@ declare class MemoryStore implements MemoryStoreLike {
     private logEvent;
     private ensureColumn;
     private snapshotChecksum;
+    private loadAllLinks;
+    private restoreLink;
+    private rowToLink;
     private rowToObject;
     private simpleRelevance;
 }
@@ -1782,6 +1881,10 @@ declare class PostgresMemoryStore implements MemoryStoreLike {
     getRecent(n?: number): Promise<QueryResult[]>;
     getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
     forget(id: string): Promise<boolean>;
+    createLink(input: MemoryLinkInput, opts?: StoreMemoryOptions): Promise<MemoryLink>;
+    getLinks(memoryId: string, options?: LinkedMemoryQueryOptions, opts?: StoreMemoryOptions): Promise<MemoryLink[]>;
+    deleteLink(linkId: string): Promise<boolean>;
+    getEntryById(id: string): Promise<QueryResult | null>;
     persistLayerEntry(entry: LayeredMemoryEntry, opts?: StoreMemoryOptions): Promise<void>;
     loadAllLayerEntries(opts?: StoreMemoryOptions): Promise<LayeredMemoryEntry[]>;
     forgetLayerEntry(id: string): Promise<boolean>;
@@ -1814,6 +1917,9 @@ declare class PostgresMemoryStore implements MemoryStoreLike {
     private rowToMemory;
     private rowToLayerEntry;
     private toQueryResult;
+    private loadAllLinks;
+    private rowToLink;
+    private restoreLinkWithClient;
     private parseJson;
     private snapshotChecksum;
     private simpleRelevance;
@@ -2477,6 +2583,15 @@ declare class ReMEM {
      * falls back to keyword + access_count scoring otherwise.
      */
     query(query: string, options?: QueryOptions): Promise<QueryResponse>;
+    linkMemories(fromId: string, toId: string, type: string, metadata?: Record<string, unknown>): Promise<MemoryLink>;
+    getLinkedMemories(memoryId: string, options?: LinkedMemoryQueryOptions): Promise<Array<{
+        link: MemoryLink;
+        memory: QueryResult | null;
+    }>>;
+    unlinkMemories(linkId: string): Promise<boolean>;
+    queryWithNeighbors(query: string, options?: QueryWithNeighborsOptions): Promise<QueryResponse & {
+        linksTraversed: number;
+    }>;
     /**
      * Returns true if semantic embeddings are enabled and configured.
      */
@@ -2752,4 +2867,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryLayer, MemoryREPL, MemoryStore, type MemoryStoreLike, ModelAbstraction, type ModelConfig, PostgresMemoryStore, type PostgresStorageConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SnapshotExport, type SnapshotMeta, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, modelConfigSchema, postgresStorageConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, rememConfigSchema, storeMemoryInputSchema, uploadPackage };
+export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, ModelAbstraction, type ModelConfig, PostgresMemoryStore, type PostgresStorageConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SnapshotExport, type SnapshotMeta, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, modelConfigSchema, postgresStorageConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, storeMemoryInputSchema, uploadPackage };

@@ -4,6 +4,21 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.8.0] — 2026-05-23
+
+### Added
+
+- Added typed memory links across SQLite and PostgreSQL stores with `createLink`, `getLinks`, `deleteLink`, and scoped lookup support.
+- Added public ReMEM APIs for linked-memory workflows: `linkMemories`, `getLinkedMemories`, `unlinkMemories`, and `queryWithNeighbors`.
+- Added exported link schemas/types plus a default link taxonomy (`about`, `caused_by`, `contradicts`, `supports`, `follows`, `same_session`, `same_project`, `same_person`).
+- Added snapshot/export/restore support for linked memory graphs so relationships survive backup and migration flows.
+- Added regression coverage for link creation, neighbor traversal, and export surface checks.
+
+### Changed
+
+- Snapshot payload version now uses `0.8.0` for linked-memory capable snapshots.
+- README and release metadata now reflect the linked-memory release and current passing test count.
+
 ## [0.7.0] — 2026-05-10
 
 ### Changed
