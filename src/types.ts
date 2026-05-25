@@ -112,9 +112,23 @@ export const queryWithNeighborsOptionsSchema = queryOptionsSchema.extend({
   linkTypes: z.array(z.string()).optional(),
   includeBaseResults: z.boolean().default(true),
   neighborLimit: z.number().min(1).max(100).default(25),
+  minNeighborScore: z.number().min(0).max(1).default(0.2),
+  linkTypeWeights: z.record(z.number().min(0).max(2)).optional(),
+  includePathDetails: z.boolean().default(false),
 });
 
 export type QueryWithNeighborsOptions = z.infer<typeof queryWithNeighborsOptionsSchema>;
+
+export const neighborPathSchema = z.object({
+  fromId: z.string(),
+  toId: z.string(),
+  throughId: z.string(),
+  type: z.string(),
+  hop: z.number().min(1),
+  score: z.number().min(0).max(2),
+});
+
+export type NeighborPath = z.infer<typeof neighborPathSchema>;
 
 // ============================================================================
 // Model Abstraction Types
@@ -193,6 +207,11 @@ export const postgresStorageConfigSchema = z.object({
   schema: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
   tablePrefix: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
   ssl: z.union([z.boolean(), z.record(z.unknown())]).optional(),
+  pgvector: z.object({
+    enabled: z.boolean().default(false),
+    embeddingType: z.enum(['memory', 'layered', 'both']).default('memory'),
+    ivfflatLists: z.number().min(1).max(5000).default(100),
+  }).optional(),
   pool: z.unknown().optional(),
 });
 
@@ -337,6 +356,27 @@ export const layeredMemoryEntrySchema = memoryEntrySchema.extend({
 });
 
 export type LayeredMemoryEntry = z.infer<typeof layeredMemoryEntrySchema>;
+
+export const proceduralTriggerSchema = z.object({
+  terms: z.array(z.string()).optional().default([]),
+  phrases: z.array(z.string()).optional().default([]),
+  topics: z.array(z.string()).optional().default([]),
+  excludeTerms: z.array(z.string()).optional().default([]),
+  regex: z.string().optional(),
+  match: z.enum(['any', 'all']).default('any'),
+  minScore: z.number().min(0).max(1).default(0.25),
+  priority: z.number().min(0).max(1).default(0.5),
+});
+
+export type ProceduralTrigger = z.infer<typeof proceduralTriggerSchema>;
+
+export const proceduralMatchSchema = z.object({
+  entry: layeredMemoryEntrySchema,
+  score: z.number().min(0).max(2),
+  reasons: z.array(z.string()),
+});
+
+export type ProceduralMatch = z.infer<typeof proceduralMatchSchema>;
 
 // ============================================================================
 // Identity Drift Event (stored in event log)

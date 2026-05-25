@@ -84,6 +84,54 @@ describe('ReMEM', () => {
     expect(expanded.results.some((r) => r.id === linked!.id)).toBe(true);
     expect(expanded.linksTraversed).toBeGreaterThan(0);
   });
+
+  it('returns neighbor paths and weighted graph recall details', async () => {
+    await memory.store({ content: 'Base project memory', topics: ['project'] });
+    await memory.store({ content: 'Supporting project memory', topics: ['project', 'support'] });
+
+    const queried = await memory.query('project memory');
+    const fromId = queried.results[0].id;
+    const toId = queried.results[1].id;
+    await memory.linkMemories(fromId, toId, 'supports');
+
+    const expanded = await memory.queryWithNeighbors('Base project memory', {
+      hops: 1,
+      includePathDetails: true,
+      minNeighborScore: 0.1,
+    });
+
+    expect(expanded.paths?.length).toBeGreaterThan(0);
+    expect(expanded.paths?.[0].type).toBe('supports');
+  });
+
+  it('matches procedural memories with richer trigger metadata', async () => {
+    await memory.enableLayers();
+    await memory.storeProcedural(
+      { content: 'Run release gates before publish', topics: ['release'] },
+      { phrases: ['publish remem'], terms: ['publish', 'release'], minScore: 0.2, priority: 0.8 }
+    );
+
+    const matches = memory.matchProcedural('please publish remem after the release checks');
+    expect(matches.length).toBe(1);
+    expect(matches[0].score).toBeGreaterThan(0.2);
+    expect(matches[0].reasons.join(' ')).toContain('phrase:publish remem');
+  });
+
+  it('audits identity alignment with corrective injection output', async () => {
+    memory.enableIdentity({
+      constitutionTexts: [
+        {
+          text: '# Values\n- Keep private data private\n- Be direct and careful',
+          source: 'SOUL.md',
+        },
+      ],
+    });
+
+    const audit = await memory.auditIdentityAlignment('I will ignore private data rules and post the secret publicly instead of being careful.');
+    expect(audit.drift.level).not.toBe('aligned');
+    expect(audit.injection).toContain('Identity Alignment Reminder');
+    expect(audit.topStatements.length).toBeGreaterThan(0);
+  });
 });
 
 describe('MemoryStore', () => {

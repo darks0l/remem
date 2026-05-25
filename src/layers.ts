@@ -10,10 +10,14 @@ import {
   type LayerConfig,
   type LayeredMemoryEntry,
   type MemoryLayer,
+  type ProceduralMatch,
+  type ProceduralTrigger,
   type QueryOptions,
   type QueryResult,
   type StoreMemoryInput,
   layerConfigSchema,
+  proceduralMatchSchema,
+  proceduralTriggerSchema,
 } from './types.js';
 import { EmbeddingService } from './embeddings.js';
 
@@ -159,8 +163,11 @@ export class LayerManager {
    * condition: when this text appears in context
    * action: what to do when triggered
    */
-  storeProcedural(input: StoreMemoryInput, trigger: string): LayeredMemoryEntry {
-    const meta = { ...input.metadata, trigger };
+  storeProcedural(input: StoreMemoryInput, trigger: string | Partial<ProceduralTrigger>): LayeredMemoryEntry {
+    const normalizedTrigger = typeof trigger === 'string'
+      ? proceduralTriggerSchema.parse({ terms: [trigger], phrases: [trigger], match: 'any' })
+      : proceduralTriggerSchema.parse(trigger);
+    const meta = { ...input.metadata, trigger: normalizedTrigger };
     return this.store({ ...input, metadata: meta }, 'procedural');
   }
 
@@ -169,19 +176,65 @@ export class LayerManager {
    * Returns rules whose trigger keyword appears in the context.
    */
   fireProcedural(context: string): LayeredMemoryEntry[] {
-    const triggered: LayeredMemoryEntry[] = [];
+    return this.matchProcedural(context).map((match) => match.entry);
+  }
+
+  matchProcedural(context: string): ProceduralMatch[] {
+    const matches: ProceduralMatch[] = [];
     const ctx = context.toLowerCase();
+    const tokens = new Set(ctx.split(/[^a-z0-9_:-]+/i).filter(Boolean));
 
     for (const entry of this.entries.values()) {
       if (entry.layer !== 'procedural') continue;
 
-      const trigger = (entry.metadata?.trigger as string)?.toLowerCase();
-      if (trigger && ctx.includes(trigger)) {
-        triggered.push(entry);
+      const trigger = this.normalizeTrigger(entry.metadata?.trigger);
+      if (!trigger) continue;
+
+      const reasons: string[] = [];
+      let score = 0;
+
+      const termMatches = trigger.terms.filter((term) => tokens.has(term.toLowerCase()));
+      const phraseMatches = trigger.phrases.filter((phrase) => ctx.includes(phrase.toLowerCase()));
+      const topicMatches = trigger.topics.filter((topic) =>
+        entry.topics.some((entryTopic) => entryTopic.toLowerCase().includes(topic.toLowerCase())) ||
+        ctx.includes(topic.toLowerCase())
+      );
+      const excludeHit = trigger.excludeTerms.some((term) => tokens.has(term.toLowerCase()) || ctx.includes(term.toLowerCase()));
+      const regexHit = trigger.regex ? this.safeRegexTest(trigger.regex, context) : false;
+
+      if (excludeHit) continue;
+      if (termMatches.length > 0) {
+        score += Math.min(0.4, termMatches.length * 0.2);
+        reasons.push(`term:${termMatches.join(',')}`);
       }
+      if (phraseMatches.length > 0) {
+        score += Math.min(0.35, phraseMatches.length * 0.25);
+        reasons.push(`phrase:${phraseMatches.join(',')}`);
+      }
+      if (topicMatches.length > 0) {
+        score += Math.min(0.2, topicMatches.length * 0.1);
+        reasons.push(`topic:${topicMatches.join(',')}`);
+      }
+      if (regexHit) {
+        score += 0.35;
+        reasons.push('regex');
+      }
+
+      const totalSignals = [termMatches.length > 0, phraseMatches.length > 0, topicMatches.length > 0, regexHit].filter(Boolean).length;
+      const requiredSignals = trigger.match === 'all'
+        ? [trigger.terms.length > 0, trigger.phrases.length > 0, trigger.topics.length > 0, Boolean(trigger.regex)].filter(Boolean).length
+        : 1;
+      if (totalSignals < requiredSignals) continue;
+
+      const priority = trigger.priority ?? 0.5;
+      score *= 0.75 + priority;
+      if (score < (trigger.minScore ?? 0.25)) continue;
+
+      matches.push(proceduralMatchSchema.parse({ entry, score: Math.min(score, 2), reasons }));
     }
 
-    return triggered;
+    matches.sort((a, b) => b.score - a.score || (b.entry.importance - a.entry.importance));
+    return matches;
   }
 
   /**
@@ -589,6 +642,26 @@ Respond with ONLY a JSON object:
 
     // Default to episodic for everything else
     return 'episodic';
+  }
+
+  private normalizeTrigger(trigger: unknown): ProceduralTrigger | null {
+    if (!trigger) return null;
+    if (typeof trigger === 'string') {
+      return proceduralTriggerSchema.parse({ terms: [trigger], phrases: [trigger], match: 'any' });
+    }
+    if (typeof trigger === 'object') {
+      const parsed = proceduralTriggerSchema.safeParse(trigger);
+      return parsed.success ? parsed.data : null;
+    }
+    return null;
+  }
+
+  private safeRegexTest(pattern: string, context: string): boolean {
+    try {
+      return new RegExp(pattern, 'i').test(context);
+    } catch {
+      return false;
+    }
   }
 
   /**

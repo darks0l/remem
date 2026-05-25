@@ -196,11 +196,11 @@ declare const linkedMemoryQueryOptionsSchema: z.ZodObject<{
     limit: z.ZodDefault<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
     limit: number;
-    direction: "outgoing" | "incoming" | "both";
+    direction: "both" | "outgoing" | "incoming";
     types?: string[] | undefined;
 }, {
     limit?: number | undefined;
-    direction?: "outgoing" | "incoming" | "both" | undefined;
+    direction?: "both" | "outgoing" | "incoming" | undefined;
     types?: string[] | undefined;
 }>;
 type LinkedMemoryQueryOptions = z.infer<typeof linkedMemoryQueryOptionsSchema>;
@@ -215,16 +215,22 @@ declare const queryWithNeighborsOptionsSchema: z.ZodObject<{
     linkTypes: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
     includeBaseResults: z.ZodDefault<z.ZodBoolean>;
     neighborLimit: z.ZodDefault<z.ZodNumber>;
+    minNeighborScore: z.ZodDefault<z.ZodNumber>;
+    linkTypeWeights: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodNumber>>;
+    includePathDetails: z.ZodDefault<z.ZodBoolean>;
 }, "strip", z.ZodTypeAny, {
     limit: number;
     hops: 1 | 2;
     includeBaseResults: boolean;
     neighborLimit: number;
+    minNeighborScore: number;
+    includePathDetails: boolean;
     topics?: string[] | undefined;
     minAccessCount?: number | undefined;
     since?: number | undefined;
     until?: number | undefined;
     linkTypes?: string[] | undefined;
+    linkTypeWeights?: Record<string, number> | undefined;
 }, {
     topics?: string[] | undefined;
     limit?: number | undefined;
@@ -235,8 +241,34 @@ declare const queryWithNeighborsOptionsSchema: z.ZodObject<{
     linkTypes?: string[] | undefined;
     includeBaseResults?: boolean | undefined;
     neighborLimit?: number | undefined;
+    minNeighborScore?: number | undefined;
+    linkTypeWeights?: Record<string, number> | undefined;
+    includePathDetails?: boolean | undefined;
 }>;
 type QueryWithNeighborsOptions = z.infer<typeof queryWithNeighborsOptionsSchema>;
+declare const neighborPathSchema: z.ZodObject<{
+    fromId: z.ZodString;
+    toId: z.ZodString;
+    throughId: z.ZodString;
+    type: z.ZodString;
+    hop: z.ZodNumber;
+    score: z.ZodNumber;
+}, "strip", z.ZodTypeAny, {
+    type: string;
+    fromId: string;
+    toId: string;
+    throughId: string;
+    hop: number;
+    score: number;
+}, {
+    type: string;
+    fromId: string;
+    toId: string;
+    throughId: string;
+    hop: number;
+    score: number;
+}>;
+type NeighborPath = z.infer<typeof neighborPathSchema>;
 declare const modelConfigSchema: z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
     type: z.ZodLiteral<"bankr">;
     apiKey: z.ZodString;
@@ -320,15 +352,15 @@ declare const embeddingConfigSchema: z.ZodObject<{
     /** Whether to generate embeddings async in background (non-blocking store) */
     asyncEmbed: z.ZodDefault<z.ZodBoolean>;
 }, "strip", z.ZodTypeAny, {
+    enabled: boolean;
     baseUrl: string;
     model: string;
-    enabled: boolean;
     asyncEmbed: boolean;
     dimension?: number | undefined;
 }, {
+    enabled?: boolean | undefined;
     baseUrl?: string | undefined;
     model?: string | undefined;
-    enabled?: boolean | undefined;
     dimension?: number | undefined;
     asyncEmbed?: boolean | undefined;
 }>;
@@ -338,18 +370,41 @@ declare const postgresStorageConfigSchema: z.ZodObject<{
     schema: z.ZodOptional<z.ZodString>;
     tablePrefix: z.ZodOptional<z.ZodString>;
     ssl: z.ZodOptional<z.ZodUnion<[z.ZodBoolean, z.ZodRecord<z.ZodString, z.ZodUnknown>]>>;
+    pgvector: z.ZodOptional<z.ZodObject<{
+        enabled: z.ZodDefault<z.ZodBoolean>;
+        embeddingType: z.ZodDefault<z.ZodEnum<["memory", "layered", "both"]>>;
+        ivfflatLists: z.ZodDefault<z.ZodNumber>;
+    }, "strip", z.ZodTypeAny, {
+        enabled: boolean;
+        embeddingType: "memory" | "layered" | "both";
+        ivfflatLists: number;
+    }, {
+        enabled?: boolean | undefined;
+        embeddingType?: "memory" | "layered" | "both" | undefined;
+        ivfflatLists?: number | undefined;
+    }>>;
     pool: z.ZodOptional<z.ZodUnknown>;
 }, "strip", z.ZodTypeAny, {
     connectionString?: string | undefined;
     schema?: string | undefined;
     tablePrefix?: string | undefined;
     ssl?: boolean | Record<string, unknown> | undefined;
+    pgvector?: {
+        enabled: boolean;
+        embeddingType: "memory" | "layered" | "both";
+        ivfflatLists: number;
+    } | undefined;
     pool?: unknown;
 }, {
     connectionString?: string | undefined;
     schema?: string | undefined;
     tablePrefix?: string | undefined;
     ssl?: boolean | Record<string, unknown> | undefined;
+    pgvector?: {
+        enabled?: boolean | undefined;
+        embeddingType?: "memory" | "layered" | "both" | undefined;
+        ivfflatLists?: number | undefined;
+    } | undefined;
     pool?: unknown;
 }>;
 type PostgresStorageConfig = z.infer<typeof postgresStorageConfigSchema>;
@@ -361,18 +416,41 @@ declare const rememConfigSchema: z.ZodObject<{
         schema: z.ZodOptional<z.ZodString>;
         tablePrefix: z.ZodOptional<z.ZodString>;
         ssl: z.ZodOptional<z.ZodUnion<[z.ZodBoolean, z.ZodRecord<z.ZodString, z.ZodUnknown>]>>;
+        pgvector: z.ZodOptional<z.ZodObject<{
+            enabled: z.ZodDefault<z.ZodBoolean>;
+            embeddingType: z.ZodDefault<z.ZodEnum<["memory", "layered", "both"]>>;
+            ivfflatLists: z.ZodDefault<z.ZodNumber>;
+        }, "strip", z.ZodTypeAny, {
+            enabled: boolean;
+            embeddingType: "memory" | "layered" | "both";
+            ivfflatLists: number;
+        }, {
+            enabled?: boolean | undefined;
+            embeddingType?: "memory" | "layered" | "both" | undefined;
+            ivfflatLists?: number | undefined;
+        }>>;
         pool: z.ZodOptional<z.ZodUnknown>;
     }, "strip", z.ZodTypeAny, {
         connectionString?: string | undefined;
         schema?: string | undefined;
         tablePrefix?: string | undefined;
         ssl?: boolean | Record<string, unknown> | undefined;
+        pgvector?: {
+            enabled: boolean;
+            embeddingType: "memory" | "layered" | "both";
+            ivfflatLists: number;
+        } | undefined;
         pool?: unknown;
     }, {
         connectionString?: string | undefined;
         schema?: string | undefined;
         tablePrefix?: string | undefined;
         ssl?: boolean | Record<string, unknown> | undefined;
+        pgvector?: {
+            enabled?: boolean | undefined;
+            embeddingType?: "memory" | "layered" | "both" | undefined;
+            ivfflatLists?: number | undefined;
+        } | undefined;
         pool?: unknown;
     }>>;
     llm: z.ZodOptional<z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
@@ -444,15 +522,15 @@ declare const rememConfigSchema: z.ZodObject<{
         /** Whether to generate embeddings async in background (non-blocking store) */
         asyncEmbed: z.ZodDefault<z.ZodBoolean>;
     }, "strip", z.ZodTypeAny, {
+        enabled: boolean;
         baseUrl: string;
         model: string;
-        enabled: boolean;
         asyncEmbed: boolean;
         dimension?: number | undefined;
     }, {
+        enabled?: boolean | undefined;
         baseUrl?: string | undefined;
         model?: string | undefined;
-        enabled?: boolean | undefined;
         dimension?: number | undefined;
         asyncEmbed?: boolean | undefined;
     }>>;
@@ -463,6 +541,11 @@ declare const rememConfigSchema: z.ZodObject<{
         schema?: string | undefined;
         tablePrefix?: string | undefined;
         ssl?: boolean | Record<string, unknown> | undefined;
+        pgvector?: {
+            enabled: boolean;
+            embeddingType: "memory" | "layered" | "both";
+            ivfflatLists: number;
+        } | undefined;
         pool?: unknown;
     } | undefined;
     storageConfig?: Record<string, unknown> | undefined;
@@ -488,9 +571,9 @@ declare const rememConfigSchema: z.ZodObject<{
     adapter?: string | undefined;
     dbPath?: string | undefined;
     embeddings?: {
+        enabled: boolean;
         baseUrl: string;
         model: string;
-        enabled: boolean;
         asyncEmbed: boolean;
         dimension?: number | undefined;
     } | undefined;
@@ -500,6 +583,11 @@ declare const rememConfigSchema: z.ZodObject<{
         schema?: string | undefined;
         tablePrefix?: string | undefined;
         ssl?: boolean | Record<string, unknown> | undefined;
+        pgvector?: {
+            enabled?: boolean | undefined;
+            embeddingType?: "memory" | "layered" | "both" | undefined;
+            ivfflatLists?: number | undefined;
+        } | undefined;
         pool?: unknown;
     } | undefined;
     storage?: "sqlite" | "postgres" | "memory" | undefined;
@@ -526,9 +614,9 @@ declare const rememConfigSchema: z.ZodObject<{
     adapter?: string | undefined;
     dbPath?: string | undefined;
     embeddings?: {
+        enabled?: boolean | undefined;
         baseUrl?: string | undefined;
         model?: string | undefined;
-        enabled?: boolean | undefined;
         dimension?: number | undefined;
         asyncEmbed?: boolean | undefined;
     } | undefined;
@@ -1031,6 +1119,125 @@ declare const layeredMemoryEntrySchema: z.ZodObject<{
     supersededBy?: string | undefined;
 }>;
 type LayeredMemoryEntry = z.infer<typeof layeredMemoryEntrySchema>;
+declare const proceduralTriggerSchema: z.ZodObject<{
+    terms: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
+    phrases: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
+    topics: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
+    excludeTerms: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
+    regex: z.ZodOptional<z.ZodString>;
+    match: z.ZodDefault<z.ZodEnum<["any", "all"]>>;
+    minScore: z.ZodDefault<z.ZodNumber>;
+    priority: z.ZodDefault<z.ZodNumber>;
+}, "strip", z.ZodTypeAny, {
+    topics: string[];
+    terms: string[];
+    phrases: string[];
+    excludeTerms: string[];
+    match: "any" | "all";
+    minScore: number;
+    priority: number;
+    regex?: string | undefined;
+}, {
+    topics?: string[] | undefined;
+    terms?: string[] | undefined;
+    phrases?: string[] | undefined;
+    excludeTerms?: string[] | undefined;
+    regex?: string | undefined;
+    match?: "any" | "all" | undefined;
+    minScore?: number | undefined;
+    priority?: number | undefined;
+}>;
+type ProceduralTrigger = z.infer<typeof proceduralTriggerSchema>;
+declare const proceduralMatchSchema: z.ZodObject<{
+    entry: z.ZodObject<{
+        id: z.ZodString;
+        content: z.ZodString;
+        topics: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+        metadata: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+        createdAt: z.ZodNumber;
+        accessedAt: z.ZodNumber;
+        accessCount: z.ZodDefault<z.ZodNumber>;
+    } & {
+        layer: z.ZodDefault<z.ZodEnum<["episodic", "semantic", "identity", "procedural"]>>;
+        expiresAt: z.ZodOptional<z.ZodNumber>;
+        importance: z.ZodDefault<z.ZodNumber>;
+        validFrom: z.ZodOptional<z.ZodNumber>;
+        validUntil: z.ZodOptional<z.ZodNumber>;
+        supersedes: z.ZodOptional<z.ZodString>;
+        supersededBy: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        content: string;
+        topics: string[];
+        metadata: Record<string, unknown>;
+        id: string;
+        createdAt: number;
+        accessedAt: number;
+        accessCount: number;
+        layer: "episodic" | "semantic" | "identity" | "procedural";
+        importance: number;
+        expiresAt?: number | undefined;
+        validFrom?: number | undefined;
+        validUntil?: number | undefined;
+        supersedes?: string | undefined;
+        supersededBy?: string | undefined;
+    }, {
+        content: string;
+        id: string;
+        createdAt: number;
+        accessedAt: number;
+        topics?: string[] | undefined;
+        metadata?: Record<string, unknown> | undefined;
+        accessCount?: number | undefined;
+        layer?: "episodic" | "semantic" | "identity" | "procedural" | undefined;
+        expiresAt?: number | undefined;
+        importance?: number | undefined;
+        validFrom?: number | undefined;
+        validUntil?: number | undefined;
+        supersedes?: string | undefined;
+        supersededBy?: string | undefined;
+    }>;
+    score: z.ZodNumber;
+    reasons: z.ZodArray<z.ZodString, "many">;
+}, "strip", z.ZodTypeAny, {
+    score: number;
+    entry: {
+        content: string;
+        topics: string[];
+        metadata: Record<string, unknown>;
+        id: string;
+        createdAt: number;
+        accessedAt: number;
+        accessCount: number;
+        layer: "episodic" | "semantic" | "identity" | "procedural";
+        importance: number;
+        expiresAt?: number | undefined;
+        validFrom?: number | undefined;
+        validUntil?: number | undefined;
+        supersedes?: string | undefined;
+        supersededBy?: string | undefined;
+    };
+    reasons: string[];
+}, {
+    score: number;
+    entry: {
+        content: string;
+        id: string;
+        createdAt: number;
+        accessedAt: number;
+        topics?: string[] | undefined;
+        metadata?: Record<string, unknown> | undefined;
+        accessCount?: number | undefined;
+        layer?: "episodic" | "semantic" | "identity" | "procedural" | undefined;
+        expiresAt?: number | undefined;
+        importance?: number | undefined;
+        validFrom?: number | undefined;
+        validUntil?: number | undefined;
+        supersedes?: string | undefined;
+        supersededBy?: string | undefined;
+    };
+    reasons: string[];
+}>;
+type ProceduralMatch = z.infer<typeof proceduralMatchSchema>;
 declare const driftEventSchema: z.ZodObject<{
     driftResult: z.ZodObject<{
         score: z.ZodNumber;
@@ -1479,6 +1686,7 @@ interface MemoryStoreLike {
         results: QueryResult[];
         totalAvailable: number;
     }>;
+    supportsNativeVectorSearch?(): boolean;
     getEventLog(limit?: number): MemoryEvent[];
     persist(): void;
     close(): void | Promise<void>;
@@ -1601,12 +1809,13 @@ declare class LayerManager {
      * condition: when this text appears in context
      * action: what to do when triggered
      */
-    storeProcedural(input: StoreMemoryInput, trigger: string): LayeredMemoryEntry;
+    storeProcedural(input: StoreMemoryInput, trigger: string | Partial<ProceduralTrigger>): LayeredMemoryEntry;
     /**
      * Fire procedural rules matching the given context text.
      * Returns rules whose trigger keyword appears in the context.
      */
     fireProcedural(context: string): LayeredMemoryEntry[];
+    matchProcedural(context: string): ProceduralMatch[];
     /**
      * Get an entry by ID.
      */
@@ -1689,6 +1898,8 @@ declare class LayerManager {
      * Auto-assign layer based on content analysis.
      */
     private autoAssignLayer;
+    private normalizeTrigger;
+    private safeRegexTest;
     /**
      * Check if episodic layer is above 80% capacity and needs compression.
      */
@@ -1855,6 +2066,11 @@ interface PostgresStoreConfig {
     schema?: string;
     tablePrefix?: string;
     ssl?: boolean | Record<string, unknown>;
+    pgvector?: {
+        enabled?: boolean;
+        embeddingType?: 'memory' | 'layered' | 'both';
+        ivfflatLists?: number;
+    };
 }
 declare class PostgresMemoryStore implements MemoryStoreLike {
     private pool;
@@ -1864,8 +2080,10 @@ declare class PostgresMemoryStore implements MemoryStoreLike {
     private readonly schema;
     private readonly tablePrefix;
     private readonly config;
+    private pgvectorAvailable;
     constructor(config?: string | PostgresStoreConfig);
     init(): Promise<void>;
+    supportsNativeVectorSearch(): boolean;
     private safeIdentifier;
     private table;
     private ensureInitialized;
@@ -1908,6 +2126,12 @@ declare class PostgresMemoryStore implements MemoryStoreLike {
         results: QueryResult[];
         totalAvailable: number;
     }>;
+    private maybeEnablePgvector;
+    private ensureVectorColumn;
+    private backfillVectorRows;
+    private ensureVectorIndexes;
+    private semanticQueryPgvector;
+    private toPgvectorLiteral;
     getEventLog(limit?: number): MemoryEvent[];
     persist(): void;
     close(): Promise<void>;
@@ -2077,11 +2301,33 @@ declare class MemoryREPL {
  * Framework-agnostic HTTP interface for remote memory access
  */
 
+interface AdvancedMemoryRuntime {
+    queryWithNeighbors(query: string, options?: QueryWithNeighborsOptions): Promise<QueryResponse & {
+        linksTraversed: number;
+        paths?: NeighborPath[];
+    }>;
+    matchProcedural(context: string): ProceduralMatch[];
+    auditIdentityAlignment(sessionText: string): Promise<{
+        drift: DriftResult;
+        injection: string;
+        topStatements: Array<{
+            id: string;
+            text: string;
+            category: string;
+            weight: number;
+            source?: string;
+            createdAt: number;
+        }>;
+    }>;
+    usesNativeVectorSearch(): boolean;
+}
 interface HttpAdapterConfig {
     port?: number;
     host?: string;
     store: MemoryStoreLike;
     model?: ModelAbstraction;
+    /** Optional full ReMEM runtime for advanced graph/procedural/identity routes. */
+    memory?: AdvancedMemoryRuntime;
     /** Optional bearer token required for all non-OPTIONS requests. */
     authToken?: string;
     /** CORS origin. Defaults to localhost-only usage (no wildcard). */
@@ -2094,6 +2340,7 @@ declare class HttpAdapter {
     private engine;
     private store;
     private model?;
+    private memory?;
     private port;
     private host;
     private authToken?;
@@ -2384,7 +2631,22 @@ declare function createOpenClawAdapter(memory: ReMEM, options?: ReMEMAdapterOpti
         messageId?: string;
         metadata?: Record<string, unknown>;
     }): Promise<void>;
+    rememberDecision(decision: {
+        content: string;
+        sessionId?: string;
+        topics?: string[];
+        metadata?: Record<string, unknown>;
+    }): Promise<void>;
+    rememberProcedure(rule: {
+        content: string;
+        trigger: string | Record<string, unknown>;
+        topics?: string[];
+        metadata?: Record<string, unknown>;
+    }): Promise<void>;
     recallContext(query: string, queryOptions?: QueryOptions): Promise<string>;
+    recallProjectContext(query: string, optionsWithNeighbors?: QueryOptions & {
+        hops?: 1 | 2;
+    }): Promise<string>;
     query(query: string, queryOptions?: QueryOptions): Promise<QueryResponse>;
 };
 
@@ -2443,6 +2705,8 @@ declare class DriftDetector {
      * Asks the model: "Are you still aligned with these values?"
      */
     private detectLLMDrift;
+    private findSoftContradiction;
+    private escapeRegex;
 }
 declare class ConstitutionInjector {
     private constitution;
@@ -2591,6 +2855,7 @@ declare class ReMEM {
     unlinkMemories(linkId: string): Promise<boolean>;
     queryWithNeighbors(query: string, options?: QueryWithNeighborsOptions): Promise<QueryResponse & {
         linksTraversed: number;
+        paths?: NeighborPath[];
     }>;
     /**
      * Returns true if semantic embeddings are enabled and configured.
@@ -2600,6 +2865,8 @@ declare class ReMEM {
      * Returns the embedding service instance (if enabled).
      */
     getEmbeddingService(): EmbeddingService | undefined;
+    usesNativeVectorSearch(): boolean;
+    private defaultLinkWeight;
     /**
      * Get the layer manager for advanced layer/consolidation operations.
      */
@@ -2667,6 +2934,11 @@ declare class ReMEM {
      * Detect identity drift in the current session context.
      */
     detectDrift(sessionText: string): Promise<DriftResult>;
+    auditIdentityAlignment(sessionText: string): Promise<{
+        drift: DriftResult;
+        injection: string;
+        topStatements: ConstitutionStatement[];
+    }>;
     /**
      * Get constitution injection block if drift is detected.
      * Use this to prepend correction context to LLM messages.
@@ -2726,12 +2998,13 @@ declare class ReMEM {
      * Store a procedural memory — a behavior/rule triggered by a keyword.
      * Use when you learn a rule like "when X happens, always do Y".
      */
-    storeProcedural(input: StoreMemoryInput, trigger: string): Promise<QueryResult | null>;
+    storeProcedural(input: StoreMemoryInput, trigger: string | Partial<ProceduralTrigger>): Promise<QueryResult | null>;
     /**
      * Fire procedural rules matching the given context.
      * Returns rules whose trigger keyword appears in the context.
      */
     fireProcedural(context: string): QueryResult[];
+    matchProcedural(context: string): ProceduralMatch[];
     /**
      * Get the temporal history of an entry — trace its supersession chain.
      * Returns all versions from newest to oldest.
@@ -2867,4 +3140,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, ModelAbstraction, type ModelConfig, PostgresMemoryStore, type PostgresStorageConfig, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SnapshotExport, type SnapshotMeta, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, modelConfigSchema, postgresStorageConfigSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, storeMemoryInputSchema, uploadPackage };
+export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, ModelAbstraction, type ModelConfig, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SnapshotExport, type SnapshotMeta, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, modelConfigSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, storeMemoryInputSchema, uploadPackage };

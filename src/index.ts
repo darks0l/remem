@@ -27,6 +27,9 @@ import {
   rememConfigSchema,
   type LinkedMemoryQueryOptions,
   type MemoryLink,
+  type NeighborPath,
+  type ProceduralMatch,
+  type ProceduralTrigger,
   type QueryWithNeighborsOptions,
   type ReMEMConfig,
   type StoreMemoryInput,
@@ -236,23 +239,24 @@ export class ReMEM {
     return this._store.deleteLink(linkId);
   }
 
-  async queryWithNeighbors(query: string, options?: QueryWithNeighborsOptions): Promise<QueryResponse & { linksTraversed: number }> {
+  async queryWithNeighbors(query: string, options?: QueryWithNeighborsOptions): Promise<QueryResponse & { linksTraversed: number; paths?: NeighborPath[] }> {
     const opts = queryWithNeighborsOptionsSchema.parse(options ?? {});
     const base = await this.query(query, opts);
     const merged = new Map<string, QueryResult>();
+    const paths: NeighborPath[] = [];
 
     if (opts.includeBaseResults) {
       for (const result of base.results) merged.set(result.id, result);
     }
 
-    let frontier = base.results.map((r) => r.id);
-    const seen = new Set(frontier);
+    let frontier = base.results.map((r) => ({ id: r.id, sourceId: r.id, score: r.relevanceScore ?? 0.6 }));
+    const seen = new Set(frontier.map((item) => item.id));
     let linksTraversed = 0;
 
     for (let hop = 0; hop < opts.hops; hop++) {
-      const nextFrontier: string[] = [];
-      for (const id of frontier) {
-        const neighbors = await this.getLinkedMemories(id, {
+      const nextFrontier: Array<{ id: string; sourceId: string; score: number }> = [];
+      for (const item of frontier) {
+        const neighbors = await this.getLinkedMemories(item.id, {
           direction: 'both',
           types: opts.linkTypes,
           limit: opts.neighborLimit,
@@ -260,13 +264,35 @@ export class ReMEM {
         linksTraversed += neighbors.length;
 
         for (const neighbor of neighbors) {
-          if (!neighbor.memory || seen.has(neighbor.memory.id)) continue;
-          seen.add(neighbor.memory.id);
-          nextFrontier.push(neighbor.memory.id);
-          merged.set(neighbor.memory.id, {
+          if (!neighbor.memory) continue;
+
+          const linkWeight = opts.linkTypeWeights?.[neighbor.link.type] ?? this.defaultLinkWeight(neighbor.link.type);
+          const hopDecay = Math.max(0.2, 0.9 - hop * 0.15);
+          const neighborScore = Math.min(1.5, (item.score || 0.6) * hopDecay * linkWeight);
+          if (neighborScore < opts.minNeighborScore) continue;
+
+          if (opts.includePathDetails) {
+            paths.push({
+              fromId: item.sourceId,
+              toId: neighbor.memory.id,
+              throughId: item.id,
+              type: neighbor.link.type,
+              hop: hop + 1,
+              score: neighborScore,
+            });
+          }
+
+          const existing = merged.get(neighbor.memory.id);
+          const enriched: QueryResult = {
             ...neighbor.memory,
-            relevanceScore: Math.max(neighbor.memory.relevanceScore ?? 0, 0.6 - (hop * 0.15)),
-          });
+            relevanceScore: Math.max(existing?.relevanceScore ?? 0, neighborScore, neighbor.memory.relevanceScore ?? 0),
+          };
+          merged.set(neighbor.memory.id, enriched);
+
+          if (!seen.has(neighbor.memory.id)) {
+            seen.add(neighbor.memory.id);
+            nextFrontier.push({ id: neighbor.memory.id, sourceId: item.sourceId, score: neighborScore });
+          }
         }
       }
       frontier = nextFrontier;
@@ -283,6 +309,7 @@ export class ReMEM {
       query,
       tookMs: base.tookMs,
       linksTraversed,
+      ...(opts.includePathDetails ? { paths } : {}),
     };
   }
 
@@ -298,6 +325,28 @@ export class ReMEM {
    */
   getEmbeddingService(): EmbeddingService | undefined {
     return this.embeddingService;
+  }
+
+  usesNativeVectorSearch(): boolean {
+    return Boolean(this._store.supportsNativeVectorSearch?.());
+  }
+
+  private defaultLinkWeight(type: string): number {
+    switch (type) {
+      case 'supports':
+      case 'about':
+        return 1;
+      case 'same_project':
+      case 'same_person':
+        return 0.9;
+      case 'follows':
+      case 'caused_by':
+        return 0.8;
+      case 'contradicts':
+        return 0.55;
+      default:
+        return 0.75;
+    }
   }
 
   /**
@@ -450,6 +499,19 @@ export class ReMEM {
       };
     }
     return this.identity.detector.detectDrift(sessionText, { method: 'both' });
+  }
+
+  async auditIdentityAlignment(sessionText: string): Promise<{
+    drift: DriftResult;
+    injection: string;
+    topStatements: ConstitutionStatement[];
+  }> {
+    const drift = await this.detectDrift(sessionText);
+    return {
+      drift,
+      injection: this.getConstitutionInjection(drift),
+      topStatements: drift.violatingStatements.slice(0, 5),
+    };
   }
 
   /**
@@ -648,7 +710,7 @@ export class ReMEM {
    * Store a procedural memory — a behavior/rule triggered by a keyword.
    * Use when you learn a rule like "when X happens, always do Y".
    */
-  async storeProcedural(input: StoreMemoryInput, trigger: string): Promise<QueryResult | null> {
+  async storeProcedural(input: StoreMemoryInput, trigger: string | Partial<ProceduralTrigger>): Promise<QueryResult | null> {
     if (!this.layers) {
       await this.enableLayers();
     }
@@ -673,17 +735,20 @@ export class ReMEM {
    * Returns rules whose trigger keyword appears in the context.
    */
   fireProcedural(context: string): QueryResult[] {
-    if (!this.layers) return [];
-    const triggered = this.layers.fireProcedural(context);
-    return triggered.map((entry) => ({
-      id: entry.id,
-      content: entry.content,
-      topics: entry.topics,
-      relevanceScore: entry.importance,
-      createdAt: entry.createdAt,
-      accessedAt: entry.accessedAt,
-      accessCount: entry.accessCount,
+    return this.matchProcedural(context).map((match) => ({
+      id: match.entry.id,
+      content: match.entry.content,
+      topics: match.entry.topics,
+      relevanceScore: match.score,
+      createdAt: match.entry.createdAt,
+      accessedAt: match.entry.accessedAt,
+      accessCount: match.entry.accessCount,
     }));
+  }
+
+  matchProcedural(context: string): ProceduralMatch[] {
+    if (!this.layers) return [];
+    return this.layers.matchProcedural(context);
   }
 
   /**

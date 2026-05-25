@@ -1,7 +1,7 @@
 {
   "name": "@darksol/remem",
-  "version": "0.8.0",
-  "description": "Recursive Memory for AI Agents — RLM-style queryable memory substrate with semantic vector search, persistent layers, identity duplication/infection, snapshots, and multi-agent scoping",
+  "version": "0.8.5",
+  "description": "Persistent, queryable memory for AI agents with graph recall, procedural rules, identity audits, snapshots, and multi-agent scoping",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -21,17 +21,36 @@
     "prepublishOnly": "npm run lint && npm test && npm run build && npm pack --dry-run"
   },
   "keywords": [
-    "memory",
-    "agent",
-    "rlm",
-    "context",
     "ai",
+    "agent",
+    "agent-memory",
+    "context",
+    "embeddings",
     "llm",
-    "bankr",
-    "recursive-memory"
+    "memory",
+    "memory-graph",
+    "multi-agent",
+    "postgres",
+    "procedural-memory",
+    "rag",
+    "recursive-memory",
+    "rlm",
+    "semantic-search",
+    "sqlite",
+    "typescript",
+    "identity-memory",
+    "vector-search"
   ],
   "author": "DARKSOL",
   "license": "MIT",
+  "homepage": "https://github.com/darks0l/remem#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/darks0l/remem.git"
+  },
+  "bugs": {
+    "url": "https://github.com/darks0l/remem/issues"
+  },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/pg": "^8.20.0",

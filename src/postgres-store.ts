@@ -26,6 +26,11 @@ export interface PostgresStoreConfig {
   schema?: string;
   tablePrefix?: string;
   ssl?: boolean | Record<string, unknown>;
+  pgvector?: {
+    enabled?: boolean;
+    embeddingType?: 'memory' | 'layered' | 'both';
+    ivfflatLists?: number;
+  };
 }
 
 type PgPoolConstructor = new (config?: Record<string, unknown>) => Pool;
@@ -40,6 +45,7 @@ export class PostgresMemoryStore implements MemoryStoreLike {
   private readonly schema: string;
   private readonly tablePrefix: string;
   private readonly config: PostgresStoreConfig;
+  private pgvectorAvailable = false;
 
   constructor(config: string | PostgresStoreConfig = {}) {
     this.config = typeof config === 'string' ? { connectionString: config } : config;
@@ -63,6 +69,10 @@ export class PostgresMemoryStore implements MemoryStoreLike {
 
     await this.initTables();
     this.initialized = true;
+  }
+
+  supportsNativeVectorSearch(): boolean {
+    return this.pgvectorAvailable;
   }
 
   private safeIdentifier(value: string): string {
@@ -175,6 +185,8 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     `);
     await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_emb_memory" ON ${this.table('embeddings')} (memory_id)`);
     await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_emb_type" ON ${this.table('embeddings')} (embedding_type)`);
+
+    await this.maybeEnablePgvector();
 
     await this.pgQuery(`
       CREATE TABLE IF NOT EXISTS ${this.table('events')} (
@@ -485,6 +497,9 @@ export class PostgresMemoryStore implements MemoryStoreLike {
   }
 
   async storeEmbedding(memoryId: string, base64: string, dimension: number, model: string, type: 'memory' | 'layered' = 'memory'): Promise<void> {
+    const vectorValue = this.pgvectorAvailable
+      ? this.toPgvectorLiteral(EmbeddingService.decodeVector(base64, dimension))
+      : null;
     await this.pgQuery(
       `INSERT INTO ${this.table('embeddings')} (id, memory_id, vector_base64, dimension, model, created_at, embedding_type)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
@@ -492,6 +507,12 @@ export class PostgresMemoryStore implements MemoryStoreLike {
         dimension=EXCLUDED.dimension, model=EXCLUDED.model, embedding_type=EXCLUDED.embedding_type`,
       [randomUUID(), memoryId, base64, dimension, model, Date.now(), type]
     );
+    if (this.pgvectorAvailable && vectorValue) {
+      await this.pgQuery(
+        `UPDATE ${this.table('embeddings')} SET vector_value = $1::vector WHERE memory_id = $2 AND embedding_type = $3`,
+        [vectorValue, memoryId, type]
+      ).catch(() => undefined);
+    }
   }
 
   async getEmbedding(memoryId: string): Promise<{ base64: string; dimension: number } | null> {
@@ -505,6 +526,11 @@ export class PostgresMemoryStore implements MemoryStoreLike {
   }
 
   async semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions): Promise<{ results: QueryResult[]; totalAvailable: number }> {
+    if (queryVector && this.pgvectorAvailable) {
+      const native = await this.semanticQueryPgvector(queryText, queryVector, opts);
+      if (native) return native;
+    }
+
     const limit = opts?.limit ?? 10;
     const where: string[] = [];
     const params: unknown[] = [];
@@ -528,6 +554,101 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     }
     scored.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
     return { results: scored.slice(0, limit), totalAvailable: scored.length };
+  }
+
+  private async maybeEnablePgvector(): Promise<void> {
+    if (!this.config.pgvector?.enabled) return;
+
+    try {
+      await this.pgQuery('CREATE EXTENSION IF NOT EXISTS vector');
+      const ext = await this.pgQuery<{ exists: boolean }>("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') AS exists");
+      this.pgvectorAvailable = Boolean(ext.rows[0]?.exists);
+      if (!this.pgvectorAvailable) return;
+
+      await this.ensureVectorColumn();
+      await this.backfillVectorRows();
+      await this.ensureVectorIndexes();
+    } catch {
+      this.pgvectorAvailable = false;
+    }
+  }
+
+  private async ensureVectorColumn(): Promise<void> {
+    await this.pgQuery(`ALTER TABLE ${this.table('embeddings')} ADD COLUMN IF NOT EXISTS vector_value vector`);
+  }
+
+  private async backfillVectorRows(): Promise<void> {
+    const rows = await this.pgQuery<{ memory_id: string; vector_base64: string; dimension: number }>(
+      `SELECT memory_id, vector_base64, dimension FROM ${this.table('embeddings')} WHERE vector_value IS NULL`
+    );
+    for (const row of rows.rows) {
+      try {
+        const decoded = EmbeddingService.decodeVector(row.vector_base64, Number(row.dimension));
+        await this.pgQuery(
+          `UPDATE ${this.table('embeddings')} SET vector_value = $1::vector WHERE memory_id = $2`,
+          [this.toPgvectorLiteral(decoded), row.memory_id]
+        );
+      } catch {
+        // skip malformed historical vectors
+      }
+    }
+  }
+
+  private async ensureVectorIndexes(): Promise<void> {
+    const embeddingType = this.config.pgvector?.embeddingType ?? 'memory';
+    const lists = this.config.pgvector?.ivfflatLists ?? 100;
+    const targets = embeddingType === 'both' ? ['memory', 'layered'] : [embeddingType];
+
+    for (const target of targets) {
+      await this.pgQuery(
+        `CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_emb_${target}_vector_ivfflat" ON ${this.table('embeddings')} USING ivfflat (vector_value vector_cosine_ops) WITH (lists = ${lists}) WHERE embedding_type = '${target}' AND vector_value IS NOT NULL`
+      );
+    }
+  }
+
+  private async semanticQueryPgvector(_queryText: string, queryVector: number[], opts?: QueryOptions): Promise<{ results: QueryResult[]; totalAvailable: number } | null> {
+    const limit = opts?.limit ?? 10;
+    const vectorLiteral = this.toPgvectorLiteral(queryVector);
+    const embeddingType = this.config.pgvector?.embeddingType ?? 'memory';
+    if (embeddingType !== 'memory' && embeddingType !== 'both') return null;
+
+    const where: string[] = [];
+    const params: unknown[] = [vectorLiteral];
+    let idx = 2;
+    if (opts?.topics && opts.topics.length > 0) { where.push(`m.topics ?| $${idx}::text[]`); params.push(opts.topics); idx++; }
+    if (opts?.since) { where.push(`m.created_at >= $${idx++}`); params.push(opts.since); }
+    if (opts?.until) { where.push(`m.created_at <= $${idx++}`); params.push(opts.until); }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const filterSql = where.length ? `AND ${where.join(' AND ')}` : '';
+    const count = await this.pgQuery<{ count: string }>(`SELECT COUNT(*)::text AS count FROM ${this.table('memory')} m ${whereSql}`, params.slice(1));
+    const result = await this.pgQuery<Record<string, unknown>>(
+      `SELECT m.id, m.content, m.topics, m.created_at, m.accessed_at, m.access_count,
+              1 - (e.vector_value <=> $1::vector) AS semantic_score
+         FROM ${this.table('memory')} m
+         JOIN ${this.table('embeddings')} e ON e.memory_id = m.id
+        WHERE e.embedding_type = 'memory' AND e.vector_value IS NOT NULL ${filterSql}
+        ORDER BY e.vector_value <=> $1::vector ASC
+        LIMIT ${limit}`,
+      params
+    );
+
+    return {
+      results: result.rows.map((row) => ({
+        id: row.id as string,
+        content: row.content as string,
+        topics: this.parseJson(row.topics) as string[],
+        relevanceScore: Number(row.semantic_score),
+        createdAt: Number(row.created_at),
+        accessedAt: Number(row.accessed_at),
+        accessCount: Number(row.access_count),
+      })),
+      totalAvailable: Number(count.rows[0]?.count ?? 0),
+    };
+  }
+
+  private toPgvectorLiteral(vector: number[]): string {
+    return `[${vector.map((n) => Number.isFinite(n) ? Number(n).toString() : '0').join(',')}]`;
   }
 
   getEventLog(limit: number = 100): MemoryEvent[] {

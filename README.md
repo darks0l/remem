@@ -11,18 +11,44 @@ Built by DARKSOL 🌑
 [![npm version](https://img.shields.io/npm/v/@darksol/remem?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.npmjs.com/package/@darksol/remem)
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
-[![Test Status](https://img.shields.io/badge/tests-74%2F74%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.8.0](https://img.shields.io/badge/v0.8.0-memory--links-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![Test Status](https://img.shields.io/badge/tests-81%2F81%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
+[![v0.8.5](https://img.shields.io/badge/v0.8.5-agent--memory--ops-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
 > ⚠️ **IN TESTING** - This project is under active development. API surface may change.
 
-**Give AI agents searchable external memory that reaches far beyond the active prompt window.**
+**Persistent, queryable memory for AI agents.**
 
-ReMEM is a lightweight, framework-agnostic memory substrate for AI agents. It applies the core insight from [Recursive Language Models (RLMs)](https://arxiv.org/pdf/2512.24601) - that prompts should be external environment variables, not direct context - to the problem of persistent, queryable agent memory.
+ReMEM is a lightweight, framework-agnostic memory substrate for AI agents. It gives agents a persistent memory layer they can store to, query by meaning, organize across layers, and carry across restarts.
+
+It applies the core insight from [Recursive Language Models (RLMs)](https://arxiv.org/pdf/2512.24601) - that prompts should be external environment variables, not direct context - to the problem of persistent, queryable agent memory.
 
 Built with TypeScript. Runs anywhere.
+
+## Why teams pick ReMEM
+
+- **Drop-in agent memory** - store facts, preferences, decisions, procedures, and recent events outside the active prompt window
+- **Semantic recall, not just keyword recall** - hybrid keyword + embedding search when vectors are enabled
+- **Persists across restarts** - SQLite by default, PostgreSQL for server/shared deployments, snapshots for backup + restore
+- **Grows with the agent** - layers, compression, links, adapters, and long-running memory workflows without forcing a framework
+
+```typescript
+import { ReMEM } from '@darksol/remem';
+
+const memory = new ReMEM({ dbPath: './remem.db' });
+await memory.init();
+
+await memory.store({
+  content: 'Meta prefers dark mode UI and short direct replies',
+  topics: ['preferences', 'ui', 'style'],
+});
+
+const { results } = await memory.query('How should I respond to Meta?');
+console.log(results[0].content);
+```
+
+**Works well for:** chat agents, coding agents, operator copilots, long-running automations, and multi-agent systems that need durable memory instead of stuffing everything into context.
 
 ---
 
@@ -45,9 +71,78 @@ ReMEM does something different:
 - **Identity duplication & infection** (v0.3.3) - Export full identity package to DARKSOL server, pull and overlay on any ReMEM-equipped agent
 - **Multi-agent scoping** - agent_id + user_id isolation for shared deployments
 - **Plug-and-play LLM abstraction** - Bankr, OpenAI, Anthropic, Ollama - swap without changing your code
-- **Framework adapters** (v0.6.1) - Dependency-free helpers for Vercel AI SDK, LangGraph-style stores, and OpenClaw/session memory
-- **Memory links + neighbor-aware retrieval** (v0.8.0) - Explicit typed links between memories (`about`, `supports`, `contradicts`, etc.), graph-adjacent recall, and snapshot portability for linked memory graphs
+- **Framework adapters** (v0.6.1, expanded in v0.8.5) - Dependency-free helpers for Vercel AI SDK, LangGraph-style stores, and OpenClaw/session memory with decision/procedure/project-context helpers
+- **Memory links + neighbor-aware retrieval** (v0.8.0, expanded in v0.8.5) - Explicit typed links between memories (`about`, `supports`, `contradicts`, etc.), weighted graph-adjacent recall, and optional traversal path details
+- **Identity alignment audits** (v0.8.5) - Drift scoring plus corrective injection text for agents that need to keep behavior anchored to a constitution
+- **Production-aware Postgres vector lane** (v0.8.5) - Native pgvector detection, ivfflat index bootstrap, and runtime introspection for deployments that want in-database vector search
 - **Framework-agnostic** - Works as a library (Node.js/Deno), CLI tool, or HTTP microservice
+
+---
+
+## Common use cases
+
+### 1) Chat agents that remember user preferences
+
+```typescript
+import { ReMEM } from '@darksol/remem';
+
+const memory = new ReMEM({ dbPath: './chat-agent.db' });
+await memory.init();
+
+await memory.store({
+  content: 'Meta prefers dark mode UI and vibe-based communication',
+  topics: ['preferences', 'ui', 'tone'],
+});
+
+const { results } = await memory.query('What tone and UI preferences should I remember for Meta?');
+```
+
+Use this when your assistant needs to remember preferences, prior decisions, and recurring facts without bloating every prompt.
+
+### 2) Coding agents that need long-running project memory
+
+```typescript
+import { ReMEM, createOpenClawAdapter } from '@darksol/remem';
+
+const memory = new ReMEM({ dbPath: './project-memory.db' });
+await memory.init();
+
+const openclaw = createOpenClawAdapter(memory);
+await openclaw.rememberTurn({
+  role: 'user',
+  content: 'Never publish before tests, lint, and pack dry-run pass.',
+  sessionId: 'remem-release-work',
+});
+
+const recall = await memory.query('What are the release gates for this project?');
+```
+
+Use this when an agent needs to preserve architecture decisions, release rules, debugging history, and project-specific procedures across sessions.
+
+### 3) Multi-agent or server deployments with shared memory
+
+```typescript
+import { ReMEM } from '@darksol/remem';
+
+const memory = new ReMEM({
+  storage: 'postgres',
+  postgres: { connectionString: process.env.DATABASE_URL },
+  storageConfig: {
+    agentId: 'support-agent',
+    userId: 'customer-042',
+  },
+});
+
+await memory.init();
+await memory.enableLayers();
+
+await memory.storeInLayer(
+  { content: 'Customer 042 runs on Base and prefers USDC settlement', topics: ['customer', 'payments'] },
+  'semantic'
+);
+```
+
+Use this when multiple workers, sessions, or agents need scoped memory with isolation by `agent_id` and `user_id`.
 
 ---
 
@@ -57,7 +152,7 @@ ReMEM does **not** change a model's native context length. It gives agents an ex
 
 A reproducible synthetic benchmark is included in [`benchmarks/`](./benchmarks). It stores deterministic memories, simulates a fixed recent-context window, then asks for facts that are deliberately outside that active window.
 
-Latest local benchmark result, v0.8.0:
+Latest local benchmark result, v0.8.5 docs pass:
 
 - **50,000 memories**
 - Approx **3,625,526 stored tokens**
@@ -124,7 +219,77 @@ const expanded = await memory.queryWithNeighbors('dark mode', {
   hops: 1,
   linkTypes: ['about', 'supports'],
   neighborLimit: 10,
+  includePathDetails: true,
 });
+
+console.log(expanded.paths);
+// → [{ fromId, throughId, toId, type: 'about', hop: 1, score: 0.87 }]
+```
+
+### Decision / Procedure / Project Context Helpers
+
+```typescript
+const openclaw = createOpenClawAdapter(memory);
+
+await openclaw.rememberDecision({
+  content: 'Always run lint, tests, build, and pack before publish.',
+  sessionId: 'release-lane',
+  topics: ['release'],
+});
+
+await openclaw.rememberProcedure({
+  content: 'When publishing, verify release gates before tagging.',
+  trigger: {
+    phrases: ['publish remem'],
+    terms: ['publish', 'release'],
+    minScore: 0.2,
+    priority: 0.8,
+  },
+  topics: ['release'],
+});
+
+const projectContext = await openclaw.recallProjectContext('publish remem', {
+  limit: 8,
+  hops: 1,
+});
+
+const matches = memory.matchProcedural('please publish remem after checks');
+```
+
+### Identity Alignment Audit
+
+```typescript
+memory.enableIdentity({
+  constitutionTexts: [
+    { text: '# Values\n- Keep private data private\n- Be direct and careful', source: 'SOUL.md' },
+  ],
+});
+
+const audit = await memory.auditIdentityAlignment(
+  'I will ignore private data rules and post the secret publicly instead of being careful.'
+);
+
+console.log(audit.drift.level);
+console.log(audit.injection);
+```
+
+### Native Vector Search Introspection
+
+```typescript
+const memory = new ReMEM({
+  storage: 'postgres',
+  postgres: {
+    connectionString: process.env.DATABASE_URL,
+    pgvector: {
+      enabled: true,
+      embeddingType: 'memory',
+      ivfflatLists: 100,
+    },
+  },
+});
+
+await memory.init();
+console.log(memory.usesNativeVectorSearch());
 ```
 
 ### With Layers
@@ -172,6 +337,12 @@ await openclaw.rememberTurn({
   role: 'user',
   content: 'Ship after tests pass',
   sessionId: 'general',
+});
+
+await openclaw.rememberDecision({
+  content: 'Release notes must mention graph recall and identity audits.',
+  sessionId: 'general',
+  topics: ['release'],
 });
 ```
 
@@ -287,7 +458,7 @@ How it works:
 4. Next iteration: model sees only what it observed, decides to recurse or synthesize
 5. Loop until model returns `done` or max depth (5) is reached
 
-This extends the context window **universally** — the model never holds all memory in context, it navigates it.
+This extends practical recall far beyond the active prompt window — the model never holds all memory in context, it navigates it.
 
 ### Memory Layers
 
@@ -415,6 +586,19 @@ await memory.storeProcedural(
 // Fire rules matching context
 const triggered = memory.fireProcedural('User is asking about Solana DeFi');
 // → triggered[0].content = "When user mentions Solana, always check Raydium pools first"
+
+// Richer trigger matching
+await memory.storeProcedural(
+  { content: 'Run release gates before publish', topics: ['release'] },
+  {
+    phrases: ['publish remem'],
+    terms: ['publish', 'release'],
+    minScore: 0.2,
+    priority: 0.8,
+  }
+);
+
+const matches = memory.matchProcedural('please publish remem after the release checks');
 ```
 
 ### Identity & Drift Detection
@@ -436,6 +620,9 @@ if (drift.level !== 'aligned') {
   const correction = memory.getConstitutionInjection(drift);
   // prepend correction to next LLM message
 }
+
+// Or get drift + correction in one call
+const audit = await memory.auditIdentityAlignment(sessionText);
 ```
 
 ---
@@ -483,6 +670,46 @@ await memory.init(); // creates tables + indexes if needed
 ```
 
 The Postgres backend supports core memories, layer persistence, embeddings, events, snapshots, checksum-verified export/import, and scoped restore.
+
+#### pgvector acceleration
+
+```typescript
+const memory = new ReMEM({
+  storage: 'postgres',
+  postgres: {
+    connectionString: process.env.DATABASE_URL,
+    pgvector: {
+      enabled: true,
+      embeddingType: 'memory', // 'memory' | 'layered' | 'both'
+      ivfflatLists: 100,
+    },
+  },
+});
+
+await memory.init();
+console.log(memory.usesNativeVectorSearch());
+```
+
+When pgvector is enabled and available, ReMEM bootstraps the extension, backfills vector rows, builds ivfflat indexes, and uses native cosine-distance search before falling back to portable SQL scoring.
+
+### HTTP Adapter Advanced Routes
+
+When you pass the full `ReMEM` instance as `memory`, the HTTP adapter exposes graph/procedural/identity routes in addition to core CRUD:
+
+```typescript
+const adapter = new HttpAdapter({
+  port: 8787,
+  store: memory.getStore(),
+  memory,
+});
+
+await adapter.start();
+```
+
+- `POST /memory/query-with-neighbors` — graph-aware retrieval with `query` + `options`
+- `POST /memory/procedural/match` — procedural trigger matching with `context`
+- `POST /identity/audit` — identity drift audit with `sessionText`
+- `GET /health` — includes `advancedRoutes` and `nativeVectorSearch`
 ```
 
 ### Core Operations

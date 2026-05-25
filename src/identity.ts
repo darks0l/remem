@@ -283,53 +283,47 @@ export class DriftDetector {
     const statements = this.constitution.getStatements();
     const lowerText = sessionText.toLowerCase();
 
-    // Negation patterns that might indicate drift
     const negationPatterns = [
-      /\bnot\s+(?:a|I|me|my)\b/i,
+      /\bnot\s+(?:a|i|me|my)\b/i,
       /\bdon't\s+think\b/i,
       /\bno\s+longer\b/i,
       /\bchanged\s+my\s+mind\b/i,
       /\bactually\b.*\b(not|no)\b/i,
+      /\bignore\b/i,
+      /\bwhatever\b/i,
+      /\bbreak\b.*\brule/i,
     ];
 
     const negationMatches = negationPatterns.filter((p) => p.test(lowerText));
-    const hasNegation = negationMatches.length > 0;
-
-    // Find violating statements
     const violatingStatements: ConstitutionStatement[] = [];
+    const reasoningParts: string[] = [];
+    let score = 0;
 
     for (const statement of statements) {
       const statementLower = statement.text.toLowerCase();
+      const keywords = statementLower
+        .split(/[^a-z0-9]+/i)
+        .filter((token) => token.length >= 4)
+        .slice(0, 8);
+      const keywordHits = keywords.filter((keyword) => lowerText.includes(keyword));
+      const negatedNearKeyword = keywords.some((keyword) => new RegExp(`(?:not|never|no longer|ignore|break)\\W+(?:\\w+\\W+){0,3}${this.escapeRegex(keyword)}`, 'i').test(lowerText));
+      const softContradiction = this.findSoftContradiction(statementLower, lowerText);
 
-      // Check for direct negation of a statement
-      const negationVariants = [
-        statementLower.replace(/^(i\s+|you\s+|we\s+)/i, 'not $1'),
-        `not ${statementLower}`,
-        `i don't ${statementLower.replace(/^(i\s+)/, '')}`,
-      ];
-
-      for (const variant of negationVariants) {
-        if (lowerText.includes(variant.slice(0, 50))) {
-          violatingStatements.push(statement);
-          break;
-        }
+      if (negatedNearKeyword || softContradiction) {
+        violatingStatements.push(statement);
+        score += Math.min(0.35, 0.12 + statement.weight * 0.35 + keywordHits.length * 0.03);
+        reasoningParts.push(`${statement.category} drift near: ${statement.text.slice(0, 48)}`);
       }
     }
 
-    // Calculate score
-    let score = 0;
-    const reasoningParts: string[] = [];
-
-    if (hasNegation) {
-      score += 0.15;
-      reasoningParts.push('negation patterns detected');
+    if (negationMatches.length > 0) {
+      score += Math.min(0.2, negationMatches.length * 0.05);
+      reasoningParts.push('negation / override language detected');
     }
 
-    if (violatingStatements.length > 0) {
-      const weightedSum = violatingStatements.reduce((sum, s) => sum + s.weight, 0);
-      score += Math.min(weightedSum / Math.max(statements.length, 1), 0.5);
-      reasoningParts.push(`${violatingStatements.length} value contradictions`);
-    }
+    const uniqueViolations = violatingStatements.filter((statement, index, list) =>
+      list.findIndex((candidate) => candidate.id === statement.id) === index
+    );
 
     const level: DriftResult['level'] =
       score >= this.criticalThreshold
@@ -343,7 +337,7 @@ export class DriftDetector {
     return {
       score: Math.min(score, 1),
       level,
-      violatingStatements,
+      violatingStatements: uniqueViolations,
       reasoning: reasoningParts.join('; ') || 'no violations',
       detectedAt: Date.now(),
     };
@@ -443,6 +437,23 @@ Evaluate alignment. Return ONLY JSON.`,
     } catch {
       return null;
     }
+  }
+
+  private findSoftContradiction(statementLower: string, sessionLower: string): boolean {
+    const contrastPairs: Array<[RegExp, RegExp]> = [
+      [/\balways\b/i, /\bnever\b/i],
+      [/\bnever\b/i, /\balways\b/i],
+      [/\bprivate\b/i, /\bpublic\b/i],
+      [/\bdirect\b/i, /\bhedge\b/i],
+      [/\bcareful\b/i, /\breckless\b/i],
+      [/\brespect\b/i, /\bignore\b/i],
+    ];
+
+    return contrastPairs.some(([left, right]) => left.test(statementLower) && right.test(sessionLower));
+  }
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }
 

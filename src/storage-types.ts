@@ -64,6 +64,7 @@ export interface MemoryStoreLike {
   getEmbedding(memoryId: string): Promise<{ base64: string; dimension: number } | null>;
   deleteEmbedding(memoryId: string): Promise<void>;
   semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions): Promise<{ results: QueryResult[]; totalAvailable: number }>;
+  supportsNativeVectorSearch?(): boolean;
   getEventLog(limit?: number): MemoryEvent[];
   persist(): void;
   close(): void | Promise<void>;

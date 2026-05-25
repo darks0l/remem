@@ -178,8 +178,69 @@ export function createOpenClawAdapter(memory: ReMEM, options: ReMEMAdapterOption
       }, options.defaultTopic ?? 'openclaw'));
     },
 
+    async rememberDecision(decision: {
+      content: string;
+      sessionId?: string;
+      topics?: string[];
+      metadata?: Record<string, unknown>;
+    }): Promise<void> {
+      const topics = [
+        ...(decision.topics ?? []),
+        ...(decision.sessionId ? [`session:${decision.sessionId}`] : []),
+        'decision',
+      ];
+      const metadata = {
+        ...(decision.metadata ?? {}),
+        source: 'openclaw.decision',
+      };
+
+      await memory.store({
+        content: decision.content,
+        topics,
+        metadata,
+      });
+
+      await memory.storeInLayer({
+        content: decision.content,
+        topics,
+        metadata,
+      }, 'semantic');
+    },
+
+    async rememberProcedure(rule: {
+      content: string;
+      trigger: string | Record<string, unknown>;
+      topics?: string[];
+      metadata?: Record<string, unknown>;
+    }): Promise<void> {
+      await memory.storeProcedural({
+        content: rule.content,
+        topics: [...(rule.topics ?? []), 'procedure'],
+        metadata: {
+          ...(rule.metadata ?? {}),
+          source: 'openclaw.procedure',
+        },
+      }, rule.trigger as string | Record<string, unknown>);
+    },
+
     async recallContext(query: string, queryOptions: QueryOptions = { limit: options.defaultLimit ?? 8 }): Promise<string> {
       const response = await memory.query(query, queryOptions);
+      return response.results.map((result) => `- ${result.content}`).join('\n');
+    },
+
+    async recallProjectContext(query: string, optionsWithNeighbors: QueryOptions & { hops?: 1 | 2 } = { limit: options.defaultLimit ?? 8 }): Promise<string> {
+      const response = await memory.queryWithNeighbors(query, {
+        limit: optionsWithNeighbors.limit ?? (options.defaultLimit ?? 8),
+        topics: optionsWithNeighbors.topics,
+        minAccessCount: optionsWithNeighbors.minAccessCount,
+        since: optionsWithNeighbors.since,
+        until: optionsWithNeighbors.until,
+        hops: optionsWithNeighbors.hops ?? 1,
+        includeBaseResults: true,
+        neighborLimit: options.defaultLimit ?? 8,
+        minNeighborScore: 0.2,
+        includePathDetails: false,
+      });
       return response.results.map((result) => `- ${result.content}`).join('\n');
     },
 

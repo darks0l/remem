@@ -3,17 +3,30 @@
  * Framework-agnostic HTTP interface for remote memory access
  */
 
-import type { QueryOptions } from './types.js';
-import { storeMemoryInputSchema } from './types.js';
+import type { DriftResult, NeighborPath, ProceduralMatch, QueryOptions, QueryResponse, QueryWithNeighborsOptions } from './types.js';
+import { queryWithNeighborsOptionsSchema, storeMemoryInputSchema } from './types.js';
 import type { MemoryStoreLike } from './storage-types.js';
 import { ModelAbstraction } from './model.js';
 import { QueryEngine } from './query.js';
+
+export interface AdvancedMemoryRuntime {
+  queryWithNeighbors(query: string, options?: QueryWithNeighborsOptions): Promise<QueryResponse & { linksTraversed: number; paths?: NeighborPath[] }>;
+  matchProcedural(context: string): ProceduralMatch[];
+  auditIdentityAlignment(sessionText: string): Promise<{
+    drift: DriftResult;
+    injection: string;
+    topStatements: Array<{ id: string; text: string; category: string; weight: number; source?: string; createdAt: number }>;
+  }>;
+  usesNativeVectorSearch(): boolean;
+}
 
 export interface HttpAdapterConfig {
   port?: number;
   host?: string;
   store: MemoryStoreLike;
   model?: ModelAbstraction;
+  /** Optional full ReMEM runtime for advanced graph/procedural/identity routes. */
+  memory?: AdvancedMemoryRuntime;
   /** Optional bearer token required for all non-OPTIONS requests. */
   authToken?: string;
   /** CORS origin. Defaults to localhost-only usage (no wildcard). */
@@ -32,6 +45,7 @@ export class HttpAdapter {
   private engine: QueryEngine;
   private store: MemoryStoreLike;
   private model?: ModelAbstraction;
+  private memory?: AdvancedMemoryRuntime;
   private port: number;
   private host: string;
   private authToken?: string;
@@ -41,6 +55,7 @@ export class HttpAdapter {
   constructor(config: HttpAdapterConfig) {
     this.store = config.store;
     this.model = config.model;
+    this.memory = config.memory;
     this.engine = new QueryEngine({ store: this.store, model: this.model });
     this.port = config.port ?? 8787;
     this.host = config.host ?? '127.0.0.1';
@@ -128,6 +143,46 @@ export class HttpAdapter {
       const n = parseInt(url.searchParams.get('n') ?? '10', 10);
       const results = await this.engine.getRecent(n);
       return { status: 200, body: { results } };
+    }
+
+    // POST /memory/query-with-neighbors — graph-aware retrieval
+    if (method === 'POST' && path === '/memory/query-with-neighbors') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) as { query?: unknown; options?: unknown } : {};
+      if (typeof parsed.query !== 'string' || !parsed.query.trim()) {
+        return { status: 400, body: { error: 'query string required' } };
+      }
+      const options = queryWithNeighborsOptionsSchema.parse(parsed.options ?? {});
+      const result = await this.memory.queryWithNeighbors(parsed.query, options);
+      return { status: 200, body: result };
+    }
+
+    // POST /memory/procedural/match — evaluate procedural triggers against context
+    if (method === 'POST' && path === '/memory/procedural/match') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) as { context?: unknown } : {};
+      if (typeof parsed.context !== 'string' || !parsed.context.trim()) {
+        return { status: 400, body: { error: 'context string required' } };
+      }
+      const matches = this.memory.matchProcedural(parsed.context);
+      return { status: 200, body: { matches } };
+    }
+
+    // POST /identity/audit — identity drift audit with corrective injection
+    if (method === 'POST' && path === '/identity/audit') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) as { sessionText?: unknown } : {};
+      if (typeof parsed.sessionText !== 'string' || !parsed.sessionText.trim()) {
+        return { status: 400, body: { error: 'sessionText string required' } };
+      }
+      const audit = await this.memory.auditIdentityAlignment(parsed.sessionText);
+      return { status: 200, body: audit };
     }
 
     // GET /memory/topics/:topic — get by topic
@@ -225,7 +280,15 @@ export class HttpAdapter {
 
     // GET /health — health check
     if (method === 'GET' && path === '/health') {
-      return { status: 200, body: { ok: true, model: this.model?.name() ?? 'none' } };
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          model: this.model?.name() ?? 'none',
+          advancedRoutes: Boolean(this.memory),
+          nativeVectorSearch: this.memory?.usesNativeVectorSearch?.() ?? this.store.supportsNativeVectorSearch?.() ?? false,
+        },
+      };
     }
 
     return { status: 404, body: { error: 'Not found', path, method } };

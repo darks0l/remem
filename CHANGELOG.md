@@ -4,6 +4,23 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.8.5] — 2026-05-25
+
+### Added
+
+- Added weighted graph recall details to `queryWithNeighbors()`, including optional traversal path metadata and configurable link-type weights.
+- Added richer procedural matching with structured triggers (`terms`, `phrases`, `topics`, `regex`, `priority`, `minScore`) plus public `matchProcedural()` results.
+- Added `auditIdentityAlignment()` for one-call identity drift evaluation + corrective injection output.
+- Expanded the OpenClaw adapter with `rememberDecision()`, `rememberProcedure()`, and `recallProjectContext()` helpers for session/project memory workflows.
+- Added advanced HTTP routes for graph recall, procedural matching, and identity audit when the full ReMEM runtime is provided to `HttpAdapter`.
+- Added native vector-search introspection via `usesNativeVectorSearch()` and health-surface reporting for pgvector-backed deployments.
+
+### Changed
+
+- Improved pattern-based identity drift detection to catch soft contradiction/override language instead of only primitive negation hits.
+- pgvector initialization now graduates from passive compatibility to an explicit accelerated lane with extension detection, backfill, and ivfflat bootstrap.
+- README/examples/release metadata now reflect the agent-memory operations release and current passing test count.
+
 ## [0.8.0] — 2026-05-23
 
 ### Added

@@ -83,7 +83,18 @@ var queryWithNeighborsOptionsSchema = queryOptionsSchema.extend({
   hops: z.union([z.literal(1), z.literal(2)]).default(1),
   linkTypes: z.array(z.string()).optional(),
   includeBaseResults: z.boolean().default(true),
-  neighborLimit: z.number().min(1).max(100).default(25)
+  neighborLimit: z.number().min(1).max(100).default(25),
+  minNeighborScore: z.number().min(0).max(1).default(0.2),
+  linkTypeWeights: z.record(z.number().min(0).max(2)).optional(),
+  includePathDetails: z.boolean().default(false)
+});
+var neighborPathSchema = z.object({
+  fromId: z.string(),
+  toId: z.string(),
+  throughId: z.string(),
+  type: z.string(),
+  hop: z.number().min(1),
+  score: z.number().min(0).max(2)
 });
 var modelConfigSchema = z.discriminatedUnion("type", [
   z.object({
@@ -126,6 +137,11 @@ var postgresStorageConfigSchema = z.object({
   schema: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
   tablePrefix: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
   ssl: z.union([z.boolean(), z.record(z.unknown())]).optional(),
+  pgvector: z.object({
+    enabled: z.boolean().default(false),
+    embeddingType: z.enum(["memory", "layered", "both"]).default("memory"),
+    ivfflatLists: z.number().min(1).max(5e3).default(100)
+  }).optional(),
   pool: z.unknown().optional()
 });
 var rememConfigSchema = z.object({
@@ -237,6 +253,21 @@ var layeredMemoryEntrySchema = memoryEntrySchema.extend({
   // id of the entry this one supersedes (older version)
   supersededBy: z.string().optional()
   // id of the entry that supersedes this one
+});
+var proceduralTriggerSchema = z.object({
+  terms: z.array(z.string()).optional().default([]),
+  phrases: z.array(z.string()).optional().default([]),
+  topics: z.array(z.string()).optional().default([]),
+  excludeTerms: z.array(z.string()).optional().default([]),
+  regex: z.string().optional(),
+  match: z.enum(["any", "all"]).default("any"),
+  minScore: z.number().min(0).max(1).default(0.25),
+  priority: z.number().min(0).max(1).default(0.5)
+});
+var proceduralMatchSchema = z.object({
+  entry: layeredMemoryEntrySchema,
+  score: z.number().min(0).max(2),
+  reasons: z.array(z.string())
 });
 var driftEventSchema = z.object({
   driftResult: driftResultSchema,
@@ -1396,6 +1427,7 @@ var PostgresMemoryStore = class {
   schema;
   tablePrefix;
   config;
+  pgvectorAvailable = false;
   constructor(config = {}) {
     this.config = typeof config === "string" ? { connectionString: config } : config;
     this.schema = this.safeIdentifier(this.config.schema ?? "public");
@@ -1416,6 +1448,9 @@ var PostgresMemoryStore = class {
     }
     await this.initTables();
     this.initialized = true;
+  }
+  supportsNativeVectorSearch() {
+    return this.pgvectorAvailable;
   }
   safeIdentifier(value) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) throw new Error(`Invalid PostgreSQL identifier: ${value}`);
@@ -1519,6 +1554,7 @@ var PostgresMemoryStore = class {
     `);
     await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_emb_memory" ON ${this.table("embeddings")} (memory_id)`);
     await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_emb_type" ON ${this.table("embeddings")} (embedding_type)`);
+    await this.maybeEnablePgvector();
     await this.pgQuery(`
       CREATE TABLE IF NOT EXISTS ${this.table("events")} (
         id TEXT PRIMARY KEY,
@@ -1820,6 +1856,7 @@ var PostgresMemoryStore = class {
     return (result.rowCount ?? 0) > 0;
   }
   async storeEmbedding(memoryId, base64, dimension, model, type = "memory") {
+    const vectorValue = this.pgvectorAvailable ? this.toPgvectorLiteral(EmbeddingService.decodeVector(base64, dimension)) : null;
     await this.pgQuery(
       `INSERT INTO ${this.table("embeddings")} (id, memory_id, vector_base64, dimension, model, created_at, embedding_type)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
@@ -1827,6 +1864,12 @@ var PostgresMemoryStore = class {
         dimension=EXCLUDED.dimension, model=EXCLUDED.model, embedding_type=EXCLUDED.embedding_type`,
       [randomUUID3(), memoryId, base64, dimension, model, Date.now(), type]
     );
+    if (this.pgvectorAvailable && vectorValue) {
+      await this.pgQuery(
+        `UPDATE ${this.table("embeddings")} SET vector_value = $1::vector WHERE memory_id = $2 AND embedding_type = $3`,
+        [vectorValue, memoryId, type]
+      ).catch(() => void 0);
+    }
   }
   async getEmbedding(memoryId) {
     const result = await this.pgQuery(`SELECT vector_base64, dimension FROM ${this.table("embeddings")} WHERE memory_id = $1 LIMIT 1`, [memoryId]);
@@ -1837,6 +1880,10 @@ var PostgresMemoryStore = class {
     await this.pgQuery(`DELETE FROM ${this.table("embeddings")} WHERE memory_id = $1`, [memoryId]);
   }
   async semanticQuery(queryText, queryVector, opts) {
+    if (queryVector && this.pgvectorAvailable) {
+      const native = await this.semanticQueryPgvector(queryText, queryVector, opts);
+      if (native) return native;
+    }
     const limit = opts?.limit ?? 10;
     const where = [];
     const params = [];
@@ -1873,6 +1920,98 @@ var PostgresMemoryStore = class {
     }
     scored.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
     return { results: scored.slice(0, limit), totalAvailable: scored.length };
+  }
+  async maybeEnablePgvector() {
+    if (!this.config.pgvector?.enabled) return;
+    try {
+      await this.pgQuery("CREATE EXTENSION IF NOT EXISTS vector");
+      const ext = await this.pgQuery("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') AS exists");
+      this.pgvectorAvailable = Boolean(ext.rows[0]?.exists);
+      if (!this.pgvectorAvailable) return;
+      await this.ensureVectorColumn();
+      await this.backfillVectorRows();
+      await this.ensureVectorIndexes();
+    } catch {
+      this.pgvectorAvailable = false;
+    }
+  }
+  async ensureVectorColumn() {
+    await this.pgQuery(`ALTER TABLE ${this.table("embeddings")} ADD COLUMN IF NOT EXISTS vector_value vector`);
+  }
+  async backfillVectorRows() {
+    const rows = await this.pgQuery(
+      `SELECT memory_id, vector_base64, dimension FROM ${this.table("embeddings")} WHERE vector_value IS NULL`
+    );
+    for (const row of rows.rows) {
+      try {
+        const decoded = EmbeddingService.decodeVector(row.vector_base64, Number(row.dimension));
+        await this.pgQuery(
+          `UPDATE ${this.table("embeddings")} SET vector_value = $1::vector WHERE memory_id = $2`,
+          [this.toPgvectorLiteral(decoded), row.memory_id]
+        );
+      } catch {
+      }
+    }
+  }
+  async ensureVectorIndexes() {
+    const embeddingType = this.config.pgvector?.embeddingType ?? "memory";
+    const lists = this.config.pgvector?.ivfflatLists ?? 100;
+    const targets = embeddingType === "both" ? ["memory", "layered"] : [embeddingType];
+    for (const target of targets) {
+      await this.pgQuery(
+        `CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_emb_${target}_vector_ivfflat" ON ${this.table("embeddings")} USING ivfflat (vector_value vector_cosine_ops) WITH (lists = ${lists}) WHERE embedding_type = '${target}' AND vector_value IS NOT NULL`
+      );
+    }
+  }
+  async semanticQueryPgvector(_queryText, queryVector, opts) {
+    const limit = opts?.limit ?? 10;
+    const vectorLiteral = this.toPgvectorLiteral(queryVector);
+    const embeddingType = this.config.pgvector?.embeddingType ?? "memory";
+    if (embeddingType !== "memory" && embeddingType !== "both") return null;
+    const where = [];
+    const params = [vectorLiteral];
+    let idx = 2;
+    if (opts?.topics && opts.topics.length > 0) {
+      where.push(`m.topics ?| $${idx}::text[]`);
+      params.push(opts.topics);
+      idx++;
+    }
+    if (opts?.since) {
+      where.push(`m.created_at >= $${idx++}`);
+      params.push(opts.since);
+    }
+    if (opts?.until) {
+      where.push(`m.created_at <= $${idx++}`);
+      params.push(opts.until);
+    }
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const filterSql = where.length ? `AND ${where.join(" AND ")}` : "";
+    const count = await this.pgQuery(`SELECT COUNT(*)::text AS count FROM ${this.table("memory")} m ${whereSql}`, params.slice(1));
+    const result = await this.pgQuery(
+      `SELECT m.id, m.content, m.topics, m.created_at, m.accessed_at, m.access_count,
+              1 - (e.vector_value <=> $1::vector) AS semantic_score
+         FROM ${this.table("memory")} m
+         JOIN ${this.table("embeddings")} e ON e.memory_id = m.id
+        WHERE e.embedding_type = 'memory' AND e.vector_value IS NOT NULL ${filterSql}
+        ORDER BY e.vector_value <=> $1::vector ASC
+        LIMIT ${limit}`,
+      params
+    );
+    return {
+      results: result.rows.map((row) => ({
+        id: row.id,
+        content: row.content,
+        topics: this.parseJson(row.topics),
+        relevanceScore: Number(row.semantic_score),
+        createdAt: Number(row.created_at),
+        accessedAt: Number(row.accessed_at),
+        accessCount: Number(row.access_count)
+      })),
+      totalAvailable: Number(count.rows[0]?.count ?? 0)
+    };
+  }
+  toPgvectorLiteral(vector) {
+    return `[${vector.map((n) => Number.isFinite(n) ? Number(n).toString() : "0").join(",")}]`;
   }
   getEventLog(limit = 100) {
     return this.eventLog.slice(0, limit);
@@ -2586,45 +2725,43 @@ var DriftDetector = class {
     const statements = this.constitution.getStatements();
     const lowerText = sessionText.toLowerCase();
     const negationPatterns = [
-      /\bnot\s+(?:a|I|me|my)\b/i,
+      /\bnot\s+(?:a|i|me|my)\b/i,
       /\bdon't\s+think\b/i,
       /\bno\s+longer\b/i,
       /\bchanged\s+my\s+mind\b/i,
-      /\bactually\b.*\b(not|no)\b/i
+      /\bactually\b.*\b(not|no)\b/i,
+      /\bignore\b/i,
+      /\bwhatever\b/i,
+      /\bbreak\b.*\brule/i
     ];
     const negationMatches = negationPatterns.filter((p) => p.test(lowerText));
-    const hasNegation = negationMatches.length > 0;
     const violatingStatements = [];
+    const reasoningParts = [];
+    let score = 0;
     for (const statement of statements) {
       const statementLower = statement.text.toLowerCase();
-      const negationVariants = [
-        statementLower.replace(/^(i\s+|you\s+|we\s+)/i, "not $1"),
-        `not ${statementLower}`,
-        `i don't ${statementLower.replace(/^(i\s+)/, "")}`
-      ];
-      for (const variant of negationVariants) {
-        if (lowerText.includes(variant.slice(0, 50))) {
-          violatingStatements.push(statement);
-          break;
-        }
+      const keywords = statementLower.split(/[^a-z0-9]+/i).filter((token) => token.length >= 4).slice(0, 8);
+      const keywordHits = keywords.filter((keyword) => lowerText.includes(keyword));
+      const negatedNearKeyword = keywords.some((keyword) => new RegExp(`(?:not|never|no longer|ignore|break)\\W+(?:\\w+\\W+){0,3}${this.escapeRegex(keyword)}`, "i").test(lowerText));
+      const softContradiction = this.findSoftContradiction(statementLower, lowerText);
+      if (negatedNearKeyword || softContradiction) {
+        violatingStatements.push(statement);
+        score += Math.min(0.35, 0.12 + statement.weight * 0.35 + keywordHits.length * 0.03);
+        reasoningParts.push(`${statement.category} drift near: ${statement.text.slice(0, 48)}`);
       }
     }
-    let score = 0;
-    const reasoningParts = [];
-    if (hasNegation) {
-      score += 0.15;
-      reasoningParts.push("negation patterns detected");
+    if (negationMatches.length > 0) {
+      score += Math.min(0.2, negationMatches.length * 0.05);
+      reasoningParts.push("negation / override language detected");
     }
-    if (violatingStatements.length > 0) {
-      const weightedSum = violatingStatements.reduce((sum, s) => sum + s.weight, 0);
-      score += Math.min(weightedSum / Math.max(statements.length, 1), 0.5);
-      reasoningParts.push(`${violatingStatements.length} value contradictions`);
-    }
+    const uniqueViolations = violatingStatements.filter(
+      (statement, index, list) => list.findIndex((candidate) => candidate.id === statement.id) === index
+    );
     const level = score >= this.criticalThreshold ? "critical" : score >= this.threshold ? score >= (this.threshold + this.criticalThreshold) / 2 ? "moderate" : "minor" : "aligned";
     return {
       score: Math.min(score, 1),
       level,
-      violatingStatements,
+      violatingStatements: uniqueViolations,
       reasoning: reasoningParts.join("; ") || "no violations",
       detectedAt: Date.now()
     };
@@ -2703,6 +2840,20 @@ Evaluate alignment. Return ONLY JSON.`
     } catch {
       return null;
     }
+  }
+  findSoftContradiction(statementLower, sessionLower) {
+    const contrastPairs = [
+      [/\balways\b/i, /\bnever\b/i],
+      [/\bnever\b/i, /\balways\b/i],
+      [/\bprivate\b/i, /\bpublic\b/i],
+      [/\bdirect\b/i, /\bhedge\b/i],
+      [/\bcareful\b/i, /\breckless\b/i],
+      [/\brespect\b/i, /\bignore\b/i]
+    ];
+    return contrastPairs.some(([left, right]) => left.test(statementLower) && right.test(sessionLower));
+  }
+  escapeRegex(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 };
 var ConstitutionInjector = class {
@@ -2873,7 +3024,8 @@ var LayerManager = class {
    * action: what to do when triggered
    */
   storeProcedural(input, trigger) {
-    const meta = { ...input.metadata, trigger };
+    const normalizedTrigger = typeof trigger === "string" ? proceduralTriggerSchema.parse({ terms: [trigger], phrases: [trigger], match: "any" }) : proceduralTriggerSchema.parse(trigger);
+    const meta = { ...input.metadata, trigger: normalizedTrigger };
     return this.store({ ...input, metadata: meta }, "procedural");
   }
   /**
@@ -2881,16 +3033,52 @@ var LayerManager = class {
    * Returns rules whose trigger keyword appears in the context.
    */
   fireProcedural(context) {
-    const triggered = [];
+    return this.matchProcedural(context).map((match) => match.entry);
+  }
+  matchProcedural(context) {
+    const matches = [];
     const ctx = context.toLowerCase();
+    const tokens = new Set(ctx.split(/[^a-z0-9_:-]+/i).filter(Boolean));
     for (const entry of this.entries.values()) {
       if (entry.layer !== "procedural") continue;
-      const trigger = entry.metadata?.trigger?.toLowerCase();
-      if (trigger && ctx.includes(trigger)) {
-        triggered.push(entry);
+      const trigger = this.normalizeTrigger(entry.metadata?.trigger);
+      if (!trigger) continue;
+      const reasons = [];
+      let score = 0;
+      const termMatches = trigger.terms.filter((term) => tokens.has(term.toLowerCase()));
+      const phraseMatches = trigger.phrases.filter((phrase) => ctx.includes(phrase.toLowerCase()));
+      const topicMatches = trigger.topics.filter(
+        (topic) => entry.topics.some((entryTopic) => entryTopic.toLowerCase().includes(topic.toLowerCase())) || ctx.includes(topic.toLowerCase())
+      );
+      const excludeHit = trigger.excludeTerms.some((term) => tokens.has(term.toLowerCase()) || ctx.includes(term.toLowerCase()));
+      const regexHit = trigger.regex ? this.safeRegexTest(trigger.regex, context) : false;
+      if (excludeHit) continue;
+      if (termMatches.length > 0) {
+        score += Math.min(0.4, termMatches.length * 0.2);
+        reasons.push(`term:${termMatches.join(",")}`);
       }
+      if (phraseMatches.length > 0) {
+        score += Math.min(0.35, phraseMatches.length * 0.25);
+        reasons.push(`phrase:${phraseMatches.join(",")}`);
+      }
+      if (topicMatches.length > 0) {
+        score += Math.min(0.2, topicMatches.length * 0.1);
+        reasons.push(`topic:${topicMatches.join(",")}`);
+      }
+      if (regexHit) {
+        score += 0.35;
+        reasons.push("regex");
+      }
+      const totalSignals = [termMatches.length > 0, phraseMatches.length > 0, topicMatches.length > 0, regexHit].filter(Boolean).length;
+      const requiredSignals = trigger.match === "all" ? [trigger.terms.length > 0, trigger.phrases.length > 0, trigger.topics.length > 0, Boolean(trigger.regex)].filter(Boolean).length : 1;
+      if (totalSignals < requiredSignals) continue;
+      const priority = trigger.priority ?? 0.5;
+      score *= 0.75 + priority;
+      if (score < (trigger.minScore ?? 0.25)) continue;
+      matches.push(proceduralMatchSchema.parse({ entry, score: Math.min(score, 2), reasons }));
     }
-    return triggered;
+    matches.sort((a, b) => b.score - a.score || b.entry.importance - a.entry.importance);
+    return matches;
   }
   /**
    * Get an entry by ID.
@@ -3197,6 +3385,24 @@ Respond with ONLY a JSON object:
     const semanticKeywords = ["project", "decision", "agreed", "remember", "context", "learned", "figured out"];
     if (semanticKeywords.some((k) => text.includes(k))) return "semantic";
     return "episodic";
+  }
+  normalizeTrigger(trigger) {
+    if (!trigger) return null;
+    if (typeof trigger === "string") {
+      return proceduralTriggerSchema.parse({ terms: [trigger], phrases: [trigger], match: "any" });
+    }
+    if (typeof trigger === "object") {
+      const parsed = proceduralTriggerSchema.safeParse(trigger);
+      return parsed.success ? parsed.data : null;
+    }
+    return null;
+  }
+  safeRegexTest(pattern, context) {
+    try {
+      return new RegExp(pattern, "i").test(context);
+    } catch {
+      return false;
+    }
   }
   /**
    * Check if episodic layer is above 80% capacity and needs compression.
@@ -3741,6 +3947,7 @@ var HttpAdapter = class {
   engine;
   store;
   model;
+  memory;
   port;
   host;
   authToken;
@@ -3749,6 +3956,7 @@ var HttpAdapter = class {
   constructor(config) {
     this.store = config.store;
     this.model = config.model;
+    this.memory = config.memory;
     this.engine = new QueryEngine({ store: this.store, model: this.model });
     this.port = config.port ?? 8787;
     this.host = config.host ?? "127.0.0.1";
@@ -3818,6 +4026,40 @@ var HttpAdapter = class {
       const n = parseInt(url.searchParams.get("n") ?? "10", 10);
       const results = await this.engine.getRecent(n);
       return { status: 200, body: { results } };
+    }
+    if (method === "POST" && path === "/memory/query-with-neighbors") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
+        return { status: 400, body: { error: "query string required" } };
+      }
+      const options = queryWithNeighborsOptionsSchema.parse(parsed.options ?? {});
+      const result = await this.memory.queryWithNeighbors(parsed.query, options);
+      return { status: 200, body: result };
+    }
+    if (method === "POST" && path === "/memory/procedural/match") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.context !== "string" || !parsed.context.trim()) {
+        return { status: 400, body: { error: "context string required" } };
+      }
+      const matches = this.memory.matchProcedural(parsed.context);
+      return { status: 200, body: { matches } };
+    }
+    if (method === "POST" && path === "/identity/audit") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.sessionText !== "string" || !parsed.sessionText.trim()) {
+        return { status: 400, body: { error: "sessionText string required" } };
+      }
+      const audit = await this.memory.auditIdentityAlignment(parsed.sessionText);
+      return { status: 200, body: audit };
     }
     if (method === "GET" && path.startsWith("/memory/topics/")) {
       const topic = decodeURIComponent(path.split("/")[3]);
@@ -3890,7 +4132,15 @@ var HttpAdapter = class {
       return { status: 200, body: { events } };
     }
     if (method === "GET" && path === "/health") {
-      return { status: 200, body: { ok: true, model: this.model?.name() ?? "none" } };
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          model: this.model?.name() ?? "none",
+          advancedRoutes: Boolean(this.memory),
+          nativeVectorSearch: this.memory?.usesNativeVectorSearch?.() ?? this.store.supportsNativeVectorSearch?.() ?? false
+        }
+      };
     }
     return { status: 404, body: { error: "Not found", path, method } };
   }
@@ -4654,8 +4904,54 @@ function createOpenClawAdapter(memory, options = {}) {
         }
       }, options.defaultTopic ?? "openclaw"));
     },
+    async rememberDecision(decision) {
+      const topics = [
+        ...decision.topics ?? [],
+        ...decision.sessionId ? [`session:${decision.sessionId}`] : [],
+        "decision"
+      ];
+      const metadata = {
+        ...decision.metadata ?? {},
+        source: "openclaw.decision"
+      };
+      await memory.store({
+        content: decision.content,
+        topics,
+        metadata
+      });
+      await memory.storeInLayer({
+        content: decision.content,
+        topics,
+        metadata
+      }, "semantic");
+    },
+    async rememberProcedure(rule) {
+      await memory.storeProcedural({
+        content: rule.content,
+        topics: [...rule.topics ?? [], "procedure"],
+        metadata: {
+          ...rule.metadata ?? {},
+          source: "openclaw.procedure"
+        }
+      }, rule.trigger);
+    },
     async recallContext(query, queryOptions = { limit: options.defaultLimit ?? 8 }) {
       const response = await memory.query(query, queryOptions);
+      return response.results.map((result) => `- ${result.content}`).join("\n");
+    },
+    async recallProjectContext(query, optionsWithNeighbors = { limit: options.defaultLimit ?? 8 }) {
+      const response = await memory.queryWithNeighbors(query, {
+        limit: optionsWithNeighbors.limit ?? (options.defaultLimit ?? 8),
+        topics: optionsWithNeighbors.topics,
+        minAccessCount: optionsWithNeighbors.minAccessCount,
+        since: optionsWithNeighbors.since,
+        until: optionsWithNeighbors.until,
+        hops: optionsWithNeighbors.hops ?? 1,
+        includeBaseResults: true,
+        neighborLimit: options.defaultLimit ?? 8,
+        minNeighborScore: 0.2,
+        includePathDetails: false
+      });
       return response.results.map((result) => `- ${result.content}`).join("\n");
     },
     async query(query, queryOptions) {
@@ -4811,29 +5107,48 @@ var ReMEM = class {
     const opts = queryWithNeighborsOptionsSchema.parse(options ?? {});
     const base = await this.query(query, opts);
     const merged = /* @__PURE__ */ new Map();
+    const paths = [];
     if (opts.includeBaseResults) {
       for (const result of base.results) merged.set(result.id, result);
     }
-    let frontier = base.results.map((r) => r.id);
-    const seen = new Set(frontier);
+    let frontier = base.results.map((r) => ({ id: r.id, sourceId: r.id, score: r.relevanceScore ?? 0.6 }));
+    const seen = new Set(frontier.map((item) => item.id));
     let linksTraversed = 0;
     for (let hop = 0; hop < opts.hops; hop++) {
       const nextFrontier = [];
-      for (const id of frontier) {
-        const neighbors = await this.getLinkedMemories(id, {
+      for (const item of frontier) {
+        const neighbors = await this.getLinkedMemories(item.id, {
           direction: "both",
           types: opts.linkTypes,
           limit: opts.neighborLimit
         });
         linksTraversed += neighbors.length;
         for (const neighbor of neighbors) {
-          if (!neighbor.memory || seen.has(neighbor.memory.id)) continue;
-          seen.add(neighbor.memory.id);
-          nextFrontier.push(neighbor.memory.id);
-          merged.set(neighbor.memory.id, {
+          if (!neighbor.memory) continue;
+          const linkWeight = opts.linkTypeWeights?.[neighbor.link.type] ?? this.defaultLinkWeight(neighbor.link.type);
+          const hopDecay = Math.max(0.2, 0.9 - hop * 0.15);
+          const neighborScore = Math.min(1.5, (item.score || 0.6) * hopDecay * linkWeight);
+          if (neighborScore < opts.minNeighborScore) continue;
+          if (opts.includePathDetails) {
+            paths.push({
+              fromId: item.sourceId,
+              toId: neighbor.memory.id,
+              throughId: item.id,
+              type: neighbor.link.type,
+              hop: hop + 1,
+              score: neighborScore
+            });
+          }
+          const existing = merged.get(neighbor.memory.id);
+          const enriched = {
             ...neighbor.memory,
-            relevanceScore: Math.max(neighbor.memory.relevanceScore ?? 0, 0.6 - hop * 0.15)
-          });
+            relevanceScore: Math.max(existing?.relevanceScore ?? 0, neighborScore, neighbor.memory.relevanceScore ?? 0)
+          };
+          merged.set(neighbor.memory.id, enriched);
+          if (!seen.has(neighbor.memory.id)) {
+            seen.add(neighbor.memory.id);
+            nextFrontier.push({ id: neighbor.memory.id, sourceId: item.sourceId, score: neighborScore });
+          }
         }
       }
       frontier = nextFrontier;
@@ -4845,7 +5160,8 @@ var ReMEM = class {
       totalAvailable: results.length,
       query,
       tookMs: base.tookMs,
-      linksTraversed
+      linksTraversed,
+      ...opts.includePathDetails ? { paths } : {}
     };
   }
   /**
@@ -4859,6 +5175,26 @@ var ReMEM = class {
    */
   getEmbeddingService() {
     return this.embeddingService;
+  }
+  usesNativeVectorSearch() {
+    return Boolean(this._store.supportsNativeVectorSearch?.());
+  }
+  defaultLinkWeight(type) {
+    switch (type) {
+      case "supports":
+      case "about":
+        return 1;
+      case "same_project":
+      case "same_person":
+        return 0.9;
+      case "follows":
+      case "caused_by":
+        return 0.8;
+      case "contradicts":
+        return 0.55;
+      default:
+        return 0.75;
+    }
   }
   /**
    * Get the layer manager for advanced layer/consolidation operations.
@@ -4980,6 +5316,14 @@ var ReMEM = class {
       };
     }
     return this.identity.detector.detectDrift(sessionText, { method: "both" });
+  }
+  async auditIdentityAlignment(sessionText) {
+    const drift = await this.detectDrift(sessionText);
+    return {
+      drift,
+      injection: this.getConstitutionInjection(drift),
+      topStatements: drift.violatingStatements.slice(0, 5)
+    };
   }
   /**
    * Get constitution injection block if drift is detected.
@@ -5159,17 +5503,19 @@ var ReMEM = class {
    * Returns rules whose trigger keyword appears in the context.
    */
   fireProcedural(context) {
-    if (!this.layers) return [];
-    const triggered = this.layers.fireProcedural(context);
-    return triggered.map((entry) => ({
-      id: entry.id,
-      content: entry.content,
-      topics: entry.topics,
-      relevanceScore: entry.importance,
-      createdAt: entry.createdAt,
-      accessedAt: entry.accessedAt,
-      accessCount: entry.accessCount
+    return this.matchProcedural(context).map((match) => ({
+      id: match.entry.id,
+      content: match.entry.content,
+      topics: match.entry.topics,
+      relevanceScore: match.score,
+      createdAt: match.entry.createdAt,
+      accessedAt: match.entry.accessedAt,
+      accessCount: match.entry.accessCount
     }));
+  }
+  matchProcedural(context) {
+    if (!this.layers) return [];
+    return this.layers.matchProcedural(context);
   }
   /**
    * Get the temporal history of an entry — trace its supersession chain.
@@ -5424,7 +5770,10 @@ export {
   memoryLinkInputSchema,
   memoryLinkSchema,
   modelConfigSchema,
+  neighborPathSchema,
   postgresStorageConfigSchema,
+  proceduralMatchSchema,
+  proceduralTriggerSchema,
   queryOptionsSchema,
   queryResponseSchema,
   queryResultSchema,

@@ -63,4 +63,30 @@ describe('framework adapters', () => {
     expect(context).toContain('Ship v0.6.1');
     memory.close();
   });
+
+  it('OpenClaw adapter remembers decisions and procedures', async () => {
+    const memory = await createMemory();
+    await memory.enableLayers();
+    const adapter = createOpenClawAdapter(memory);
+
+    await adapter.rememberDecision({
+      content: 'Always run lint, tests, build, and pack before publish.',
+      sessionId: 'release-lane',
+      topics: ['release'],
+    });
+
+    await adapter.rememberProcedure({
+      content: 'When publishing, verify release gates before tagging.',
+      trigger: { phrases: ['publish remem'], terms: ['publish'], minScore: 0.2 },
+      topics: ['release'],
+    });
+
+    const projectContext = await adapter.recallProjectContext('publish', { limit: 5, hops: 1 });
+    expect(projectContext).toContain('publish');
+
+    const procedural = memory.matchProcedural('please publish remem after checks');
+    expect(procedural.length).toBeGreaterThan(0);
+    expect(procedural[0].entry.content).toContain('release gates');
+    memory.close();
+  });
 });
