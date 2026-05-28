@@ -54,6 +54,23 @@ describe('ReMEM', () => {
     expect(results.totalAvailable).toBeGreaterThan(5);
   });
 
+  it('filters by metadata and returns metadata on query results', async () => {
+    await memory.store({
+      content: 'Release note for production lane',
+      topics: ['release'],
+      metadata: { project: 'remem', kind: 'note', shipped: true },
+    });
+    await memory.store({
+      content: 'Other project note',
+      topics: ['release'],
+      metadata: { project: 'other', kind: 'note', shipped: true },
+    });
+
+    const results = await memory.query('note', { metadata: { project: 'remem', shipped: true } });
+    expect(results.results).toHaveLength(1);
+    expect(results.results[0].metadata).toEqual({ project: 'remem', kind: 'note', shipped: true });
+  });
+
   it('closes cleanly', () => {
     memory.close();
   });
@@ -142,10 +159,12 @@ describe('MemoryStore', () => {
     await store.store({
       content: 'Test memory',
       topics: ['test'],
+      metadata: { project: 'remem' },
     });
 
-    const { results } = await store.query('test');
+    const { results } = await store.query('test', { metadata: { project: 'remem' } });
     expect(results.length).toBe(1);
+    expect(results[0].metadata).toEqual({ project: 'remem' });
 
     store.close();
   });

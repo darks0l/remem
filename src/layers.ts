@@ -335,6 +335,15 @@ export class LayerManager {
         // Access count filter
         if (options?.minAccessCount && entry.accessCount < options.minAccessCount) continue;
 
+        if (options?.metadata) {
+          const matchesMetadata = Object.entries(options.metadata).every(([key, expected]) => {
+            const actual = entry.metadata?.[key];
+            if (expected === null) return actual === null || actual === undefined;
+            return actual === expected;
+          });
+          if (!matchesMetadata) continue;
+        }
+
         // Content relevance score (keyword)
         const contentScore = this.simpleRelevance(entry.content, text);
 
@@ -372,6 +381,7 @@ export class LayerManager {
       id: entry.id,
       content: entry.content,
       topics: entry.topics,
+      metadata: entry.metadata,
       relevanceScore: entry.weightedScore,
       createdAt: entry.createdAt,
       accessedAt: entry.accessedAt,
@@ -413,6 +423,7 @@ export class LayerManager {
       id: entry.id,
       content: entry.content,
       topics: entry.topics,
+      metadata: entry.metadata,
       relevanceScore: entry.weightedScore,
       createdAt: entry.createdAt,
       accessedAt: entry.accessedAt,
@@ -441,6 +452,7 @@ export class LayerManager {
         id: entry.id,
         content: entry.content,
         topics: entry.topics,
+        metadata: entry.metadata,
         relevanceScore: layerWeight * (entry.accessCount + 1),
         createdAt: entry.createdAt,
         accessedAt: entry.accessedAt,

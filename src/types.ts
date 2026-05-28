@@ -33,9 +33,13 @@ export type StoreMemoryInput = z.infer<typeof storeMemoryInputSchema>;
 // Query Types
 // ============================================================================
 
+export const metadataFilterValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+export type MetadataFilterValue = z.infer<typeof metadataFilterValueSchema>;
+
 export const queryOptionsSchema = z.object({
   limit: z.number().min(1).max(100).default(10),
   topics: z.array(z.string()).optional(),
+  metadata: z.record(metadataFilterValueSchema).optional(),
   minAccessCount: z.number().optional(),
   since: z.number().optional(), // unix timestamp ms
   until: z.number().optional(),
@@ -47,6 +51,7 @@ export const queryResultSchema = z.object({
   id: z.string(),
   content: z.string(),
   topics: z.array(z.string()),
+  metadata: z.record(z.unknown()).default({}),
   relevanceScore: z.number().optional(),
   createdAt: z.number(),
   accessedAt: z.number(),

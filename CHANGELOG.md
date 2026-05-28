@@ -4,6 +4,19 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.9.0] — 2026-05-27
+
+### Added
+
+- Added metadata-aware query filtering across SQLite, Postgres, layered memory, and semantic recall paths.
+- Added metadata passthrough on `QueryResult` so callers can preserve provenance, namespace, source, and structured operational hints.
+- Added HTTP query support for structured `metadata` filters and adapter-level metadata-aware context rendering.
+
+### Changed
+
+- LangGraph and OpenClaw adapters now preserve source/namespace hints in recall output for cleaner production memory workflows.
+- README/examples/release metadata now reflect the metadata-aware recall release and current passing test count.
+
 ## [0.8.5] — 2026-05-25
 
 ### Added

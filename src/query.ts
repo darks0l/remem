@@ -157,6 +157,7 @@ Respond with a JSON array of scores (0-1) matching the order above. Example: [0.
 
       return scored.map((s) => ({
         ...s.result,
+        metadata: s.result.metadata ?? {},
         relevanceScore: s.score,
       }));
     } catch {

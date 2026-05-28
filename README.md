@@ -11,8 +11,8 @@ Built by DARKSOL 🌑
 [![npm version](https://img.shields.io/npm/v/@darksol/remem?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.npmjs.com/package/@darksol/remem)
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
-[![Test Status](https://img.shields.io/badge/tests-81%2F81%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.8.5](https://img.shields.io/badge/v0.8.5-agent--memory--ops-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![Test Status](https://img.shields.io/badge/tests-82%2F82%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
+[![v0.9.0](https://img.shields.io/badge/v0.9.0-metadata--aware--recall-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -44,8 +44,10 @@ await memory.store({
   topics: ['preferences', 'ui', 'style'],
 });
 
-const { results } = await memory.query('How should I respond to Meta?');
-console.log(results[0].content);
+const { results } = await memory.query('How should I respond to Meta?', {
+  metadata: { source: 'operator-notes' },
+});
+console.log(results[0].content, results[0].metadata);
 ```
 
 **Works well for:** chat agents, coding agents, operator copilots, long-running automations, and multi-agent systems that need durable memory instead of stuffing everything into context.
@@ -71,10 +73,11 @@ ReMEM does something different:
 - **Identity duplication & infection** (v0.3.3) - Export full identity package to DARKSOL server, pull and overlay on any ReMEM-equipped agent
 - **Multi-agent scoping** - agent_id + user_id isolation for shared deployments
 - **Plug-and-play LLM abstraction** - Bankr, OpenAI, Anthropic, Ollama - swap without changing your code
-- **Framework adapters** (v0.6.1, expanded in v0.8.5) - Dependency-free helpers for Vercel AI SDK, LangGraph-style stores, and OpenClaw/session memory with decision/procedure/project-context helpers
+- **Framework adapters** (v0.6.1, expanded in v0.9.0) - Dependency-free helpers for Vercel AI SDK, LangGraph-style stores, and OpenClaw/session memory with decision/procedure/project-context helpers plus metadata-aware recall
 - **Memory links + neighbor-aware retrieval** (v0.8.0, expanded in v0.8.5) - Explicit typed links between memories (`about`, `supports`, `contradicts`, etc.), weighted graph-adjacent recall, and optional traversal path details
 - **Identity alignment audits** (v0.8.5) - Drift scoring plus corrective injection text for agents that need to keep behavior anchored to a constitution
 - **Production-aware Postgres vector lane** (v0.8.5) - Native pgvector detection, ivfflat index bootstrap, and runtime introspection for deployments that want in-database vector search
+- **Metadata-aware recall** (v0.9.0) - Filter memory queries on structured metadata, preserve metadata on results, and carry source/namespace hints through adapters + HTTP
 - **Framework-agnostic** - Works as a library (Node.js/Deno), CLI tool, or HTTP microservice
 
 ---
@@ -330,6 +333,7 @@ const context = await aiMemory.context('memory preferences');
 const store = createLangGraphStoreAdapter(memory);
 await store.put(['users', 'meta'], 'preference', { theme: 'dark mode' });
 const matches = await store.search(['users', 'meta'], 'dark mode');
+// namespace metadata is applied automatically so cross-project lookups stay clean
 
 // OpenClaw/session adapter
 const openclaw = createOpenClawAdapter(memory);
@@ -721,7 +725,10 @@ await memory.init()
 await memory.store({ content: '...', topics: ['tag'] })
 
 // Query
-const { results, totalAvailable, tookMs } = await memory.query('query', { limit: 10 })
+const { results, totalAvailable, tookMs } = await memory.query('query', {
+  limit: 10,
+  metadata: { project: 'remem', source: 'openclaw.turn' },
+})
 
 // Recent
 const recent = await memory.getRecent(10)
@@ -818,7 +825,7 @@ curl -X POST http://localhost:8787/memory \
 
 # Query
 curl -H "Authorization: Bearer $REMEM_TOKEN" \
-  "http://localhost:8787/memory?q=preferences&limit=5"
+  "http://localhost:8787/memory?q=preferences&limit=5&metadata=%7B%22project%22%3A%22remem%22%7D"
 
 # Recent
 curl -H "Authorization: Bearer $REMEM_TOKEN" \

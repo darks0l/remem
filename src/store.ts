@@ -28,6 +28,7 @@ import {
   type StoreMemoryInput,
   type LayeredMemoryEntry,
   type MemoryLayer,
+  type MetadataFilterValue,
   linkedMemoryQueryOptionsSchema,
   memoryLinkInputSchema,
   memoryLinkSchema,
@@ -258,7 +259,6 @@ export class MemoryStore implements MemoryStoreLike {
     this.ensureInitialized();
     const opts = queryOptionsSchema.parse(options ?? {});
 
-    // Build SQL query
     let sql = 'SELECT * FROM memory WHERE content LIKE ?';
     const params: (string | number)[] = [`%${text}%`];
 
@@ -280,35 +280,32 @@ export class MemoryStore implements MemoryStoreLike {
 
     sql += ' ORDER BY access_count DESC, accessed_at DESC';
 
-    // Count total
-    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as count');
-    const countResult = this.db!.exec(countSql, params);
-    const totalAvailable = countResult[0]?.values[0]?.[0] as number ?? 0;
-
-    // Fetch limited results
-    sql += ' LIMIT ? OFFSET 0';
-    params.push(opts.limit);
-
     const result = this.db!.exec(sql, params);
 
     if (result.length === 0) {
-      return { results: [], totalAvailable };
+      this.logEvent('memory.queried', { text, options: opts, resultCount: 0 });
+      return { results: [], totalAvailable: 0 };
     }
 
     const rows = result[0].values.map((v: unknown[]) => this.rowToObject(result[0].columns, v));
+    const filteredEntries = rows
+      .map((row) => memoryEntrySchema.parse(row))
+      .filter((entry) => !opts.minAccessCount || entry.accessCount >= opts.minAccessCount)
+      .filter((entry) => !opts.metadata || this.matchMetadata(entry.metadata, opts.metadata));
 
-    const results: QueryResult[] = rows.map((row) => {
-      const entry = memoryEntrySchema.parse(row);
-      return {
+    const totalAvailable = filteredEntries.length;
+    const results: QueryResult[] = filteredEntries
+      .slice(0, opts.limit)
+      .map((entry) => ({
         id: entry.id,
         content: entry.content,
         topics: entry.topics,
+        metadata: entry.metadata,
         relevanceScore: this.simpleRelevance(entry.content, text),
         createdAt: entry.createdAt,
         accessedAt: entry.accessedAt,
         accessCount: entry.accessCount,
-      };
-    });
+      }));
 
     this.logEvent('memory.queried', { text, options: opts, resultCount: results.length });
 
@@ -332,6 +329,7 @@ export class MemoryStore implements MemoryStoreLike {
         id: entry.id,
         content: entry.content,
         topics: entry.topics,
+        metadata: entry.metadata,
         relevanceScore: 0,
         createdAt: entry.createdAt,
         accessedAt: entry.accessedAt,
@@ -353,6 +351,7 @@ export class MemoryStore implements MemoryStoreLike {
         id: entry.id,
         content: entry.content,
         topics: entry.topics,
+        metadata: entry.metadata,
         createdAt: entry.createdAt,
         accessedAt: entry.accessedAt,
         accessCount: entry.accessCount,
@@ -376,6 +375,7 @@ export class MemoryStore implements MemoryStoreLike {
         id: entry.id,
         content: entry.content,
         topics: entry.topics,
+        metadata: entry.metadata,
         createdAt: entry.createdAt,
         accessedAt: entry.accessedAt,
         accessCount: entry.accessCount,
@@ -490,6 +490,7 @@ export class MemoryStore implements MemoryStoreLike {
         id: entry.id,
         content: entry.content,
         topics: entry.topics,
+        metadata: entry.metadata,
         createdAt: entry.createdAt,
         accessedAt: entry.accessedAt,
         accessCount: entry.accessCount,
@@ -503,6 +504,9 @@ export class MemoryStore implements MemoryStoreLike {
       id: obj['id'] as string,
       content: obj['content'] as string,
       topics: Array.isArray(obj['topics']) ? obj['topics'] as string[] : JSON.parse(String(obj['topics'] ?? '[]')),
+      metadata: typeof obj['metadata'] === 'object' && obj['metadata'] !== null
+        ? obj['metadata'] as Record<string, unknown>
+        : JSON.parse(String(obj['metadata'] ?? '{}')),
       createdAt: obj['createdAt'] as number,
       accessedAt: obj['accessedAt'] as number,
       accessCount: obj['accessCount'] as number,
@@ -978,7 +982,7 @@ export class MemoryStore implements MemoryStoreLike {
     // Fetch all memory entries with embeddings
     // We load them in memory and compute cosine similarity here
     // (SQLite doesn't have vector indexes; for large datasets consider pgvector/faiss separately)
-    let sql = 'SELECT id, content, topics, created_at, accessed_at, access_count FROM memory m';
+    let sql = 'SELECT id, content, topics, metadata, created_at, accessed_at, access_count FROM memory m';
     const params: (string | number)[] = [];
 
     if (opts?.topics && opts.topics.length > 0) {
@@ -1003,8 +1007,11 @@ export class MemoryStore implements MemoryStoreLike {
     const scoredResults: QueryResult[] = [];
 
     for (const row of rows) {
-      const [id, content, topics, createdAt, accessedAt, accessCount] = row;
+      const [id, content, topics, metadata, createdAt, accessedAt, accessCount] = row;
       const topicArr: string[] = typeof topics === 'string' ? JSON.parse(topics) : (topics as string[]);
+      const metadataObj: Record<string, unknown> = typeof metadata === 'string'
+        ? JSON.parse(metadata)
+        : (metadata as Record<string, unknown>);
 
       // Try to get embedding for this entry
       const emb = await this.getEmbedding(id as string);
@@ -1029,6 +1036,7 @@ export class MemoryStore implements MemoryStoreLike {
         id: id as string,
         content: content as string,
         topics: topicArr,
+        metadata: metadataObj,
         relevanceScore,
         createdAt: createdAt as number,
         accessedAt: accessedAt as number,
@@ -1036,11 +1044,14 @@ export class MemoryStore implements MemoryStoreLike {
       });
     }
 
-    // Sort by relevance score descending
-    scoredResults.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+    const filteredResults = scoredResults
+      .filter((entry) => !opts?.minAccessCount || entry.accessCount >= opts.minAccessCount)
+      .filter((entry) => !opts?.metadata || this.matchMetadata(entry.metadata ?? {}, opts.metadata));
 
-    const totalAvailable = scoredResults.length;
-    const limited = scoredResults.slice(0, limit);
+    filteredResults.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+
+    const totalAvailable = filteredResults.length;
+    const limited = filteredResults.slice(0, limit);
 
     return { results: limited, totalAvailable };
   }
@@ -1168,6 +1179,14 @@ export class MemoryStore implements MemoryStoreLike {
       else obj[col] = val;
     });
     return obj;
+  }
+
+  matchMetadata(entryMetadata: Record<string, unknown>, filters: Record<string, MetadataFilterValue>): boolean {
+    return Object.entries(filters).every(([key, expected]) => {
+      const actual = entryMetadata[key];
+      if (expected === null) return actual === null || actual === undefined;
+      return actual === expected;
+    });
   }
 
   private simpleRelevance(content: string, query: string): number {

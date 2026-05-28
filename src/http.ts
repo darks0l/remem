@@ -130,9 +130,13 @@ export class HttpAdapter {
       const query = url.searchParams.get('q') ?? '';
       const limit = parseInt(url.searchParams.get('limit') ?? '10', 10);
       const topics = url.searchParams.get('topics')?.split(',').filter(Boolean);
+      const minAccessCount = url.searchParams.get('minAccessCount');
+      const metadata = url.searchParams.get('metadata');
 
       const options: QueryOptions = { limit };
       if (topics) options.topics = topics;
+      if (minAccessCount) options.minAccessCount = parseInt(minAccessCount, 10);
+      if (metadata) options.metadata = JSON.parse(metadata) as Record<string, string | number | boolean | null>;
 
       const result = await this.engine.query(query, options);
       return { status: 200, body: result };

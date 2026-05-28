@@ -11,6 +11,7 @@ import {
   type QueryOptions,
   type QueryResult,
   type StoreMemoryInput,
+  type MetadataFilterValue,
   linkedMemoryQueryOptionsSchema,
   memoryEntrySchema,
   memoryLinkInputSchema,
@@ -241,6 +242,12 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     }
     if (opts.since) { where.push(`created_at >= $${idx++}`); params.push(opts.since); }
     if (opts.until) { where.push(`created_at <= $${idx++}`); params.push(opts.until); }
+    if (opts.minAccessCount) { where.push(`access_count >= $${idx++}`); params.push(opts.minAccessCount); }
+    if (opts.metadata && Object.keys(opts.metadata).length > 0) {
+      where.push(`metadata @> $${idx}::jsonb`);
+      params.push(JSON.stringify(opts.metadata));
+      idx++;
+    }
 
     const whereSql = `WHERE ${where.join(' AND ')}`;
     const count = await this.pgQuery<{ count: string }>(`SELECT COUNT(*)::text AS count FROM ${this.table('memory')} ${whereSql}`, params);
@@ -354,6 +361,7 @@ export class PostgresMemoryStore implements MemoryStoreLike {
       id: entry.id,
       content: entry.content,
       topics: entry.topics,
+      metadata: entry.metadata,
       createdAt: entry.createdAt,
       accessedAt: entry.accessedAt,
       accessCount: entry.accessCount,
@@ -539,21 +547,25 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     if (opts?.since) { where.push(`created_at >= $${idx++}`); params.push(opts.since); }
     if (opts?.until) { where.push(`created_at <= $${idx++}`); params.push(opts.until); }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-    const result = await this.pgQuery<Record<string, unknown>>(`SELECT id, content, topics, created_at, accessed_at, access_count FROM ${this.table('memory')} ${whereSql}`, params);
+    const result = await this.pgQuery<Record<string, unknown>>(`SELECT id, content, topics, metadata, created_at, accessed_at, access_count FROM ${this.table('memory')} ${whereSql}`, params);
     const scored: QueryResult[] = [];
     for (const row of result.rows) {
       let relevanceScore: number;
       const embedding = await this.getEmbedding(row.id as string);
+      const metadata = this.parseJson(row.metadata) as Record<string, unknown>;
       if (queryVector && embedding) {
         try { relevanceScore = EmbeddingService.cosineSimilarity(queryVector, EmbeddingService.decodeVector(embedding.base64, embedding.dimension)); }
         catch { relevanceScore = this.simpleRelevance(row.content as string, queryText); }
       } else {
         relevanceScore = this.simpleRelevance(row.content as string, queryText);
       }
-      scored.push({ id: row.id as string, content: row.content as string, topics: this.parseJson(row.topics) as string[], relevanceScore, createdAt: Number(row.created_at), accessedAt: Number(row.accessed_at), accessCount: Number(row.access_count) });
+      scored.push({ id: row.id as string, content: row.content as string, topics: this.parseJson(row.topics) as string[], metadata, relevanceScore, createdAt: Number(row.created_at), accessedAt: Number(row.accessed_at), accessCount: Number(row.access_count) });
     }
-    scored.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
-    return { results: scored.slice(0, limit), totalAvailable: scored.length };
+    const filtered = scored
+      .filter((entry) => !opts?.metadata || this.matchMetadata(entry.metadata ?? {}, opts.metadata))
+      .filter((entry) => !opts?.minAccessCount || entry.accessCount >= opts.minAccessCount);
+    filtered.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+    return { results: filtered.slice(0, limit), totalAvailable: filtered.length };
   }
 
   private async maybeEnablePgvector(): Promise<void> {
@@ -618,12 +630,14 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     if (opts?.topics && opts.topics.length > 0) { where.push(`m.topics ?| $${idx}::text[]`); params.push(opts.topics); idx++; }
     if (opts?.since) { where.push(`m.created_at >= $${idx++}`); params.push(opts.since); }
     if (opts?.until) { where.push(`m.created_at <= $${idx++}`); params.push(opts.until); }
+    if (opts?.minAccessCount) { where.push(`m.access_count >= $${idx++}`); params.push(opts.minAccessCount); }
+    if (opts?.metadata && Object.keys(opts.metadata).length > 0) { where.push(`m.metadata @> $${idx}::jsonb`); params.push(JSON.stringify(opts.metadata)); idx++; }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
     const filterSql = where.length ? `AND ${where.join(' AND ')}` : '';
     const count = await this.pgQuery<{ count: string }>(`SELECT COUNT(*)::text AS count FROM ${this.table('memory')} m ${whereSql}`, params.slice(1));
     const result = await this.pgQuery<Record<string, unknown>>(
-      `SELECT m.id, m.content, m.topics, m.created_at, m.accessed_at, m.access_count,
+      `SELECT m.id, m.content, m.topics, m.metadata, m.created_at, m.accessed_at, m.access_count,
               1 - (e.vector_value <=> $1::vector) AS semantic_score
          FROM ${this.table('memory')} m
          JOIN ${this.table('embeddings')} e ON e.memory_id = m.id
@@ -634,15 +648,19 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     );
 
     return {
-      results: result.rows.map((row) => ({
-        id: row.id as string,
-        content: row.content as string,
-        topics: this.parseJson(row.topics) as string[],
-        relevanceScore: Number(row.semantic_score),
-        createdAt: Number(row.created_at),
-        accessedAt: Number(row.accessed_at),
-        accessCount: Number(row.access_count),
-      })),
+      results: result.rows
+        .map((row) => ({
+          id: row.id as string,
+          content: row.content as string,
+          topics: this.parseJson(row.topics) as string[],
+          metadata: this.parseJson(row.metadata) as Record<string, unknown>,
+          relevanceScore: Number(row.semantic_score),
+          createdAt: Number(row.created_at),
+          accessedAt: Number(row.accessed_at),
+          accessCount: Number(row.access_count),
+        }))
+        .filter((entry) => !opts?.metadata || this.matchMetadata(entry.metadata ?? {}, opts.metadata))
+        .filter((entry) => !opts?.minAccessCount || entry.accessCount >= opts.minAccessCount),
       totalAvailable: Number(count.rows[0]?.count ?? 0),
     };
   }
@@ -738,7 +756,15 @@ export class PostgresMemoryStore implements MemoryStoreLike {
   }
 
   private toQueryResult(entry: MemoryEntry, relevanceScore?: number): QueryResult {
-    return { id: entry.id, content: entry.content, topics: entry.topics, relevanceScore, createdAt: entry.createdAt, accessedAt: entry.accessedAt, accessCount: entry.accessCount };
+    return { id: entry.id, content: entry.content, topics: entry.topics, metadata: entry.metadata, relevanceScore, createdAt: entry.createdAt, accessedAt: entry.accessedAt, accessCount: entry.accessCount };
+  }
+
+  matchMetadata(entryMetadata: Record<string, unknown>, filters: Record<string, MetadataFilterValue>): boolean {
+    return Object.entries(filters).every(([key, expected]) => {
+      const actual = entryMetadata[key];
+      if (expected === null) return actual === null || actual === undefined;
+      return actual === expected;
+    });
   }
 
   private async loadAllLinks(opts?: StoreMemoryOptions): Promise<MemoryLink[]> {

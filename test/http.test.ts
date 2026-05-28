@@ -27,14 +27,15 @@ describe('HttpAdapter', () => {
     const created = await fetch('http://127.0.0.1:18911/memory', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: 'HTTP remembers sharp teeth', topics: ['http'] }),
+      body: JSON.stringify({ content: 'HTTP remembers sharp teeth', topics: ['http'], metadata: { source: 'docs' } }),
     });
     expect(created.status).toBe(201);
 
-    const queried = await fetch('http://127.0.0.1:18911/memory?q=sharp&limit=5');
+    const queried = await fetch('http://127.0.0.1:18911/memory?q=sharp&limit=5&metadata=%7B%22source%22%3A%22docs%22%7D');
     expect(queried.status).toBe(200);
-    const body = await readJson(queried) as { results: Array<{ content: string }> };
+    const body = await readJson(queried) as { results: Array<{ content: string; metadata: Record<string, unknown> }> };
     expect(body.results[0].content).toContain('sharp teeth');
+    expect(body.results[0].metadata.source).toBe('docs');
 
     store.close();
   });

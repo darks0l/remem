@@ -61,6 +61,7 @@ describe('framework adapters', () => {
 
     const context = await adapter.recallContext('Ship v0.6.1 after adapters pass tests');
     expect(context).toContain('Ship v0.6.1');
+    expect(context).toContain('[openclaw.turn]');
     memory.close();
   });
 

@@ -82,7 +82,10 @@ export function createVercelAIAdapter(memory: ReMEM, options: ReMEMAdapterOption
 
     async context(query: string, queryOptions: QueryOptions = { limit: options.defaultLimit ?? 5 }): Promise<string> {
       const response = await memory.query(query, queryOptions);
-      return response.results.map((result) => `- ${result.content}`).join('\n');
+      return response.results.map((result) => {
+        const source = typeof result.metadata?.source === 'string' ? ` (${result.metadata.source})` : '';
+        return `- ${result.content}${source}`;
+      }).join('\n');
     },
   };
 }
@@ -113,6 +116,7 @@ export function createLangGraphStoreAdapter(memory: ReMEM, options: ReMEMAdapter
       const response = await memory.query(query, {
         ...queryOptions,
         topics: Array.from(new Set([...(queryOptions.topics ?? []), ns])),
+        metadata: { ...(queryOptions.metadata ?? {}), namespace: ns },
       });
       return response.results.map((result) => ({
         namespace: [ns],
@@ -126,7 +130,7 @@ export function createLangGraphStoreAdapter(memory: ReMEM, options: ReMEMAdapter
 
     async get(namespace: string | string[], key: string) {
       const ns = Array.isArray(namespace) ? namespace.join('/') : namespace;
-      const response = await memory.query(key, { limit: 20, topics: [ns] });
+      const response = await memory.query(key, { limit: 20, topics: [ns], metadata: { namespace: ns } });
       const found = response.results.find((result) => result.id === key || result.content.includes(key));
       return found
         ? {
@@ -225,7 +229,10 @@ export function createOpenClawAdapter(memory: ReMEM, options: ReMEMAdapterOption
 
     async recallContext(query: string, queryOptions: QueryOptions = { limit: options.defaultLimit ?? 8 }): Promise<string> {
       const response = await memory.query(query, queryOptions);
-      return response.results.map((result) => `- ${result.content}`).join('\n');
+      return response.results.map((result) => {
+        const source = typeof result.metadata?.source === 'string' ? ` [${result.metadata.source}]` : '';
+        return `- ${result.content}${source}`;
+      }).join('\n');
     },
 
     async recallProjectContext(query: string, optionsWithNeighbors: QueryOptions & { hops?: 1 | 2 } = { limit: options.defaultLimit ?? 8 }): Promise<string> {

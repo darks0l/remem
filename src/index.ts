@@ -285,6 +285,7 @@ export class ReMEM {
           const existing = merged.get(neighbor.memory.id);
           const enriched: QueryResult = {
             ...neighbor.memory,
+            metadata: neighbor.memory.metadata ?? {},
             relevanceScore: Math.max(existing?.relevanceScore ?? 0, neighborScore, neighbor.memory.relevanceScore ?? 0),
           };
           merged.set(neighbor.memory.id, enriched);
@@ -626,6 +627,7 @@ export class ReMEM {
       id: entry.id,
       content: entry.content,
       topics: entry.topics,
+      metadata: entry.metadata,
       relevanceScore: entry.importance,
       createdAt: entry.createdAt,
       accessedAt: entry.accessedAt,
@@ -723,6 +725,7 @@ export class ReMEM {
       id: entry.id,
       content: entry.content,
       topics: entry.topics,
+      metadata: entry.metadata,
       relevanceScore: entry.importance,
       createdAt: entry.createdAt,
       accessedAt: entry.accessedAt,
@@ -739,6 +742,7 @@ export class ReMEM {
       id: match.entry.id,
       content: match.entry.content,
       topics: match.entry.topics,
+      metadata: match.entry.metadata,
       relevanceScore: match.score,
       createdAt: match.entry.createdAt,
       accessedAt: match.entry.accessedAt,
@@ -769,6 +773,7 @@ export class ReMEM {
         id: current.id,
         content: current.content,
         topics: current.topics,
+        metadata: current.metadata,
         relevanceScore: current.importance,
         createdAt: current.createdAt,
         accessedAt: current.accessedAt,
