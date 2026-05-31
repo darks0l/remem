@@ -44,6 +44,19 @@ describe('ReMEM', () => {
     expect(uiResults[0].content).toContain('UI');
   });
 
+  it('matches topics exactly instead of by serialized substring', async () => {
+    await memory.store({ content: 'Exact fact match', topics: ['fact-85'] });
+    await memory.store({ content: 'Collision candidate', topics: ['fact-8588'] });
+
+    const exactTopic = await memory.getByTopic('fact-85');
+    expect(exactTopic).toHaveLength(1);
+    expect(exactTopic[0].content).toContain('Exact fact match');
+
+    const exactQuery = await memory.query('fact', { topics: ['fact-85'] });
+    expect(exactQuery.results).toHaveLength(1);
+    expect(exactQuery.results[0].content).toContain('Exact fact match');
+  });
+
   it('respects query options', async () => {
     for (let i = 0; i < 15; i++) {
       await memory.store({ content: `Memory ${i}`, topics: ['test'] });
@@ -165,6 +178,24 @@ describe('MemoryStore', () => {
     const { results } = await store.query('test', { metadata: { project: 'remem' } });
     expect(results.length).toBe(1);
     expect(results[0].metadata).toEqual({ project: 'remem' });
+
+    store.close();
+  });
+
+  it('avoids topic substring collisions in store queries', async () => {
+    const store = new MemoryStore(':memory:');
+    await store.init();
+
+    await store.store({ content: 'Target record', topics: ['fact-85'] });
+    await store.store({ content: 'Wrong collision record', topics: ['fact-8588'] });
+
+    const byTopic = await store.getByTopic('fact-85');
+    expect(byTopic).toHaveLength(1);
+    expect(byTopic[0].content).toBe('Target record');
+
+    const queried = await store.query('record', { topics: ['fact-85'] });
+    expect(queried.results).toHaveLength(1);
+    expect(queried.results[0].content).toBe('Target record');
 
     store.close();
   });

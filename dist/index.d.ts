@@ -46,20 +46,25 @@ declare const storeMemoryInputSchema: z.ZodObject<{
     metadata?: Record<string, unknown> | undefined;
 }>;
 type StoreMemoryInput = z.infer<typeof storeMemoryInputSchema>;
+declare const metadataFilterValueSchema: z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+type MetadataFilterValue = z.infer<typeof metadataFilterValueSchema>;
 declare const queryOptionsSchema: z.ZodObject<{
     limit: z.ZodDefault<z.ZodNumber>;
     topics: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+    metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>>>;
     minAccessCount: z.ZodOptional<z.ZodNumber>;
     since: z.ZodOptional<z.ZodNumber>;
     until: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
     limit: number;
     topics?: string[] | undefined;
+    metadata?: Record<string, string | number | boolean | null> | undefined;
     minAccessCount?: number | undefined;
     since?: number | undefined;
     until?: number | undefined;
 }, {
     topics?: string[] | undefined;
+    metadata?: Record<string, string | number | boolean | null> | undefined;
     limit?: number | undefined;
     minAccessCount?: number | undefined;
     since?: number | undefined;
@@ -70,6 +75,7 @@ declare const queryResultSchema: z.ZodObject<{
     id: z.ZodString;
     content: z.ZodString;
     topics: z.ZodArray<z.ZodString, "many">;
+    metadata: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     relevanceScore: z.ZodOptional<z.ZodNumber>;
     createdAt: z.ZodNumber;
     accessedAt: z.ZodNumber;
@@ -77,6 +83,7 @@ declare const queryResultSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     content: string;
     topics: string[];
+    metadata: Record<string, unknown>;
     id: string;
     createdAt: number;
     accessedAt: number;
@@ -89,6 +96,7 @@ declare const queryResultSchema: z.ZodObject<{
     createdAt: number;
     accessedAt: number;
     accessCount: number;
+    metadata?: Record<string, unknown> | undefined;
     relevanceScore?: number | undefined;
 }>;
 type QueryResult = z.infer<typeof queryResultSchema>;
@@ -97,6 +105,7 @@ declare const queryResponseSchema: z.ZodObject<{
         id: z.ZodString;
         content: z.ZodString;
         topics: z.ZodArray<z.ZodString, "many">;
+        metadata: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
         relevanceScore: z.ZodOptional<z.ZodNumber>;
         createdAt: z.ZodNumber;
         accessedAt: z.ZodNumber;
@@ -104,6 +113,7 @@ declare const queryResponseSchema: z.ZodObject<{
     }, "strip", z.ZodTypeAny, {
         content: string;
         topics: string[];
+        metadata: Record<string, unknown>;
         id: string;
         createdAt: number;
         accessedAt: number;
@@ -116,6 +126,7 @@ declare const queryResponseSchema: z.ZodObject<{
         createdAt: number;
         accessedAt: number;
         accessCount: number;
+        metadata?: Record<string, unknown> | undefined;
         relevanceScore?: number | undefined;
     }>, "many">;
     totalAvailable: z.ZodNumber;
@@ -125,6 +136,7 @@ declare const queryResponseSchema: z.ZodObject<{
     results: {
         content: string;
         topics: string[];
+        metadata: Record<string, unknown>;
         id: string;
         createdAt: number;
         accessedAt: number;
@@ -142,6 +154,7 @@ declare const queryResponseSchema: z.ZodObject<{
         createdAt: number;
         accessedAt: number;
         accessCount: number;
+        metadata?: Record<string, unknown> | undefined;
         relevanceScore?: number | undefined;
     }[];
     totalAvailable: number;
@@ -207,6 +220,7 @@ type LinkedMemoryQueryOptions = z.infer<typeof linkedMemoryQueryOptionsSchema>;
 declare const queryWithNeighborsOptionsSchema: z.ZodObject<{
     limit: z.ZodDefault<z.ZodNumber>;
     topics: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+    metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>>>;
     minAccessCount: z.ZodOptional<z.ZodNumber>;
     since: z.ZodOptional<z.ZodNumber>;
     until: z.ZodOptional<z.ZodNumber>;
@@ -226,6 +240,7 @@ declare const queryWithNeighborsOptionsSchema: z.ZodObject<{
     minNeighborScore: number;
     includePathDetails: boolean;
     topics?: string[] | undefined;
+    metadata?: Record<string, string | number | boolean | null> | undefined;
     minAccessCount?: number | undefined;
     since?: number | undefined;
     until?: number | undefined;
@@ -233,6 +248,7 @@ declare const queryWithNeighborsOptionsSchema: z.ZodObject<{
     linkTypeWeights?: Record<string, number> | undefined;
 }, {
     topics?: string[] | undefined;
+    metadata?: Record<string, string | number | boolean | null> | undefined;
     limit?: number | undefined;
     minAccessCount?: number | undefined;
     since?: number | undefined;
@@ -1650,6 +1666,7 @@ interface StoreMemoryOptions {
     userId?: string;
 }
 interface MemoryStoreLike {
+    matchMetadata?(entryMetadata: Record<string, unknown>, filters: Record<string, MetadataFilterValue>): boolean;
     init(): Promise<void>;
     store(input: StoreMemoryInput, opts?: StoreMemoryOptions): Promise<MemoryEntry>;
     get(id: string): Promise<MemoryEntry | null>;
@@ -2057,6 +2074,8 @@ declare class MemoryStore implements MemoryStoreLike {
     private restoreLink;
     private rowToLink;
     private rowToObject;
+    matchMetadata(entryMetadata: Record<string, unknown>, filters: Record<string, MetadataFilterValue>): boolean;
+    private matchTopics;
     private simpleRelevance;
 }
 
@@ -2141,6 +2160,7 @@ declare class PostgresMemoryStore implements MemoryStoreLike {
     private rowToMemory;
     private rowToLayerEntry;
     private toQueryResult;
+    matchMetadata(entryMetadata: Record<string, unknown>, filters: Record<string, MetadataFilterValue>): boolean;
     private loadAllLinks;
     private rowToLink;
     private restoreLinkWithClient;
@@ -3140,4 +3160,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, ModelAbstraction, type ModelConfig, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SnapshotExport, type SnapshotMeta, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, modelConfigSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, storeMemoryInputSchema, uploadPackage };
+export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, type MetadataFilterValue, ModelAbstraction, type ModelConfig, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SnapshotExport, type SnapshotMeta, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, metadataFilterValueSchema, modelConfigSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, storeMemoryInputSchema, uploadPackage };

@@ -1,0 +1,109 @@
+{
+  "benchmark": "remem-context-window-suite-v1",
+  "timestamp": "2026-05-31T02:31:08.192Z",
+  "config": {
+    "totalMemories": 2000,
+    "queryCount": 120,
+    "contextEntries": 100,
+    "limit": 5,
+    "seed": 1337
+  },
+  "contextPressure": {
+    "corpusApproxTokens": 143650,
+    "fixedWindowApproxTokens": 7214,
+    "effectiveCorpusToWindowMultiple": 19.91
+  },
+  "scenarios": [
+    {
+      "name": "core exact codename",
+      "queryStyle": "exact-code",
+      "embeddings": false,
+      "queryTopics": false,
+      "metrics": {
+        "fixedContextRecallAt1": 0,
+        "rememRecallAt1": 1,
+        "rememRecallAtK": 1,
+        "rememMRR": 1,
+        "avgReturned": 1.01,
+        "storeMs": 187.17,
+        "avgStoreMsPerMemory": 0.09,
+        "storeFailures": 0,
+        "avgQueryMs": 1.01,
+        "p50QueryMs": 1.01,
+        "p95QueryMs": 1.36
+      },
+      "misses": []
+    },
+    {
+      "name": "core natural language no embeddings",
+      "queryStyle": "natural",
+      "embeddings": false,
+      "queryTopics": false,
+      "metrics": {
+        "fixedContextRecallAt1": 0,
+        "rememRecallAt1": 0,
+        "rememRecallAtK": 0,
+        "rememMRR": 0,
+        "avgReturned": 0,
+        "storeMs": 137.57,
+        "avgStoreMsPerMemory": 0.07,
+        "storeFailures": 0,
+        "avgQueryMs": 0.77,
+        "p50QueryMs": 0.75,
+        "p95QueryMs": 0.89
+      },
+      "misses": [
+        {
+          "id": "fact-1483",
+          "query": "What is the verification PIN for indexer record fact-1483 with codename black-claw-01483?",
+          "expectedPin": "141768",
+          "top": []
+        },
+        {
+          "id": "fact-1548",
+          "query": "What is the verification PIN for memory record fact-1548 with codename signal-switch-01548?",
+          "expectedPin": "983579",
+          "top": []
+        },
+        {
+          "id": "fact-727",
+          "query": "What is the verification PIN for indexer record fact-727 with codename silver-comet-00727?",
+          "expectedPin": "991459",
+          "top": []
+        },
+        {
+          "id": "fact-199",
+          "query": "What is the verification PIN for vault record fact-199 with codename iron-claw-00199?",
+          "expectedPin": "895271",
+          "top": []
+        },
+        {
+          "id": "fact-399",
+          "query": "What is the verification PIN for memory record fact-399 with codename signal-switch-00399?",
+          "expectedPin": "991970",
+          "top": []
+        }
+      ]
+    },
+    {
+      "name": "core topic-filtered exact id",
+      "queryStyle": "exact-id",
+      "embeddings": false,
+      "queryTopics": true,
+      "metrics": {
+        "fixedContextRecallAt1": 0,
+        "rememRecallAt1": 1,
+        "rememRecallAtK": 1,
+        "rememMRR": 1,
+        "avgReturned": 1,
+        "storeMs": 134.95,
+        "avgStoreMsPerMemory": 0.07,
+        "storeFailures": 0,
+        "avgQueryMs": 0.84,
+        "p50QueryMs": 0.8,
+        "p95QueryMs": 1.04
+      },
+      "misses": []
+    }
+  ]
+}

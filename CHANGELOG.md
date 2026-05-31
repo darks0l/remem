@@ -4,6 +4,13 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Changed
+
+- Corrected benchmark-facing docs after the exact-topic-match fix and added fresh 2026-05-31 validation result artifacts for 2k / 10k / 50k context-window reruns.
+- Updated README benchmark claims to distinguish historical May 3 baseline numbers from current-source validation results.
+
 ## [0.9.0] — 2026-05-27
 
 ### Added

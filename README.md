@@ -155,7 +155,7 @@ ReMEM does **not** change a model's native context length. It gives agents an ex
 
 A reproducible synthetic benchmark is included in [`benchmarks/`](./benchmarks). It stores deterministic memories, simulates a fixed recent-context window, then asks for facts that are deliberately outside that active window.
 
-Latest local benchmark result, v0.8.5 docs pass:
+Latest validated benchmark pass on current source:
 
 - **50,000 memories**
 - Approx **3,625,526 stored tokens**
@@ -163,10 +163,11 @@ Latest local benchmark result, v0.8.5 docs pass:
 - Corpus/window pressure: **499x**
 - Fixed recent-context recall: **0%**
 - ReMEM exact-codename lookup: **99.4% recall@1**, **100% recall@5**
-- Avg query latency: **49.98ms** local in-memory sql.js run
+- ReMEM topic-filtered exact-ID lookup: **100% recall@1/@5** after the exact-topic-match fix
+- Avg query latency: **25.55ms** local in-memory sql.js run on the 50k exact-codename pass
 - Small embedding-backed semantic run: **100% recall@1/@5** on 80 memories, with embedding ingestion identified as the current bottleneck
 
-Read the full claim boundaries and raw result references in [`benchmarks/PUBLIC-RESULTS-2026-05-03.md`](./benchmarks/PUBLIC-RESULTS-2026-05-03.md).
+Read the full claim boundaries plus both the historical May 3 baseline and the corrected May 31 validation reruns in [`benchmarks/PUBLIC-RESULTS-2026-05-03.md`](./benchmarks/PUBLIC-RESULTS-2026-05-03.md).
 
 Safe wording: ReMEM lets agents retrieve relevant memories from a stored corpus much larger than the active context window. Do **not** claim infinite context or universal semantic recall.
 

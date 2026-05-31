@@ -27,9 +27,11 @@ var storeMemoryInputSchema = z.object({
   topics: z.array(z.string()).optional().default([]),
   metadata: z.record(z.unknown()).optional().default({})
 });
+var metadataFilterValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 var queryOptionsSchema = z.object({
   limit: z.number().min(1).max(100).default(10),
   topics: z.array(z.string()).optional(),
+  metadata: z.record(metadataFilterValueSchema).optional(),
   minAccessCount: z.number().optional(),
   since: z.number().optional(),
   // unix timestamp ms
@@ -39,6 +41,7 @@ var queryResultSchema = z.object({
   id: z.string(),
   content: z.string(),
   topics: z.array(z.string()),
+  metadata: z.record(z.unknown()).default({}),
   relevanceScore: z.number().optional(),
   createdAt: z.number(),
   accessedAt: z.number(),
@@ -631,11 +634,6 @@ var MemoryStore = class {
     const opts = queryOptionsSchema.parse(options ?? {});
     let sql = "SELECT * FROM memory WHERE content LIKE ?";
     const params = [`%${text}%`];
-    if (opts.topics && opts.topics.length > 0) {
-      const topicConditions = opts.topics.map(() => "topics LIKE ?").join(" OR ");
-      sql += ` AND (${topicConditions})`;
-      params.push(...opts.topics.map((t) => `%${t}%`));
-    }
     if (opts.since) {
       sql += " AND created_at >= ?";
       params.push(opts.since);
@@ -645,28 +643,24 @@ var MemoryStore = class {
       params.push(opts.until);
     }
     sql += " ORDER BY access_count DESC, accessed_at DESC";
-    const countSql = sql.replace("SELECT *", "SELECT COUNT(*) as count");
-    const countResult = this.db.exec(countSql, params);
-    const totalAvailable = countResult[0]?.values[0]?.[0] ?? 0;
-    sql += " LIMIT ? OFFSET 0";
-    params.push(opts.limit);
     const result = this.db.exec(sql, params);
     if (result.length === 0) {
-      return { results: [], totalAvailable };
+      this.logEvent("memory.queried", { text, options: opts, resultCount: 0 });
+      return { results: [], totalAvailable: 0 };
     }
     const rows = result[0].values.map((v) => this.rowToObject(result[0].columns, v));
-    const results = rows.map((row) => {
-      const entry = memoryEntrySchema.parse(row);
-      return {
-        id: entry.id,
-        content: entry.content,
-        topics: entry.topics,
-        relevanceScore: this.simpleRelevance(entry.content, text),
-        createdAt: entry.createdAt,
-        accessedAt: entry.accessedAt,
-        accessCount: entry.accessCount
-      };
-    });
+    const filteredEntries = rows.map((row) => memoryEntrySchema.parse(row)).filter((entry) => !opts.topics || this.matchTopics(entry.topics, opts.topics)).filter((entry) => !opts.minAccessCount || entry.accessCount >= opts.minAccessCount).filter((entry) => !opts.metadata || this.matchMetadata(entry.metadata, opts.metadata));
+    const totalAvailable = filteredEntries.length;
+    const results = filteredEntries.slice(0, opts.limit).map((entry) => ({
+      id: entry.id,
+      content: entry.content,
+      topics: entry.topics,
+      metadata: entry.metadata,
+      relevanceScore: this.simpleRelevance(entry.content, text),
+      createdAt: entry.createdAt,
+      accessedAt: entry.accessedAt,
+      accessCount: entry.accessCount
+    }));
     this.logEvent("memory.queried", { text, options: opts, resultCount: results.length });
     return { results, totalAvailable };
   }
@@ -684,6 +678,7 @@ var MemoryStore = class {
         id: entry.id,
         content: entry.content,
         topics: entry.topics,
+        metadata: entry.metadata,
         relevanceScore: 0,
         createdAt: entry.createdAt,
         accessedAt: entry.accessedAt,
@@ -701,6 +696,7 @@ var MemoryStore = class {
         id: entry.id,
         content: entry.content,
         topics: entry.topics,
+        metadata: entry.metadata,
         createdAt: entry.createdAt,
         accessedAt: entry.accessedAt,
         accessCount: entry.accessCount
@@ -709,10 +705,7 @@ var MemoryStore = class {
   }
   async getByTopic(topic, limit = 20) {
     this.ensureInitialized();
-    const result = this.db.exec(
-      "SELECT * FROM memory WHERE topics LIKE ? ORDER BY accessed_at DESC LIMIT ?",
-      [`%${topic}%`, limit]
-    );
+    const result = this.db.exec("SELECT * FROM memory ORDER BY accessed_at DESC");
     if (result.length === 0) return [];
     return result[0].values.map((v) => {
       const entry = memoryEntrySchema.parse(this.rowToObject(result[0].columns, v));
@@ -720,11 +713,12 @@ var MemoryStore = class {
         id: entry.id,
         content: entry.content,
         topics: entry.topics,
+        metadata: entry.metadata,
         createdAt: entry.createdAt,
         accessedAt: entry.accessedAt,
         accessCount: entry.accessCount
       };
-    });
+    }).filter((entry) => entry.topics.includes(topic)).slice(0, limit);
   }
   async forget(id) {
     this.ensureInitialized();
@@ -819,6 +813,7 @@ var MemoryStore = class {
         id: entry.id,
         content: entry.content,
         topics: entry.topics,
+        metadata: entry.metadata,
         createdAt: entry.createdAt,
         accessedAt: entry.accessedAt,
         accessCount: entry.accessCount
@@ -831,6 +826,7 @@ var MemoryStore = class {
       id: obj["id"],
       content: obj["content"],
       topics: Array.isArray(obj["topics"]) ? obj["topics"] : JSON.parse(String(obj["topics"] ?? "[]")),
+      metadata: typeof obj["metadata"] === "object" && obj["metadata"] !== null ? obj["metadata"] : JSON.parse(String(obj["metadata"] ?? "{}")),
       createdAt: obj["createdAt"],
       accessedAt: obj["accessedAt"],
       accessCount: obj["accessCount"]
@@ -1247,15 +1243,10 @@ var MemoryStore = class {
   async semanticQuery(queryText, queryVector, opts) {
     this.ensureInitialized();
     const limit = opts?.limit ?? 10;
-    let sql = "SELECT id, content, topics, created_at, accessed_at, access_count FROM memory m";
+    let sql = "SELECT id, content, topics, metadata, created_at, accessed_at, access_count FROM memory m";
     const params = [];
-    if (opts?.topics && opts.topics.length > 0) {
-      const topicConditions = opts.topics.map(() => "m.topics LIKE ?").join(" OR ");
-      sql += ` WHERE (${topicConditions})`;
-      params.push(...opts.topics.map((t) => `%${t}%`));
-    }
     if (opts?.since) {
-      sql += params.length ? " AND m.created_at >= ?" : " WHERE m.created_at >= ?";
+      sql += " WHERE m.created_at >= ?";
       params.push(opts.since);
     }
     if (opts?.until) {
@@ -1267,8 +1258,9 @@ var MemoryStore = class {
     const rows = result[0].values;
     const scoredResults = [];
     for (const row of rows) {
-      const [id, content, topics, createdAt, accessedAt, accessCount] = row;
+      const [id, content, topics, metadata, createdAt, accessedAt, accessCount] = row;
       const topicArr = typeof topics === "string" ? JSON.parse(topics) : topics;
+      const metadataObj = typeof metadata === "string" ? JSON.parse(metadata) : metadata;
       const emb = await this.getEmbedding(id);
       let relevanceScore;
       if (queryVector && emb) {
@@ -1285,15 +1277,17 @@ var MemoryStore = class {
         id,
         content,
         topics: topicArr,
+        metadata: metadataObj,
         relevanceScore,
         createdAt,
         accessedAt,
         accessCount
       });
     }
-    scoredResults.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
-    const totalAvailable = scoredResults.length;
-    const limited = scoredResults.slice(0, limit);
+    const filteredResults = scoredResults.filter((entry) => !opts?.topics || this.matchTopics(entry.topics, opts.topics)).filter((entry) => !opts?.minAccessCount || entry.accessCount >= opts.minAccessCount).filter((entry) => !opts?.metadata || this.matchMetadata(entry.metadata ?? {}, opts.metadata));
+    filteredResults.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+    const totalAvailable = filteredResults.length;
+    const limited = filteredResults.slice(0, limit);
     return { results: limited, totalAvailable };
   }
   getEventLog(limit = 100) {
@@ -1408,6 +1402,16 @@ var MemoryStore = class {
       else obj[col] = val;
     });
     return obj;
+  }
+  matchMetadata(entryMetadata, filters) {
+    return Object.entries(filters).every(([key, expected]) => {
+      const actual = entryMetadata[key];
+      if (expected === null) return actual === null || actual === void 0;
+      return actual === expected;
+    });
+  }
+  matchTopics(entryTopics, requestedTopics) {
+    return requestedTopics.some((topic) => entryTopics.includes(topic));
   }
   simpleRelevance(content, query) {
     const lower = content.toLowerCase();
@@ -1609,6 +1613,15 @@ var PostgresMemoryStore = class {
       where.push(`created_at <= $${idx++}`);
       params.push(opts.until);
     }
+    if (opts.minAccessCount) {
+      where.push(`access_count >= $${idx++}`);
+      params.push(opts.minAccessCount);
+    }
+    if (opts.metadata && Object.keys(opts.metadata).length > 0) {
+      where.push(`metadata @> $${idx}::jsonb`);
+      params.push(JSON.stringify(opts.metadata));
+      idx++;
+    }
     const whereSql = `WHERE ${where.join(" AND ")}`;
     const count = await this.pgQuery(`SELECT COUNT(*)::text AS count FROM ${this.table("memory")} ${whereSql}`, params);
     const totalAvailable = Number(count.rows[0]?.count ?? 0);
@@ -1719,6 +1732,7 @@ var PostgresMemoryStore = class {
       id: entry.id,
       content: entry.content,
       topics: entry.topics,
+      metadata: entry.metadata,
       createdAt: entry.createdAt,
       accessedAt: entry.accessedAt,
       accessCount: entry.accessCount
@@ -1902,11 +1916,12 @@ var PostgresMemoryStore = class {
       params.push(opts.until);
     }
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
-    const result = await this.pgQuery(`SELECT id, content, topics, created_at, accessed_at, access_count FROM ${this.table("memory")} ${whereSql}`, params);
+    const result = await this.pgQuery(`SELECT id, content, topics, metadata, created_at, accessed_at, access_count FROM ${this.table("memory")} ${whereSql}`, params);
     const scored = [];
     for (const row of result.rows) {
       let relevanceScore;
       const embedding = await this.getEmbedding(row.id);
+      const metadata = this.parseJson(row.metadata);
       if (queryVector && embedding) {
         try {
           relevanceScore = EmbeddingService.cosineSimilarity(queryVector, EmbeddingService.decodeVector(embedding.base64, embedding.dimension));
@@ -1916,10 +1931,11 @@ var PostgresMemoryStore = class {
       } else {
         relevanceScore = this.simpleRelevance(row.content, queryText);
       }
-      scored.push({ id: row.id, content: row.content, topics: this.parseJson(row.topics), relevanceScore, createdAt: Number(row.created_at), accessedAt: Number(row.accessed_at), accessCount: Number(row.access_count) });
+      scored.push({ id: row.id, content: row.content, topics: this.parseJson(row.topics), metadata, relevanceScore, createdAt: Number(row.created_at), accessedAt: Number(row.accessed_at), accessCount: Number(row.access_count) });
     }
-    scored.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
-    return { results: scored.slice(0, limit), totalAvailable: scored.length };
+    const filtered = scored.filter((entry) => !opts?.metadata || this.matchMetadata(entry.metadata ?? {}, opts.metadata)).filter((entry) => !opts?.minAccessCount || entry.accessCount >= opts.minAccessCount);
+    filtered.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+    return { results: filtered.slice(0, limit), totalAvailable: filtered.length };
   }
   async maybeEnablePgvector() {
     if (!this.config.pgvector?.enabled) return;
@@ -1984,11 +2000,20 @@ var PostgresMemoryStore = class {
       where.push(`m.created_at <= $${idx++}`);
       params.push(opts.until);
     }
+    if (opts?.minAccessCount) {
+      where.push(`m.access_count >= $${idx++}`);
+      params.push(opts.minAccessCount);
+    }
+    if (opts?.metadata && Object.keys(opts.metadata).length > 0) {
+      where.push(`m.metadata @> $${idx}::jsonb`);
+      params.push(JSON.stringify(opts.metadata));
+      idx++;
+    }
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
     const filterSql = where.length ? `AND ${where.join(" AND ")}` : "";
     const count = await this.pgQuery(`SELECT COUNT(*)::text AS count FROM ${this.table("memory")} m ${whereSql}`, params.slice(1));
     const result = await this.pgQuery(
-      `SELECT m.id, m.content, m.topics, m.created_at, m.accessed_at, m.access_count,
+      `SELECT m.id, m.content, m.topics, m.metadata, m.created_at, m.accessed_at, m.access_count,
               1 - (e.vector_value <=> $1::vector) AS semantic_score
          FROM ${this.table("memory")} m
          JOIN ${this.table("embeddings")} e ON e.memory_id = m.id
@@ -2002,11 +2027,12 @@ var PostgresMemoryStore = class {
         id: row.id,
         content: row.content,
         topics: this.parseJson(row.topics),
+        metadata: this.parseJson(row.metadata),
         relevanceScore: Number(row.semantic_score),
         createdAt: Number(row.created_at),
         accessedAt: Number(row.accessed_at),
         accessCount: Number(row.access_count)
-      })),
+      })).filter((entry) => !opts?.metadata || this.matchMetadata(entry.metadata ?? {}, opts.metadata)).filter((entry) => !opts?.minAccessCount || entry.accessCount >= opts.minAccessCount),
       totalAvailable: Number(count.rows[0]?.count ?? 0)
     };
   }
@@ -2103,7 +2129,14 @@ var PostgresMemoryStore = class {
     };
   }
   toQueryResult(entry, relevanceScore) {
-    return { id: entry.id, content: entry.content, topics: entry.topics, relevanceScore, createdAt: entry.createdAt, accessedAt: entry.accessedAt, accessCount: entry.accessCount };
+    return { id: entry.id, content: entry.content, topics: entry.topics, metadata: entry.metadata, relevanceScore, createdAt: entry.createdAt, accessedAt: entry.accessedAt, accessCount: entry.accessCount };
+  }
+  matchMetadata(entryMetadata, filters) {
+    return Object.entries(filters).every(([key, expected]) => {
+      const actual = entryMetadata[key];
+      if (expected === null) return actual === null || actual === void 0;
+      return actual === expected;
+    });
   }
   async loadAllLinks(opts) {
     const { where, params } = this.scopeWhere(opts);
@@ -2435,6 +2468,7 @@ Respond with a JSON array of scores (0-1) matching the order above. Example: [0.
       scored.sort((a, b) => b.score - a.score);
       return scored.map((s) => ({
         ...s.result,
+        metadata: s.result.metadata ?? {},
         relevanceScore: s.score
       }));
     } catch {
@@ -3150,6 +3184,14 @@ var LayerManager = class {
         if (options?.since && entry.createdAt < options.since) continue;
         if (options?.until && entry.createdAt > options.until) continue;
         if (options?.minAccessCount && entry.accessCount < options.minAccessCount) continue;
+        if (options?.metadata) {
+          const matchesMetadata = Object.entries(options.metadata).every(([key, expected]) => {
+            const actual = entry.metadata?.[key];
+            if (expected === null) return actual === null || actual === void 0;
+            return actual === expected;
+          });
+          if (!matchesMetadata) continue;
+        }
         const contentScore = this.simpleRelevance(entry.content, text);
         let blendedScore = contentScore;
         if (queryEmbedding && this.entryEmbeddings.has(entry.id)) {
@@ -3176,6 +3218,7 @@ var LayerManager = class {
       id: entry.id,
       content: entry.content,
       topics: entry.topics,
+      metadata: entry.metadata,
       relevanceScore: entry.weightedScore,
       createdAt: entry.createdAt,
       accessedAt: entry.accessedAt,
@@ -3209,6 +3252,7 @@ var LayerManager = class {
       id: entry.id,
       content: entry.content,
       topics: entry.topics,
+      metadata: entry.metadata,
       relevanceScore: entry.weightedScore,
       createdAt: entry.createdAt,
       accessedAt: entry.accessedAt,
@@ -3233,6 +3277,7 @@ var LayerManager = class {
         id: entry.id,
         content: entry.content,
         topics: entry.topics,
+        metadata: entry.metadata,
         relevanceScore: layerWeight * (entry.accessCount + 1),
         createdAt: entry.createdAt,
         accessedAt: entry.accessedAt,
@@ -4017,8 +4062,12 @@ var HttpAdapter = class {
       const query = url.searchParams.get("q") ?? "";
       const limit = parseInt(url.searchParams.get("limit") ?? "10", 10);
       const topics = url.searchParams.get("topics")?.split(",").filter(Boolean);
+      const minAccessCount = url.searchParams.get("minAccessCount");
+      const metadata = url.searchParams.get("metadata");
       const options = { limit };
       if (topics) options.topics = topics;
+      if (minAccessCount) options.minAccessCount = parseInt(minAccessCount, 10);
+      if (metadata) options.metadata = JSON.parse(metadata);
       const result = await this.engine.query(query, options);
       return { status: 200, body: result };
     }
@@ -4835,7 +4884,10 @@ function createVercelAIAdapter(memory, options = {}) {
     },
     async context(query, queryOptions = { limit: options.defaultLimit ?? 5 }) {
       const response = await memory.query(query, queryOptions);
-      return response.results.map((result) => `- ${result.content}`).join("\n");
+      return response.results.map((result) => {
+        const source = typeof result.metadata?.source === "string" ? ` (${result.metadata.source})` : "";
+        return `- ${result.content}${source}`;
+      }).join("\n");
     }
   };
 }
@@ -4855,7 +4907,8 @@ function createLangGraphStoreAdapter(memory, options = {}) {
       const ns = Array.isArray(namespace) ? namespace.join("/") : namespace;
       const response = await memory.query(query, {
         ...queryOptions,
-        topics: Array.from(/* @__PURE__ */ new Set([...queryOptions.topics ?? [], ns]))
+        topics: Array.from(/* @__PURE__ */ new Set([...queryOptions.topics ?? [], ns])),
+        metadata: { ...queryOptions.metadata ?? {}, namespace: ns }
       });
       return response.results.map((result) => ({
         namespace: [ns],
@@ -4868,7 +4921,7 @@ function createLangGraphStoreAdapter(memory, options = {}) {
     },
     async get(namespace, key) {
       const ns = Array.isArray(namespace) ? namespace.join("/") : namespace;
-      const response = await memory.query(key, { limit: 20, topics: [ns] });
+      const response = await memory.query(key, { limit: 20, topics: [ns], metadata: { namespace: ns } });
       const found = response.results.find((result) => result.id === key || result.content.includes(key));
       return found ? {
         namespace: [ns],
@@ -4937,7 +4990,10 @@ function createOpenClawAdapter(memory, options = {}) {
     },
     async recallContext(query, queryOptions = { limit: options.defaultLimit ?? 8 }) {
       const response = await memory.query(query, queryOptions);
-      return response.results.map((result) => `- ${result.content}`).join("\n");
+      return response.results.map((result) => {
+        const source = typeof result.metadata?.source === "string" ? ` [${result.metadata.source}]` : "";
+        return `- ${result.content}${source}`;
+      }).join("\n");
     },
     async recallProjectContext(query, optionsWithNeighbors = { limit: options.defaultLimit ?? 8 }) {
       const response = await memory.queryWithNeighbors(query, {
@@ -5142,6 +5198,7 @@ var ReMEM = class {
           const existing = merged.get(neighbor.memory.id);
           const enriched = {
             ...neighbor.memory,
+            metadata: neighbor.memory.metadata ?? {},
             relevanceScore: Math.max(existing?.relevanceScore ?? 0, neighborScore, neighbor.memory.relevanceScore ?? 0)
           };
           merged.set(neighbor.memory.id, enriched);
@@ -5413,6 +5470,7 @@ var ReMEM = class {
       id: entry.id,
       content: entry.content,
       topics: entry.topics,
+      metadata: entry.metadata,
       relevanceScore: entry.importance,
       createdAt: entry.createdAt,
       accessedAt: entry.accessedAt,
@@ -5492,6 +5550,7 @@ var ReMEM = class {
       id: entry.id,
       content: entry.content,
       topics: entry.topics,
+      metadata: entry.metadata,
       relevanceScore: entry.importance,
       createdAt: entry.createdAt,
       accessedAt: entry.accessedAt,
@@ -5507,6 +5566,7 @@ var ReMEM = class {
       id: match.entry.id,
       content: match.entry.content,
       topics: match.entry.topics,
+      metadata: match.entry.metadata,
       relevanceScore: match.score,
       createdAt: match.entry.createdAt,
       accessedAt: match.entry.accessedAt,
@@ -5531,6 +5591,7 @@ var ReMEM = class {
         id: current.id,
         content: current.content,
         topics: current.topics,
+        metadata: current.metadata,
         relevanceScore: current.importance,
         createdAt: current.createdAt,
         accessedAt: current.accessedAt,
@@ -5769,6 +5830,7 @@ export {
   memoryLayerSchema,
   memoryLinkInputSchema,
   memoryLinkSchema,
+  metadataFilterValueSchema,
   modelConfigSchema,
   neighborPathSchema,
   postgresStorageConfigSchema,

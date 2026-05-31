@@ -262,12 +262,6 @@ export class MemoryStore implements MemoryStoreLike {
     let sql = 'SELECT * FROM memory WHERE content LIKE ?';
     const params: (string | number)[] = [`%${text}%`];
 
-    if (opts.topics && opts.topics.length > 0) {
-      const topicConditions = opts.topics.map(() => 'topics LIKE ?').join(' OR ');
-      sql += ` AND (${topicConditions})`;
-      params.push(...opts.topics.map((t) => `%${t}%`));
-    }
-
     if (opts.since) {
       sql += ' AND created_at >= ?';
       params.push(opts.since);
@@ -290,6 +284,7 @@ export class MemoryStore implements MemoryStoreLike {
     const rows = result[0].values.map((v: unknown[]) => this.rowToObject(result[0].columns, v));
     const filteredEntries = rows
       .map((row) => memoryEntrySchema.parse(row))
+      .filter((entry) => !opts.topics || this.matchTopics(entry.topics, opts.topics))
       .filter((entry) => !opts.minAccessCount || entry.accessCount >= opts.minAccessCount)
       .filter((entry) => !opts.metadata || this.matchMetadata(entry.metadata, opts.metadata));
 
@@ -362,25 +357,25 @@ export class MemoryStore implements MemoryStoreLike {
   async getByTopic(topic: string, limit: number = 20): Promise<QueryResult[]> {
     this.ensureInitialized();
 
-    const result = this.db!.exec(
-      'SELECT * FROM memory WHERE topics LIKE ? ORDER BY accessed_at DESC LIMIT ?',
-      [`%${topic}%`, limit]
-    );
+    const result = this.db!.exec('SELECT * FROM memory ORDER BY accessed_at DESC');
 
     if (result.length === 0) return [];
 
-    return result[0].values.map((v: unknown[]) => {
-      const entry = memoryEntrySchema.parse(this.rowToObject(result[0].columns, v));
-      return {
-        id: entry.id,
-        content: entry.content,
-        topics: entry.topics,
-        metadata: entry.metadata,
-        createdAt: entry.createdAt,
-        accessedAt: entry.accessedAt,
-        accessCount: entry.accessCount,
-      };
-    });
+    return result[0].values
+      .map((v: unknown[]) => {
+        const entry = memoryEntrySchema.parse(this.rowToObject(result[0].columns, v));
+        return {
+          id: entry.id,
+          content: entry.content,
+          topics: entry.topics,
+          metadata: entry.metadata,
+          createdAt: entry.createdAt,
+          accessedAt: entry.accessedAt,
+          accessCount: entry.accessCount,
+        };
+      })
+      .filter((entry) => entry.topics.includes(topic))
+      .slice(0, limit);
   }
 
   async forget(id: string): Promise<boolean> {
@@ -985,14 +980,8 @@ export class MemoryStore implements MemoryStoreLike {
     let sql = 'SELECT id, content, topics, metadata, created_at, accessed_at, access_count FROM memory m';
     const params: (string | number)[] = [];
 
-    if (opts?.topics && opts.topics.length > 0) {
-      const topicConditions = opts.topics.map(() => 'm.topics LIKE ?').join(' OR ');
-      sql += ` WHERE (${topicConditions})`;
-      params.push(...opts.topics.map((t) => `%${t}%`));
-    }
-
     if (opts?.since) {
-      sql += params.length ? ' AND m.created_at >= ?' : ' WHERE m.created_at >= ?';
+      sql += ' WHERE m.created_at >= ?';
       params.push(opts.since);
     }
     if (opts?.until) {
@@ -1045,6 +1034,7 @@ export class MemoryStore implements MemoryStoreLike {
     }
 
     const filteredResults = scoredResults
+      .filter((entry) => !opts?.topics || this.matchTopics(entry.topics, opts.topics))
       .filter((entry) => !opts?.minAccessCount || entry.accessCount >= opts.minAccessCount)
       .filter((entry) => !opts?.metadata || this.matchMetadata(entry.metadata ?? {}, opts.metadata));
 
@@ -1187,6 +1177,10 @@ export class MemoryStore implements MemoryStoreLike {
       if (expected === null) return actual === null || actual === undefined;
       return actual === expected;
     });
+  }
+
+  private matchTopics(entryTopics: string[], requestedTopics: string[]): boolean {
+    return requestedTopics.some((topic) => entryTopics.includes(topic));
   }
 
   private simpleRelevance(content: string, query: string): number {
