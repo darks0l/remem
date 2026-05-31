@@ -40,6 +40,12 @@ node ./benchmarks/context-window-suite.mjs --memories 80 --queries 30 --contextE
 
 Outputs are written to `benchmarks/results/*.json` and `benchmarks/results/*.md`.
 
+To regenerate the public benchmark summary from the raw JSON artifacts:
+
+```bash
+npm run bench:public-results
+```
+
 ## Claim boundaries
 
 Safe public wording should cite the exact harness, config, and seed.

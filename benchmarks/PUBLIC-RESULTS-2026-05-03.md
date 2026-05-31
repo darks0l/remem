@@ -1,6 +1,6 @@
-# ReMEM Context Window Benchmark Results — 2026-05-03
+# ReMEM Context Window Benchmark Results - 2026-05-03
 
-These are reproducible synthetic benchmarks for `@darksol/remem` v0.6.5.
+These are reproducible synthetic benchmarks for `@darksol/remem`.
 
 The test asks a narrow question:
 
@@ -17,14 +17,14 @@ It does **not** claim that ReMEM changes a model's native context length. It tes
 - Query sampling: only records outside that fixed window
 - Metrics: fixed recall@1, ReMEM recall@1, ReMEM recall@K, MRR, store time, average/p50/p95 query latency
 - Seed: `1337`
+- This file is generated from raw result JSON by `benchmarks/generate-public-results.mjs`
 
 ## Results summary
 
-This file now serves two purposes:
+This file serves two purposes:
 
 1. Preserve the original May 3 benchmark artifacts that backed the first public benchmark release.
-2. Record the May 31 validation reruns on current source after the exact-topic-match fix, so benchmark claims do not mix historical bug-affected topic-filter numbers with current behavior.
-
+2. Record the latest validation reruns on current source after the exact-topic-match fix, so benchmark claims do not mix historical bug-affected topic-filter numbers with current behavior.
 
 ### Historical baseline: May 3 release pass
 
@@ -71,7 +71,7 @@ Source file: `benchmarks/results/context-window-2026-05-03T14-52-06-069Z-2000m-1
 |---|---:|---:|---:|---:|---:|---:|
 | Exact codename | 0% | 100% | 100% | 1.000 | 1.94ms | 2.49ms |
 | Natural language, no embeddings | 0% | 0% | 0% | 0.000 | 1.46ms | 1.59ms |
-| Topic-filtered exact ID | 0% | 90.83% | 90.83% | 0.908 | 1.61ms | 1.77ms |
+| Topic-filtered exact ID | 0% | 90.8% | 90.8% | 0.908 | 1.61ms | 1.77ms |
 
 ### Small semantic embedding run, 80 memories
 
@@ -79,7 +79,7 @@ Source file: `benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q
 
 - Approx corpus: **5,681 tokens**
 - Simulated fixed window: **711 tokens**
-- Corpus/window pressure: **8.0x**
+- Corpus/window pressure: **8x**
 - Queries: **30**, all outside the fixed window
 - Embeddings: Ollama `nomic-embed-text` at `http://192.168.68.69:11434`
 
@@ -87,10 +87,10 @@ Source file: `benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Exact codename | 0% | 100% | 100% | 1.000 | 0.42ms | 0.84ms | 27.94ms |
 | Natural language, no embeddings | 0% | 0% | 0% | 0.000 | 0.24ms | 0.26ms | 16.74ms |
-| Topic-filtered exact ID | 0% | 93.33% | 93.33% | 0.933 | 0.29ms | 0.46ms | 13.36ms |
-| Semantic embeddings | 0% | 100% | 100% | 1.000 | 32.93ms | 39.16ms | 4,743.33ms |
+| Topic-filtered exact ID | 0% | 93.3% | 93.3% | 0.933 | 0.29ms | 0.46ms | 13.36ms |
+| Semantic embeddings | 0% | 100% | 100% | 1.000 | 32.93ms | 39.16ms | 4743.33ms |
 
-## Validation rerun on current source — 2026-05-31
+## Validation rerun on current source
 
 These reruns were executed after the exact-topic-match fix landed in source. Their role is narrow but important: validate whether the old topic-filtered undercount was real, and replace bug-affected exact-ID numbers with current-source results.
 
@@ -105,15 +105,15 @@ These reruns were executed after the exact-topic-match fix landed in source. The
 ## Interpretation
 
 1. **Fixed context fails by construction.** Every query targets a fact outside the simulated recent window, so fixed-context recall is 0%.
-2. **Exact external memory scales into a multi-million-token stored corpus in this benchmark.** Exact-codename retrieval hit 100% recall@5 at 50,000 memories / ~3.6M approximate corpus tokens, with ~25.55ms average query latency in the current 50k local in-memory validation pass.
+2. **Exact external memory scales into a multi-million-token stored corpus in this benchmark.** Exact-codename retrieval hit 100% recall@5 at 50,000 memories / ~3.6M approximate corpus tokens, with ~25.55ms average query latency in the latest 50k local in-memory validation pass.
 3. **This is not the same as increasing the model's native context window.** ReMEM keeps the prompt small and retrieves relevant external memories when asked.
 4. **Natural-language recall needs semantic retrieval or better lexical scoring.** The no-embedding natural-language baseline scored 0%. This is an honest limitation of the current fallback query path, not a result to hide.
-5. **Semantic embeddings work in the small run.** The 80-memory embedding run reached 100% recall@1/@5 on natural semantic queries, but embedding ingestion took ~4.7s for 80 memories. Larger semantic benchmarks need concurrent/cached embedding support before making large-scale semantic claims.
-6. **The topic-filter undercount was real and is now corrected.** The original 89-93% topic-filtered exact-ID scores were caused by serialized-topic substring collisions. After the exact-match fix, the May 31 reruns returned 100% topic-filtered exact-ID recall across 2k, 10k, and 50k corpora in this harness.
+5. **Semantic embeddings work in the small run.** The 80-memory embedding run reached 100% recall@1/@5 on natural semantic queries, but embedding ingestion took ~4743ms for 80 memories. Larger semantic benchmarks need concurrent/cached embedding support before making large-scale semantic claims.
+6. **The topic-filter undercount was real and is now corrected.** The original 89-93% topic-filtered exact-ID scores were caused by serialized-topic substring collisions. After the exact-match fix, the latest reruns returned 100% topic-filtered exact-ID recall across 2k, 10k, and 50k corpora in this harness.
 
 ## Safe public claim
 
-> In a reproducible synthetic fixed-window stress test, ReMEM retrieved facts stored outside a simulated active context window from a ~3.6M-token stored memory corpus. Fixed recent context scored 0% recall because the facts were outside the window; ReMEM exact-codename lookup reached 100% recall@5 with ~25.55ms average query latency in a current local in-memory validation run. After the exact-topic-match fix, topic-filtered exact-ID retrieval also reached 100% recall@1/@5 across 2k, 10k, and 50k validation reruns. A small embedding-backed semantic run reached 100% recall@1/@5, while exposing embedding ingestion as the bottleneck we need to optimize next.
+> In a reproducible synthetic fixed-window stress test, ReMEM retrieved facts stored outside a simulated active context window from a ~3.6M-token stored memory corpus. Fixed recent context scored 0% recall because the facts were outside the window; ReMEM exact-codename lookup reached 100% recall@5 with ~25.55ms average query latency in the latest local in-memory validation run. After the exact-topic-match fix, topic-filtered exact-ID retrieval also reached 100% recall@1/@5 across 2k, 10k, and 50k validation reruns. A small embedding-backed semantic run reached 100% recall@1/@5, while exposing embedding ingestion as the bottleneck we need to optimize next.
 
 Short version:
 
@@ -123,7 +123,7 @@ Short version:
 
 - “ReMEM gives any model infinite context.”
 - “100% semantic recall at millions of tokens.”
-- “Production latency is 25ms.” These numbers are local/in-memory and synthetic.
+- “Production latency is 26ms.” These numbers are local/in-memory and synthetic.
 - “No degraded service” without qualification. Exact lookup stayed strong; semantic ingestion still needs optimization.
 - “Natural-language retrieval works without embeddings.” It does not in this harness.
 

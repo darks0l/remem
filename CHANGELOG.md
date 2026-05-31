@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Corrected benchmark-facing docs after the exact-topic-match fix and added fresh 2026-05-31 validation result artifacts for 2k / 10k / 50k context-window reruns.
 - Updated README benchmark claims to distinguish historical May 3 baseline numbers from current-source validation results.
+- Added a generated benchmark-summary workflow (`npm run bench:public-results`) so public benchmark claims can be regenerated directly from checked-in raw JSON artifacts instead of hand-editing the summary file.
 
 ## [0.9.0] — 2026-05-27
 
