@@ -18,6 +18,7 @@ It does **not** claim that ReMEM changes a model's native context length. It tes
 - Metrics: fixed recall@1, ReMEM recall@1, ReMEM recall@K, MRR, store time, average/p50/p95 query latency
 - Seed: `1337`
 - This file is generated from raw result JSON by `benchmarks/generate-public-results.mjs`
+- Machine-readable companion: `benchmarks/PUBLIC-RESULTS-2026-05-03.json`
 
 ## Reproducibility notes
 

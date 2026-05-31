@@ -1,0 +1,392 @@
+{
+  "generatedAt": "2026-05-31T04:02:27.118Z",
+  "generator": "benchmarks/generate-public-results.mjs",
+  "benchmark": "remem-context-window-suite-v1",
+  "claimBoundary": {
+    "summary": "Synthetic fixed-window stress test measuring retrieval of facts deliberately placed outside a simulated active context window.",
+    "safeShortClaim": "ReMEM does not make the model's native context window bigger. It gives agents a searchable external memory layer, letting them work over far more history than fits in the prompt.",
+    "notSafeToClaim": [
+      "ReMEM gives any model infinite context.",
+      "100% semantic recall at millions of tokens.",
+      "Production latency is 26ms.",
+      "Natural-language retrieval works without embeddings."
+    ]
+  },
+  "harness": {
+    "script": "benchmarks/context-window-suite.mjs",
+    "storage": "in-memory sql.js via ReMEM storage: 'memory'",
+    "seed": 1337,
+    "metrics": [
+      "fixed recall@1",
+      "ReMEM recall@1",
+      "ReMEM recall@K",
+      "MRR",
+      "store time",
+      "average/p50/p95 query latency"
+    ]
+  },
+  "historicalBaseline": {
+    "releasedAt": "2026-05-03",
+    "runs": {
+      "memories2000": {
+        "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-06-069Z-2000m-120q.json",
+        "contextPressure": {
+          "corpusApproxTokens": 143650,
+          "fixedWindowApproxTokens": 7214,
+          "effectiveCorpusToWindowMultiple": 19.91
+        },
+        "queryCount": 120,
+        "scenarios": [
+          {
+            "name": "core exact codename",
+            "label": "Exact codename",
+            "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-06-069Z-2000m-120q.json",
+            "queryStyle": "exact-code",
+            "queryTopics": false,
+            "embeddings": false,
+            "metrics": {
+              "fixedContextRecallAt1": 0,
+              "rememRecallAt1": 1,
+              "rememRecallAtK": 1,
+              "rememMRR": 1,
+              "avgReturned": 1.01,
+              "storeMs": 188.12,
+              "avgStoreMsPerMemory": 0.09,
+              "storeFailures": 0,
+              "avgQueryMs": 1.94,
+              "p50QueryMs": 1.97,
+              "p95QueryMs": 2.49
+            }
+          },
+          {
+            "name": "core natural language no embeddings",
+            "label": "Natural language, no embeddings",
+            "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-06-069Z-2000m-120q.json",
+            "queryStyle": "natural",
+            "queryTopics": false,
+            "embeddings": false,
+            "metrics": {
+              "fixedContextRecallAt1": 0,
+              "rememRecallAt1": 0,
+              "rememRecallAtK": 0,
+              "rememMRR": 0,
+              "avgReturned": 0,
+              "storeMs": 138.12,
+              "avgStoreMsPerMemory": 0.07,
+              "storeFailures": 0,
+              "avgQueryMs": 1.46,
+              "p50QueryMs": 1.43,
+              "p95QueryMs": 1.59
+            }
+          },
+          {
+            "name": "core topic-filtered exact id",
+            "label": "Topic-filtered exact ID",
+            "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-06-069Z-2000m-120q.json",
+            "queryStyle": "exact-id",
+            "queryTopics": true,
+            "embeddings": false,
+            "metrics": {
+              "fixedContextRecallAt1": 0,
+              "rememRecallAt1": 0.9083,
+              "rememRecallAtK": 0.9083,
+              "rememMRR": 0.9083,
+              "avgReturned": 1.37,
+              "storeMs": 135.51,
+              "avgStoreMsPerMemory": 0.07,
+              "storeFailures": 0,
+              "avgQueryMs": 1.61,
+              "p50QueryMs": 1.57,
+              "p95QueryMs": 1.77
+            }
+          }
+        ]
+      },
+      "memories10000": {
+        "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-32-122Z-10000m-250q.json",
+        "contextPressure": {
+          "corpusApproxTokens": 720631,
+          "fixedWindowApproxTokens": 7214,
+          "effectiveCorpusToWindowMultiple": 99.9
+        },
+        "queryCount": 250,
+        "scenarios": [
+          {
+            "name": "core exact codename",
+            "label": "Exact codename",
+            "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-32-122Z-10000m-250q.json",
+            "queryStyle": "exact-code",
+            "queryTopics": false,
+            "embeddings": false,
+            "metrics": {
+              "fixedContextRecallAt1": 0,
+              "rememRecallAt1": 0.992,
+              "rememRecallAtK": 1,
+              "rememMRR": 0.996,
+              "avgReturned": 1.01,
+              "storeMs": 708,
+              "avgStoreMsPerMemory": 0.07,
+              "storeFailures": 0,
+              "avgQueryMs": 10,
+              "p50QueryMs": 10.57,
+              "p95QueryMs": 12.41
+            }
+          },
+          {
+            "name": "core natural language no embeddings",
+            "label": "Natural language, no embeddings",
+            "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-32-122Z-10000m-250q.json",
+            "queryStyle": "natural",
+            "queryTopics": false,
+            "embeddings": false,
+            "metrics": {
+              "fixedContextRecallAt1": 0,
+              "rememRecallAt1": 0,
+              "rememRecallAtK": 0,
+              "rememMRR": 0,
+              "avgReturned": 0,
+              "storeMs": 633.58,
+              "avgStoreMsPerMemory": 0.06,
+              "storeFailures": 0,
+              "avgQueryMs": 8.24,
+              "p50QueryMs": 8.21,
+              "p95QueryMs": 8.67
+            }
+          },
+          {
+            "name": "core topic-filtered exact id",
+            "label": "Topic-filtered exact ID",
+            "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-32-122Z-10000m-250q.json",
+            "queryStyle": "exact-id",
+            "queryTopics": true,
+            "embeddings": false,
+            "metrics": {
+              "fixedContextRecallAt1": 0,
+              "rememRecallAt1": 0.896,
+              "rememRecallAtK": 0.896,
+              "rememMRR": 0.896,
+              "avgReturned": 1.42,
+              "storeMs": 591.08,
+              "avgStoreMsPerMemory": 0.06,
+              "storeFailures": 0,
+              "avgQueryMs": 8.82,
+              "p50QueryMs": 8.78,
+              "p95QueryMs": 9.17
+            }
+          }
+        ]
+      },
+      "memories50000": {
+        "sourceFile": "benchmarks/results/context-window-2026-05-03T15-00-07-882Z-50000m-500q.json",
+        "contextPressure": {
+          "corpusApproxTokens": 3625526,
+          "fixedWindowApproxTokens": 7264,
+          "effectiveCorpusToWindowMultiple": 499.16
+        },
+        "queryCount": 500,
+        "scenarios": [
+          {
+            "name": "core exact codename",
+            "label": "Exact codename",
+            "sourceFile": "benchmarks/results/context-window-2026-05-03T15-00-07-882Z-50000m-500q.json",
+            "queryStyle": "exact-code",
+            "queryTopics": false,
+            "embeddings": false,
+            "metrics": {
+              "fixedContextRecallAt1": 0,
+              "rememRecallAt1": 0.994,
+              "rememRecallAtK": 1,
+              "rememMRR": 0.997,
+              "avgReturned": 1.01,
+              "storeMs": 3308.99,
+              "avgStoreMsPerMemory": 0.07,
+              "storeFailures": 0,
+              "avgQueryMs": 49.98,
+              "p50QueryMs": 53.11,
+              "p95QueryMs": 61.14
+            }
+          },
+          {
+            "name": "core natural language no embeddings",
+            "label": "Natural language, no embeddings",
+            "sourceFile": "benchmarks/results/context-window-2026-05-03T15-00-07-882Z-50000m-500q.json",
+            "queryStyle": "natural",
+            "queryTopics": false,
+            "embeddings": false,
+            "metrics": {
+              "fixedContextRecallAt1": 0,
+              "rememRecallAt1": 0,
+              "rememRecallAtK": 0,
+              "rememMRR": 0,
+              "avgReturned": 0,
+              "storeMs": 3156.13,
+              "avgStoreMsPerMemory": 0.06,
+              "storeFailures": 0,
+              "avgQueryMs": 42.21,
+              "p50QueryMs": 42.17,
+              "p95QueryMs": 42.78
+            }
+          },
+          {
+            "name": "core topic-filtered exact id",
+            "label": "Topic-filtered exact ID",
+            "sourceFile": "benchmarks/results/context-window-2026-05-03T15-00-07-882Z-50000m-500q.json",
+            "queryStyle": "exact-id",
+            "queryTopics": true,
+            "embeddings": false,
+            "metrics": {
+              "fixedContextRecallAt1": 0,
+              "rememRecallAt1": 0.896,
+              "rememRecallAtK": 0.896,
+              "rememMRR": 0.896,
+              "avgReturned": 1.42,
+              "storeMs": 3106.04,
+              "avgStoreMsPerMemory": 0.06,
+              "storeFailures": 0,
+              "avgQueryMs": 43.35,
+              "p50QueryMs": 43.3,
+              "p95QueryMs": 44.01
+            }
+          }
+        ]
+      },
+      "semantic80": {
+        "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q.json",
+        "contextPressure": {
+          "corpusApproxTokens": 5681,
+          "fixedWindowApproxTokens": 711,
+          "effectiveCorpusToWindowMultiple": 8
+        },
+        "queryCount": 30,
+        "scenarios": [
+          {
+            "name": "core exact codename",
+            "label": "Exact codename",
+            "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q.json",
+            "queryStyle": "exact-code",
+            "queryTopics": false,
+            "embeddings": false,
+            "metrics": {
+              "fixedContextRecallAt1": 0,
+              "rememRecallAt1": 1,
+              "rememRecallAtK": 1,
+              "rememMRR": 1,
+              "avgReturned": 1,
+              "storeMs": 27.94,
+              "avgStoreMsPerMemory": 0.35,
+              "storeFailures": 0,
+              "avgQueryMs": 0.42,
+              "p50QueryMs": 0.31,
+              "p95QueryMs": 0.84
+            }
+          },
+          {
+            "name": "core natural language no embeddings",
+            "label": "Natural language, no embeddings",
+            "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q.json",
+            "queryStyle": "natural",
+            "queryTopics": false,
+            "embeddings": false,
+            "metrics": {
+              "fixedContextRecallAt1": 0,
+              "rememRecallAt1": 0,
+              "rememRecallAtK": 0,
+              "rememMRR": 0,
+              "avgReturned": 0,
+              "storeMs": 16.74,
+              "avgStoreMsPerMemory": 0.21,
+              "storeFailures": 0,
+              "avgQueryMs": 0.24,
+              "p50QueryMs": 0.17,
+              "p95QueryMs": 0.26
+            }
+          },
+          {
+            "name": "core topic-filtered exact id",
+            "label": "Topic-filtered exact ID",
+            "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q.json",
+            "queryStyle": "exact-id",
+            "queryTopics": true,
+            "embeddings": false,
+            "metrics": {
+              "fixedContextRecallAt1": 0,
+              "rememRecallAt1": 0.9333,
+              "rememRecallAtK": 0.9333,
+              "rememMRR": 0.9333,
+              "avgReturned": 1.27,
+              "storeMs": 13.36,
+              "avgStoreMsPerMemory": 0.17,
+              "storeFailures": 0,
+              "avgQueryMs": 0.29,
+              "p50QueryMs": 0.25,
+              "p95QueryMs": 0.46
+            }
+          },
+          {
+            "name": "core semantic embeddings",
+            "label": "Semantic embeddings",
+            "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q.json",
+            "queryStyle": "semantic",
+            "queryTopics": false,
+            "embeddings": {
+              "baseUrl": "http://192.168.68.69:11434",
+              "model": "nomic-embed-text"
+            },
+            "metrics": {
+              "fixedContextRecallAt1": 0,
+              "rememRecallAt1": 1,
+              "rememRecallAtK": 1,
+              "rememMRR": 1,
+              "avgReturned": 5,
+              "storeMs": 4743.33,
+              "avgStoreMsPerMemory": 59.29,
+              "storeFailures": 0,
+              "avgQueryMs": 32.93,
+              "p50QueryMs": 31.97,
+              "p95QueryMs": 39.16
+            }
+          }
+        ]
+      }
+    }
+  },
+  "currentValidation": {
+    "rerunDate": "2026-05-31",
+    "latest50kEnvironment": {},
+    "correctedTopicFilteredExactId": [
+      {
+        "corpusSize": 2000,
+        "sourceFile": "benchmarks/results/context-window-2026-05-31T02-31-09-008Z-2000m-120q.json",
+        "fixedRecallAt1": 0,
+        "exactCodenameRecallAt1": 1,
+        "exactCodenameRecallAt5": 1,
+        "topicFilteredExactIdRecallAt1": 1,
+        "topicFilteredExactIdRecallAt5": 1,
+        "avgExactCodenameQueryMs": 1.01,
+        "avgTopicFilteredQueryMs": 0.84
+      },
+      {
+        "corpusSize": 10000,
+        "sourceFile": "benchmarks/results/context-window-2026-05-31T02-35-33-564Z-10000m-250q.json",
+        "fixedRecallAt1": 0,
+        "exactCodenameRecallAt1": 0.992,
+        "exactCodenameRecallAt5": 1,
+        "topicFilteredExactIdRecallAt1": 1,
+        "topicFilteredExactIdRecallAt5": 1,
+        "avgExactCodenameQueryMs": 4.95,
+        "avgTopicFilteredQueryMs": 4.25
+      },
+      {
+        "corpusSize": 50000,
+        "sourceFile": "benchmarks/results/context-window-2026-05-31T02-36-21-642Z-50000m-500q.json",
+        "fixedRecallAt1": 0,
+        "exactCodenameRecallAt1": 0.994,
+        "exactCodenameRecallAt5": 1,
+        "topicFilteredExactIdRecallAt1": 1,
+        "topicFilteredExactIdRecallAt5": 1,
+        "avgExactCodenameQueryMs": 25.55,
+        "avgTopicFilteredQueryMs": 22.25
+      }
+    ]
+  }
+}

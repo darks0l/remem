@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const resultsDir = path.join(__dirname, 'results');
 const outputPath = path.join(__dirname, 'PUBLIC-RESULTS-2026-05-03.md');
+const outputJsonPath = path.join(__dirname, 'PUBLIC-RESULTS-2026-05-03.json');
 
 function pct(value) {
   return `${(value * 100).toFixed(value === 1 || value === 0 ? 0 : 1)}%`;
@@ -48,35 +49,6 @@ function findRun(runs, predicate) {
   return match;
 }
 
-const results = readResults();
-const grouped = groupRuns(results);
-
-const historical50k = findRun(grouped.get(50000) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03') && run.data.scenarios.length === 3);
-const historical10k = findRun(grouped.get(10000) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03'));
-const historical2k = findRun(grouped.get(2000) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03'));
-const historicalSemantic80 = findRun(grouped.get(80) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03'));
-
-const latest2k = (grouped.get(2000) ?? []).at(-1);
-const latest10k = (grouped.get(10000) ?? []).at(-1);
-const latest50k = (grouped.get(50000) ?? []).at(-1);
-
-if (!latest2k || !latest10k || !latest50k) {
-  throw new Error('Missing latest validation reruns for 2k / 10k / 50k');
-}
-
-const exactNames = {
-  exact: 'core exact codename',
-  natural: 'core natural language no embeddings',
-  topic: 'core topic-filtered exact id',
-  semantic: 'core semantic embeddings',
-};
-
-function renderScenarioRow(result, name) {
-  const scenario = scenarioByName(result.data, name);
-  if (!scenario) throw new Error(`Missing scenario ${name} in ${result.file}`);
-  return `| ${labelForScenario(name)} | ${pct(scenario.metrics.fixedContextRecallAt1)} | ${pct(scenario.metrics.rememRecallAt1)} | ${pct(scenario.metrics.rememRecallAtK)} | ${scenario.metrics.rememMRR.toFixed(3)} | ${ms(scenario.metrics.avgQueryMs)} | ${ms(scenario.metrics.p95QueryMs)} |`;
-}
-
 function labelForScenario(name) {
   switch (name) {
     case exactNames.exact:
@@ -90,6 +62,12 @@ function labelForScenario(name) {
     default:
       return name;
   }
+}
+
+function renderScenarioRow(result, name) {
+  const scenario = scenarioByName(result.data, name);
+  if (!scenario) throw new Error(`Missing scenario ${name} in ${result.file}`);
+  return `| ${labelForScenario(name)} | ${pct(scenario.metrics.fixedContextRecallAt1)} | ${pct(scenario.metrics.rememRecallAt1)} | ${pct(scenario.metrics.rememRecallAtK)} | ${scenario.metrics.rememMRR.toFixed(3)} | ${ms(scenario.metrics.avgQueryMs)} | ${ms(scenario.metrics.p95QueryMs)} |`;
 }
 
 function renderCorpusSection(title, run) {
@@ -114,6 +92,43 @@ function renderCorpusSection(title, run) {
   ].join('\n');
 }
 
+function scenarioManifest(run, scenarioName) {
+  const scenario = scenarioByName(run.data, scenarioName);
+  if (!scenario) throw new Error(`Missing scenario ${scenarioName} in ${run.file}`);
+  return {
+    name: scenario.name,
+    label: labelForScenario(scenarioName),
+    sourceFile: run.file,
+    queryStyle: scenario.queryStyle,
+    queryTopics: scenario.queryTopics,
+    embeddings: scenario.embeddings,
+    metrics: scenario.metrics,
+  };
+}
+
+const results = readResults();
+const grouped = groupRuns(results);
+
+const historical50k = findRun(grouped.get(50000) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03') && run.data.scenarios.length === 3);
+const historical10k = findRun(grouped.get(10000) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03'));
+const historical2k = findRun(grouped.get(2000) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03'));
+const historicalSemantic80 = findRun(grouped.get(80) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03'));
+
+const latest2k = (grouped.get(2000) ?? []).at(-1);
+const latest10k = (grouped.get(10000) ?? []).at(-1);
+const latest50k = (grouped.get(50000) ?? []).at(-1);
+
+if (!latest2k || !latest10k || !latest50k) {
+  throw new Error('Missing latest validation reruns for 2k / 10k / 50k');
+}
+
+const exactNames = {
+  exact: 'core exact codename',
+  natural: 'core natural language no embeddings',
+  topic: 'core topic-filtered exact id',
+  semantic: 'core semantic embeddings',
+};
+
 const semanticScenario = scenarioByName(historicalSemantic80.data, exactNames.semantic);
 const semanticTopicScenario = scenarioByName(historicalSemantic80.data, exactNames.topic);
 const semanticExactScenario = scenarioByName(historicalSemantic80.data, exactNames.exact);
@@ -121,14 +136,103 @@ const semanticNaturalScenario = scenarioByName(historicalSemantic80.data, exactN
 const latest50kEnvironment = latest50k.data.environment ?? {};
 
 const latestRuns = [latest2k, latest10k, latest50k];
-const latestRows = latestRuns.map((run) => {
+const latestValidationRows = latestRuns.map((run) => {
   const exact = scenarioByName(run.data, exactNames.exact);
   const topic = scenarioByName(run.data, exactNames.topic);
   if (!exact || !topic) throw new Error(`Missing validation scenarios in ${run.file}`);
-  return `| ${run.data.config.totalMemories.toLocaleString()} memories | \`${run.file}\` | ${pct(exact.metrics.fixedContextRecallAt1)} | ${pct(exact.metrics.rememRecallAt1)} | ${pct(exact.metrics.rememRecallAtK)} | ${pct(topic.metrics.rememRecallAt1)} | ${ms(exact.metrics.avgQueryMs)} | ${ms(topic.metrics.avgQueryMs)} |`;
+  return {
+    corpusSize: run.data.config.totalMemories,
+    sourceFile: run.file,
+    fixedRecallAt1: exact.metrics.fixedContextRecallAt1,
+    exactCodenameRecallAt1: exact.metrics.rememRecallAt1,
+    exactCodenameRecallAt5: exact.metrics.rememRecallAtK,
+    topicFilteredExactIdRecallAt1: topic.metrics.rememRecallAt1,
+    topicFilteredExactIdRecallAt5: topic.metrics.rememRecallAtK,
+    avgExactCodenameQueryMs: exact.metrics.avgQueryMs,
+    avgTopicFilteredQueryMs: topic.metrics.avgQueryMs,
+  };
 });
+const latestRows = latestValidationRows.map((row) =>
+  `| ${row.corpusSize.toLocaleString()} memories | \`${row.sourceFile}\` | ${pct(row.fixedRecallAt1)} | ${pct(row.exactCodenameRecallAt1)} | ${pct(row.exactCodenameRecallAt5)} | ${pct(row.topicFilteredExactIdRecallAt1)} | ${ms(row.avgExactCodenameQueryMs)} | ${ms(row.avgTopicFilteredQueryMs)} |`
+);
 
 const safeClaim50k = scenarioByName(latest50k.data, exactNames.exact);
+if (!safeClaim50k || !semanticScenario || !semanticTopicScenario || !semanticExactScenario || !semanticNaturalScenario) {
+  throw new Error('Expected benchmark scenarios missing from result artifacts');
+}
+
+const publicResultsManifest = {
+  generatedAt: new Date().toISOString(),
+  generator: 'benchmarks/generate-public-results.mjs',
+  benchmark: 'remem-context-window-suite-v1',
+  claimBoundary: {
+    summary: 'Synthetic fixed-window stress test measuring retrieval of facts deliberately placed outside a simulated active context window.',
+    safeShortClaim: "ReMEM does not make the model's native context window bigger. It gives agents a searchable external memory layer, letting them work over far more history than fits in the prompt.",
+    notSafeToClaim: [
+      'ReMEM gives any model infinite context.',
+      '100% semantic recall at millions of tokens.',
+      `Production latency is ${safeClaim50k.metrics.avgQueryMs.toFixed(0)}ms.`,
+      'Natural-language retrieval works without embeddings.',
+    ],
+  },
+  harness: {
+    script: 'benchmarks/context-window-suite.mjs',
+    storage: "in-memory sql.js via ReMEM storage: 'memory'",
+    seed: 1337,
+    metrics: ['fixed recall@1', 'ReMEM recall@1', 'ReMEM recall@K', 'MRR', 'store time', 'average/p50/p95 query latency'],
+  },
+  historicalBaseline: {
+    releasedAt: '2026-05-03',
+    runs: {
+      memories2000: {
+        sourceFile: historical2k.file,
+        contextPressure: historical2k.data.contextPressure,
+        queryCount: historical2k.data.config.queryCount,
+        scenarios: [
+          scenarioManifest(historical2k, exactNames.exact),
+          scenarioManifest(historical2k, exactNames.natural),
+          scenarioManifest(historical2k, exactNames.topic),
+        ],
+      },
+      memories10000: {
+        sourceFile: historical10k.file,
+        contextPressure: historical10k.data.contextPressure,
+        queryCount: historical10k.data.config.queryCount,
+        scenarios: [
+          scenarioManifest(historical10k, exactNames.exact),
+          scenarioManifest(historical10k, exactNames.natural),
+          scenarioManifest(historical10k, exactNames.topic),
+        ],
+      },
+      memories50000: {
+        sourceFile: historical50k.file,
+        contextPressure: historical50k.data.contextPressure,
+        queryCount: historical50k.data.config.queryCount,
+        scenarios: [
+          scenarioManifest(historical50k, exactNames.exact),
+          scenarioManifest(historical50k, exactNames.natural),
+          scenarioManifest(historical50k, exactNames.topic),
+        ],
+      },
+      semantic80: {
+        sourceFile: historicalSemantic80.file,
+        contextPressure: historicalSemantic80.data.contextPressure,
+        queryCount: historicalSemantic80.data.config.queryCount,
+        scenarios: [
+          scenarioManifest(historicalSemantic80, exactNames.exact),
+          scenarioManifest(historicalSemantic80, exactNames.natural),
+          scenarioManifest(historicalSemantic80, exactNames.topic),
+          scenarioManifest(historicalSemantic80, exactNames.semantic),
+        ],
+      },
+    },
+  },
+  currentValidation: {
+    rerunDate: '2026-05-31',
+    latest50kEnvironment,
+    correctedTopicFilteredExactId: latestValidationRows,
+  },
+};
 
 const output = `# ReMEM Context Window Benchmark Results - 2026-05-03
 
@@ -150,6 +254,7 @@ It does **not** claim that ReMEM changes a model's native context length. It tes
 - Metrics: fixed recall@1, ReMEM recall@1, ReMEM recall@K, MRR, store time, average/p50/p95 query latency
 - Seed: \`1337\`
 - This file is generated from raw result JSON by \`benchmarks/generate-public-results.mjs\`
+- Machine-readable companion: \`benchmarks/PUBLIC-RESULTS-2026-05-03.json\`
 
 ## Reproducibility notes
 
@@ -180,7 +285,7 @@ Source file: \`${historicalSemantic80.file}\`
 - Simulated fixed window: **${historicalSemantic80.data.contextPressure.fixedWindowApproxTokens.toLocaleString()} tokens**
 - Corpus/window pressure: **${historicalSemantic80.data.contextPressure.effectiveCorpusToWindowMultiple}x**
 - Queries: **${historicalSemantic80.data.config.queryCount}**, all outside the fixed window
-- Embeddings: Ollama \`${semanticScenario?.embeddings?.model}\` at \`${semanticScenario?.embeddings?.baseUrl}\`
+- Embeddings: Ollama \`${semanticScenario.embeddings?.model}\` at \`${semanticScenario.embeddings?.baseUrl}\`
 
 | Scenario | Fixed recall@1 | ReMEM recall@1 | ReMEM recall@5 | MRR | Avg query | p95 query | Store time |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -234,4 +339,6 @@ Short version:
 `;
 
 writeFileSync(outputPath, output);
+writeFileSync(outputJsonPath, `${JSON.stringify(publicResultsManifest, null, 2)}\n`);
 console.log(`Wrote ${outputPath}`);
+console.log(`Wrote ${outputJsonPath}`);

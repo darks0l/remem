@@ -167,7 +167,7 @@ Latest validated benchmark pass on current source:
 - Avg query latency: **25.55ms** local in-memory sql.js run on the 50k exact-codename pass
 - Small embedding-backed semantic run: **100% recall@1/@5** on 80 memories, with embedding ingestion identified as the current bottleneck
 
-Read the full claim boundaries plus both the historical May 3 baseline and the regenerated current validation reruns in [`benchmarks/PUBLIC-RESULTS-2026-05-03.md`](./benchmarks/PUBLIC-RESULTS-2026-05-03.md). That summary is generated from the raw JSON result artifacts via `npm run bench:public-results`.
+Read the full claim boundaries plus both the historical May 3 baseline and the regenerated current validation reruns in [`benchmarks/PUBLIC-RESULTS-2026-05-03.md`](./benchmarks/PUBLIC-RESULTS-2026-05-03.md). For machine-readable benchmark citations and downstream validation, use [`benchmarks/PUBLIC-RESULTS-2026-05-03.json`](./benchmarks/PUBLIC-RESULTS-2026-05-03.json). Both are generated from the raw JSON result artifacts via `npm run bench:public-results`.
 
 Safe wording: ReMEM lets agents retrieve relevant memories from a stored corpus much larger than the active context window. Do **not** claim infinite context or universal semantic recall.
 

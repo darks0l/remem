@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Updated README benchmark claims to distinguish historical May 3 baseline numbers from current-source validation results.
 - Added a generated benchmark-summary workflow (`npm run bench:public-results`) so public benchmark claims can be regenerated directly from checked-in raw JSON artifacts instead of hand-editing the summary file.
 - Added benchmark runtime provenance to raw JSON artifacts and surfaced it in the public-results docs; also ship the summary generator script in the npm package so benchmark claims can be regenerated from packaged artifacts.
+- Added a machine-readable public benchmark manifest (`benchmarks/PUBLIC-RESULTS-2026-05-03.json`) plus a smoke test so published benchmark claims can be validated programmatically instead of only through markdown.
 
 ## [0.9.0] — 2026-05-27
 

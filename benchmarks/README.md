@@ -42,11 +42,16 @@ Outputs are written to `benchmarks/results/*.json` and `benchmarks/results/*.md`
 
 The JSON artifacts also include execution metadata (Node version, platform, arch, working directory, and CLI args) so published benchmark claims can be traced back to the run environment.
 
-To regenerate the public benchmark summary from the raw JSON artifacts:
+To regenerate the public benchmark summary plus the machine-readable manifest from the raw JSON artifacts:
 
 ```bash
 npm run bench:public-results
 ```
+
+This writes:
+
+- `benchmarks/PUBLIC-RESULTS-2026-05-03.md`
+- `benchmarks/PUBLIC-RESULTS-2026-05-03.json`
 
 ## Claim boundaries
 
