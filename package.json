@@ -79,6 +79,7 @@
     "benchmarks/README.md",
     "benchmarks/PUBLIC-RESULTS-2026-05-03.md",
     "benchmarks/context-window-suite.mjs",
+    "benchmarks/generate-public-results.mjs",
     "benchmarks/results/*.json",
     "benchmarks/results/*.md"
   ]

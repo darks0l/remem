@@ -94,6 +94,7 @@ function labelForScenario(name) {
 
 function renderCorpusSection(title, run) {
   const { corpusApproxTokens, fixedWindowApproxTokens, effectiveCorpusToWindowMultiple } = run.data.contextPressure;
+  const environment = run.data.environment ?? {};
   return [
     `### ${title}`,
     '',
@@ -103,6 +104,7 @@ function renderCorpusSection(title, run) {
     `- Simulated fixed window: **${fixedWindowApproxTokens.toLocaleString()} tokens**`,
     `- Corpus/window pressure: **${effectiveCorpusToWindowMultiple}x**`,
     `- Queries: **${run.data.config.queryCount}**, all outside the fixed window`,
+    ...(environment.node ? [`- Runtime: **Node ${environment.node}** on **${environment.platform}/${environment.arch}**`] : []),
     '',
     '| Scenario | Fixed recall@1 | ReMEM recall@1 | ReMEM recall@5 | MRR | Avg query | p95 query |',
     '|---|---:|---:|---:|---:|---:|---:|',
@@ -116,6 +118,7 @@ const semanticScenario = scenarioByName(historicalSemantic80.data, exactNames.se
 const semanticTopicScenario = scenarioByName(historicalSemantic80.data, exactNames.topic);
 const semanticExactScenario = scenarioByName(historicalSemantic80.data, exactNames.exact);
 const semanticNaturalScenario = scenarioByName(historicalSemantic80.data, exactNames.natural);
+const latest50kEnvironment = latest50k.data.environment ?? {};
 
 const latestRuns = [latest2k, latest10k, latest50k];
 const latestRows = latestRuns.map((run) => {
@@ -147,6 +150,12 @@ It does **not** claim that ReMEM changes a model's native context length. It tes
 - Metrics: fixed recall@1, ReMEM recall@1, ReMEM recall@K, MRR, store time, average/p50/p95 query latency
 - Seed: \`1337\`
 - This file is generated from raw result JSON by \`benchmarks/generate-public-results.mjs\`
+
+## Reproducibility notes
+
+- Each raw JSON result now carries runtime metadata (node, platform, arch, CLI args, cwd) so benchmark claims can be tied back to the execution environment instead of only the high-level config.
+- Historical May 3 artifacts predate that metadata field, so they remain valid for the original scores but are less provenance-rich than the latest validation reruns.
+- Latest 50k validation runtime: ${latest50kEnvironment.node ? `**Node ${latest50kEnvironment.node}** on **${latest50kEnvironment.platform}/${latest50kEnvironment.arch}**` : 'runtime metadata unavailable'}.
 
 ## Results summary
 

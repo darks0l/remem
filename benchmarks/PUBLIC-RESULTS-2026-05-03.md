@@ -19,6 +19,12 @@ It does **not** claim that ReMEM changes a model's native context length. It tes
 - Seed: `1337`
 - This file is generated from raw result JSON by `benchmarks/generate-public-results.mjs`
 
+## Reproducibility notes
+
+- Each raw JSON result now carries runtime metadata (node, platform, arch, CLI args, cwd) so benchmark claims can be tied back to the execution environment instead of only the high-level config.
+- Historical May 3 artifacts predate that metadata field, so they remain valid for the original scores but are less provenance-rich than the latest validation reruns.
+- Latest 50k validation runtime: runtime metadata unavailable.
+
 ## Results summary
 
 This file serves two purposes:

@@ -40,6 +40,8 @@ node ./benchmarks/context-window-suite.mjs --memories 80 --queries 30 --contextE
 
 Outputs are written to `benchmarks/results/*.json` and `benchmarks/results/*.md`.
 
+The JSON artifacts also include execution metadata (Node version, platform, arch, working directory, and CLI args) so published benchmark claims can be traced back to the run environment.
+
 To regenerate the public benchmark summary from the raw JSON artifacts:
 
 ```bash
@@ -68,3 +70,4 @@ Do claim, if supported by the included result files:
 - Natural-language core lookup without embeddings is intentionally weak and scored 0% in this harness because the fallback query path is literal substring matching.
 - Topic filtering was previously undercounted by serialized-JSON substring matching (`fact-85` colliding with `fact-8588`). That exact-match bug is now fixed in source, and May 31 reruns at 2k / 10k / 50k all returned 100% topic-filtered exact-ID recall in this harness.
 - The next credibility upgrade is not more exact-ID runs - it is larger semantic runs with precomputed/cached embeddings so semantic claims can scale without being dominated by ingestion time.
+- If you cite benchmark numbers publicly, cite the raw JSON artifact path too, not just the rendered markdown summary.

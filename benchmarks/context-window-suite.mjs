@@ -43,6 +43,17 @@ function mean(values) { return values.length ? values.reduce((a, b) => a + b, 0)
 function round(n, d = 4) { return Number(n.toFixed(d)); }
 function nowSlug() { return new Date().toISOString().replace(/[:.]/g, '-'); }
 
+function benchmarkEnvironment() {
+  return {
+    node: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    pid: process.pid,
+    cwd: process.cwd(),
+    argv: process.argv.slice(2),
+  };
+}
+
 function makeCorpus(total, seed) {
   const rand = mulberry32(seed);
   const domains = ['wallet', 'agent', 'card', 'oracle', 'router', 'terminal', 'memory', 'vault', 'bridge', 'indexer'];
@@ -237,6 +248,7 @@ const result = {
   benchmark: 'remem-context-window-suite-v1',
   timestamp: new Date().toISOString(),
   config: { totalMemories: total, queryCount: queryItems.length, contextEntries, limit, seed },
+  environment: benchmarkEnvironment(),
   contextPressure: {
     corpusApproxTokens: approxTokens(corpusText),
     fixedWindowApproxTokens: approxTokens(recentText),
