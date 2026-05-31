@@ -19,6 +19,7 @@ It does **not** claim that ReMEM changes a model's native context length. It tes
 - Seed: `1337`
 - This file is generated from raw result JSON by `benchmarks/generate-public-results.mjs`
 - Machine-readable companion: `benchmarks/PUBLIC-RESULTS-2026-05-03.json`
+- Every cited raw JSON artifact is fingerprinted with SHA-256 in both this markdown and the JSON manifest
 
 ## Reproducibility notes
 
@@ -38,6 +39,7 @@ This file serves two purposes:
 ### Core retrieval, 50,000 memories / multi-million-token corpus
 
 Source file: `benchmarks/results/context-window-2026-05-03T15-00-07-882Z-50000m-500q.json`
+Artifact SHA-256: `471ce4b2f5260448834cb02153dc25237c5ebc715a2e354b906ecff7f68c0ae5`
 
 - Approx corpus: **3,625,526 tokens**
 - Simulated fixed window: **7,264 tokens**
@@ -53,6 +55,7 @@ Source file: `benchmarks/results/context-window-2026-05-03T15-00-07-882Z-50000m-
 ### Core retrieval, 10,000 memories
 
 Source file: `benchmarks/results/context-window-2026-05-03T14-52-32-122Z-10000m-250q.json`
+Artifact SHA-256: `a5ece962aece5a337cd21448bdea726f83334b5b4bd67cebed6b036da376d82e`
 
 - Approx corpus: **720,631 tokens**
 - Simulated fixed window: **7,214 tokens**
@@ -68,6 +71,7 @@ Source file: `benchmarks/results/context-window-2026-05-03T14-52-32-122Z-10000m-
 ### Core retrieval, 2,000 memories
 
 Source file: `benchmarks/results/context-window-2026-05-03T14-52-06-069Z-2000m-120q.json`
+Artifact SHA-256: `829a0fa7e463e22032dd2b8c2ca756aba1feb74cef9b8bba6ff6a903149211cc`
 
 - Approx corpus: **143,650 tokens**
 - Simulated fixed window: **7,214 tokens**
@@ -83,6 +87,7 @@ Source file: `benchmarks/results/context-window-2026-05-03T14-52-06-069Z-2000m-1
 ### Small semantic embedding run, 80 memories
 
 Source file: `benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q.json`
+Artifact SHA-256: `a24bca08524066f12d5a5d7674d290723e6cdd7941f5e923458d853a3d17d4c6`
 
 - Approx corpus: **5,681 tokens**
 - Simulated fixed window: **711 tokens**
@@ -103,11 +108,11 @@ These reruns were executed after the exact-topic-match fix landed in source. The
 
 ### Corrected topic-filtered exact-ID results
 
-| Corpus size | Source file | Fixed recall@1 | ReMEM exact-codename recall@1 | ReMEM exact-codename recall@5 | ReMEM topic-filtered exact-ID recall@1/@5 | Avg exact-codename query | Avg topic-filtered query |
-|---|---|---:|---:|---:|---:|---:|---:|
-| 2,000 memories | `benchmarks/results/context-window-2026-05-31T02-31-09-008Z-2000m-120q.json` | 0% | 100% | 100% | 100% | 1.01ms | 0.84ms |
-| 10,000 memories | `benchmarks/results/context-window-2026-05-31T02-35-33-564Z-10000m-250q.json` | 0% | 99.2% | 100% | 100% | 4.95ms | 4.25ms |
-| 50,000 memories | `benchmarks/results/context-window-2026-05-31T02-36-21-642Z-50000m-500q.json` | 0% | 99.4% | 100% | 100% | 25.55ms | 22.25ms |
+| Corpus size | Source file | Artifact SHA-256 | Fixed recall@1 | ReMEM exact-codename recall@1 | ReMEM exact-codename recall@5 | ReMEM topic-filtered exact-ID recall@1/@5 | Avg exact-codename query | Avg topic-filtered query |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| 2,000 memories | `benchmarks/results/context-window-2026-05-31T02-31-09-008Z-2000m-120q.json` | `306af9d97872…` | 0% | 100% | 100% | 100% | 1.01ms | 0.84ms |
+| 10,000 memories | `benchmarks/results/context-window-2026-05-31T02-35-33-564Z-10000m-250q.json` | `c67db1f7a8d6…` | 0% | 99.2% | 100% | 100% | 4.95ms | 4.25ms |
+| 50,000 memories | `benchmarks/results/context-window-2026-05-31T02-36-21-642Z-50000m-500q.json` | `36212c5304ca…` | 0% | 99.4% | 100% | 100% | 25.55ms | 22.25ms |
 
 ## Interpretation
 

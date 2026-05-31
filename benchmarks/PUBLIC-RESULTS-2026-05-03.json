@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-31T04:02:27.118Z",
+  "generatedAt": "2026-05-31T04:30:37.275Z",
   "generator": "benchmarks/generate-public-results.mjs",
   "benchmark": "remem-context-window-suite-v1",
   "claimBoundary": {
@@ -30,6 +30,7 @@
     "runs": {
       "memories2000": {
         "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-06-069Z-2000m-120q.json",
+        "sourceSha256": "829a0fa7e463e22032dd2b8c2ca756aba1feb74cef9b8bba6ff6a903149211cc",
         "contextPressure": {
           "corpusApproxTokens": 143650,
           "fixedWindowApproxTokens": 7214,
@@ -41,6 +42,7 @@
             "name": "core exact codename",
             "label": "Exact codename",
             "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-06-069Z-2000m-120q.json",
+            "sourceSha256": "829a0fa7e463e22032dd2b8c2ca756aba1feb74cef9b8bba6ff6a903149211cc",
             "queryStyle": "exact-code",
             "queryTopics": false,
             "embeddings": false,
@@ -62,6 +64,7 @@
             "name": "core natural language no embeddings",
             "label": "Natural language, no embeddings",
             "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-06-069Z-2000m-120q.json",
+            "sourceSha256": "829a0fa7e463e22032dd2b8c2ca756aba1feb74cef9b8bba6ff6a903149211cc",
             "queryStyle": "natural",
             "queryTopics": false,
             "embeddings": false,
@@ -83,6 +86,7 @@
             "name": "core topic-filtered exact id",
             "label": "Topic-filtered exact ID",
             "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-06-069Z-2000m-120q.json",
+            "sourceSha256": "829a0fa7e463e22032dd2b8c2ca756aba1feb74cef9b8bba6ff6a903149211cc",
             "queryStyle": "exact-id",
             "queryTopics": true,
             "embeddings": false,
@@ -104,6 +108,7 @@
       },
       "memories10000": {
         "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-32-122Z-10000m-250q.json",
+        "sourceSha256": "a5ece962aece5a337cd21448bdea726f83334b5b4bd67cebed6b036da376d82e",
         "contextPressure": {
           "corpusApproxTokens": 720631,
           "fixedWindowApproxTokens": 7214,
@@ -115,6 +120,7 @@
             "name": "core exact codename",
             "label": "Exact codename",
             "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-32-122Z-10000m-250q.json",
+            "sourceSha256": "a5ece962aece5a337cd21448bdea726f83334b5b4bd67cebed6b036da376d82e",
             "queryStyle": "exact-code",
             "queryTopics": false,
             "embeddings": false,
@@ -136,6 +142,7 @@
             "name": "core natural language no embeddings",
             "label": "Natural language, no embeddings",
             "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-32-122Z-10000m-250q.json",
+            "sourceSha256": "a5ece962aece5a337cd21448bdea726f83334b5b4bd67cebed6b036da376d82e",
             "queryStyle": "natural",
             "queryTopics": false,
             "embeddings": false,
@@ -157,6 +164,7 @@
             "name": "core topic-filtered exact id",
             "label": "Topic-filtered exact ID",
             "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-32-122Z-10000m-250q.json",
+            "sourceSha256": "a5ece962aece5a337cd21448bdea726f83334b5b4bd67cebed6b036da376d82e",
             "queryStyle": "exact-id",
             "queryTopics": true,
             "embeddings": false,
@@ -178,6 +186,7 @@
       },
       "memories50000": {
         "sourceFile": "benchmarks/results/context-window-2026-05-03T15-00-07-882Z-50000m-500q.json",
+        "sourceSha256": "471ce4b2f5260448834cb02153dc25237c5ebc715a2e354b906ecff7f68c0ae5",
         "contextPressure": {
           "corpusApproxTokens": 3625526,
           "fixedWindowApproxTokens": 7264,
@@ -189,6 +198,7 @@
             "name": "core exact codename",
             "label": "Exact codename",
             "sourceFile": "benchmarks/results/context-window-2026-05-03T15-00-07-882Z-50000m-500q.json",
+            "sourceSha256": "471ce4b2f5260448834cb02153dc25237c5ebc715a2e354b906ecff7f68c0ae5",
             "queryStyle": "exact-code",
             "queryTopics": false,
             "embeddings": false,
@@ -210,6 +220,7 @@
             "name": "core natural language no embeddings",
             "label": "Natural language, no embeddings",
             "sourceFile": "benchmarks/results/context-window-2026-05-03T15-00-07-882Z-50000m-500q.json",
+            "sourceSha256": "471ce4b2f5260448834cb02153dc25237c5ebc715a2e354b906ecff7f68c0ae5",
             "queryStyle": "natural",
             "queryTopics": false,
             "embeddings": false,
@@ -231,6 +242,7 @@
             "name": "core topic-filtered exact id",
             "label": "Topic-filtered exact ID",
             "sourceFile": "benchmarks/results/context-window-2026-05-03T15-00-07-882Z-50000m-500q.json",
+            "sourceSha256": "471ce4b2f5260448834cb02153dc25237c5ebc715a2e354b906ecff7f68c0ae5",
             "queryStyle": "exact-id",
             "queryTopics": true,
             "embeddings": false,
@@ -252,6 +264,7 @@
       },
       "semantic80": {
         "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q.json",
+        "sourceSha256": "a24bca08524066f12d5a5d7674d290723e6cdd7941f5e923458d853a3d17d4c6",
         "contextPressure": {
           "corpusApproxTokens": 5681,
           "fixedWindowApproxTokens": 711,
@@ -263,6 +276,7 @@
             "name": "core exact codename",
             "label": "Exact codename",
             "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q.json",
+            "sourceSha256": "a24bca08524066f12d5a5d7674d290723e6cdd7941f5e923458d853a3d17d4c6",
             "queryStyle": "exact-code",
             "queryTopics": false,
             "embeddings": false,
@@ -284,6 +298,7 @@
             "name": "core natural language no embeddings",
             "label": "Natural language, no embeddings",
             "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q.json",
+            "sourceSha256": "a24bca08524066f12d5a5d7674d290723e6cdd7941f5e923458d853a3d17d4c6",
             "queryStyle": "natural",
             "queryTopics": false,
             "embeddings": false,
@@ -305,6 +320,7 @@
             "name": "core topic-filtered exact id",
             "label": "Topic-filtered exact ID",
             "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q.json",
+            "sourceSha256": "a24bca08524066f12d5a5d7674d290723e6cdd7941f5e923458d853a3d17d4c6",
             "queryStyle": "exact-id",
             "queryTopics": true,
             "embeddings": false,
@@ -326,6 +342,7 @@
             "name": "core semantic embeddings",
             "label": "Semantic embeddings",
             "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q.json",
+            "sourceSha256": "a24bca08524066f12d5a5d7674d290723e6cdd7941f5e923458d853a3d17d4c6",
             "queryStyle": "semantic",
             "queryTopics": false,
             "embeddings": {
@@ -357,6 +374,7 @@
       {
         "corpusSize": 2000,
         "sourceFile": "benchmarks/results/context-window-2026-05-31T02-31-09-008Z-2000m-120q.json",
+        "sourceSha256": "306af9d9787282c5a29742f4a1bad17aaeeedd5b2204e62f8d18461fcfdb33a2",
         "fixedRecallAt1": 0,
         "exactCodenameRecallAt1": 1,
         "exactCodenameRecallAt5": 1,
@@ -368,6 +386,7 @@
       {
         "corpusSize": 10000,
         "sourceFile": "benchmarks/results/context-window-2026-05-31T02-35-33-564Z-10000m-250q.json",
+        "sourceSha256": "c67db1f7a8d620d18a265929c8f5d9644a0e1b350ff58af50a7bcc5e93c204ce",
         "fixedRecallAt1": 0,
         "exactCodenameRecallAt1": 0.992,
         "exactCodenameRecallAt5": 1,
@@ -379,6 +398,7 @@
       {
         "corpusSize": 50000,
         "sourceFile": "benchmarks/results/context-window-2026-05-31T02-36-21-642Z-50000m-500q.json",
+        "sourceSha256": "36212c5304ca0ee94aef804eeb3000ba35ca45618c90c62cb5bac2c5063b2686",
         "fixedRecallAt1": 0,
         "exactCodenameRecallAt1": 0.994,
         "exactCodenameRecallAt5": 1,
@@ -388,5 +408,56 @@
         "avgTopicFilteredQueryMs": 22.25
       }
     ]
-  }
+  },
+  "artifactDigests": [
+    {
+      "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-06-069Z-2000m-120q.json",
+      "sha256": "829a0fa7e463e22032dd2b8c2ca756aba1feb74cef9b8bba6ff6a903149211cc",
+      "timestamp": "2026-05-03T14:52:04.965Z",
+      "totalMemories": 2000,
+      "queryCount": 120
+    },
+    {
+      "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-32-122Z-10000m-250q.json",
+      "sha256": "a5ece962aece5a337cd21448bdea726f83334b5b4bd67cebed6b036da376d82e",
+      "timestamp": "2026-05-03T14:52:23.370Z",
+      "totalMemories": 10000,
+      "queryCount": 250
+    },
+    {
+      "sourceFile": "benchmarks/results/context-window-2026-05-03T14-52-48-397Z-80m-30q.json",
+      "sha256": "a24bca08524066f12d5a5d7674d290723e6cdd7941f5e923458d853a3d17d4c6",
+      "timestamp": "2026-05-03T14:52:42.534Z",
+      "totalMemories": 80,
+      "queryCount": 30
+    },
+    {
+      "sourceFile": "benchmarks/results/context-window-2026-05-03T15-00-07-882Z-50000m-500q.json",
+      "sha256": "471ce4b2f5260448834cb02153dc25237c5ebc715a2e354b906ecff7f68c0ae5",
+      "timestamp": "2026-05-03T14:58:50.475Z",
+      "totalMemories": 50000,
+      "queryCount": 500
+    },
+    {
+      "sourceFile": "benchmarks/results/context-window-2026-05-31T02-31-09-008Z-2000m-120q.json",
+      "sha256": "306af9d9787282c5a29742f4a1bad17aaeeedd5b2204e62f8d18461fcfdb33a2",
+      "timestamp": "2026-05-31T02:31:08.192Z",
+      "totalMemories": 2000,
+      "queryCount": 120
+    },
+    {
+      "sourceFile": "benchmarks/results/context-window-2026-05-31T02-35-33-564Z-10000m-250q.json",
+      "sha256": "c67db1f7a8d620d18a265929c8f5d9644a0e1b350ff58af50a7bcc5e93c204ce",
+      "timestamp": "2026-05-31T02:35:28.211Z",
+      "totalMemories": 10000,
+      "queryCount": 250
+    },
+    {
+      "sourceFile": "benchmarks/results/context-window-2026-05-31T02-36-21-642Z-50000m-500q.json",
+      "sha256": "36212c5304ca0ee94aef804eeb3000ba35ca45618c90c62cb5bac2c5063b2686",
+      "timestamp": "2026-05-31T02:35:37.114Z",
+      "totalMemories": 50000,
+      "queryCount": 500
+    }
+  ]
 }

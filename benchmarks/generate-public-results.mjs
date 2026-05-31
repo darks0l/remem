@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,14 +21,20 @@ function scenarioByName(result, name) {
   return result.scenarios.find((scenario) => scenario.name === name);
 }
 
+function sha256(buffer) {
+  return createHash('sha256').update(buffer).digest('hex');
+}
+
 function readResults() {
   return readdirSync(resultsDir)
     .filter((name) => name.endsWith('.json') && name.startsWith('context-window-'))
     .map((name) => {
       const fullPath = path.join(resultsDir, name);
+      const raw = readFileSync(fullPath);
       return {
         file: `benchmarks/results/${name}`,
-        data: JSON.parse(readFileSync(fullPath, 'utf8')),
+        sha256: sha256(raw),
+        data: JSON.parse(raw.toString('utf8')),
       };
     })
     .sort((a, b) => a.data.timestamp.localeCompare(b.data.timestamp));
@@ -77,6 +84,7 @@ function renderCorpusSection(title, run) {
     `### ${title}`,
     '',
     `Source file: \`${run.file}\``,
+    `Artifact SHA-256: \`${run.sha256}\``,
     '',
     `- Approx corpus: **${corpusApproxTokens.toLocaleString()} tokens**`,
     `- Simulated fixed window: **${fixedWindowApproxTokens.toLocaleString()} tokens**`,
@@ -99,6 +107,7 @@ function scenarioManifest(run, scenarioName) {
     name: scenario.name,
     label: labelForScenario(scenarioName),
     sourceFile: run.file,
+    sourceSha256: run.sha256,
     queryStyle: scenario.queryStyle,
     queryTopics: scenario.queryTopics,
     embeddings: scenario.embeddings,
@@ -143,6 +152,7 @@ const latestValidationRows = latestRuns.map((run) => {
   return {
     corpusSize: run.data.config.totalMemories,
     sourceFile: run.file,
+    sourceSha256: run.sha256,
     fixedRecallAt1: exact.metrics.fixedContextRecallAt1,
     exactCodenameRecallAt1: exact.metrics.rememRecallAt1,
     exactCodenameRecallAt5: exact.metrics.rememRecallAtK,
@@ -153,7 +163,7 @@ const latestValidationRows = latestRuns.map((run) => {
   };
 });
 const latestRows = latestValidationRows.map((row) =>
-  `| ${row.corpusSize.toLocaleString()} memories | \`${row.sourceFile}\` | ${pct(row.fixedRecallAt1)} | ${pct(row.exactCodenameRecallAt1)} | ${pct(row.exactCodenameRecallAt5)} | ${pct(row.topicFilteredExactIdRecallAt1)} | ${ms(row.avgExactCodenameQueryMs)} | ${ms(row.avgTopicFilteredQueryMs)} |`
+  `| ${row.corpusSize.toLocaleString()} memories | \`${row.sourceFile}\` | \`${row.sourceSha256.slice(0, 12)}…\` | ${pct(row.fixedRecallAt1)} | ${pct(row.exactCodenameRecallAt1)} | ${pct(row.exactCodenameRecallAt5)} | ${pct(row.topicFilteredExactIdRecallAt1)} | ${ms(row.avgExactCodenameQueryMs)} | ${ms(row.avgTopicFilteredQueryMs)} |`
 );
 
 const safeClaim50k = scenarioByName(latest50k.data, exactNames.exact);
@@ -186,6 +196,7 @@ const publicResultsManifest = {
     runs: {
       memories2000: {
         sourceFile: historical2k.file,
+        sourceSha256: historical2k.sha256,
         contextPressure: historical2k.data.contextPressure,
         queryCount: historical2k.data.config.queryCount,
         scenarios: [
@@ -196,6 +207,7 @@ const publicResultsManifest = {
       },
       memories10000: {
         sourceFile: historical10k.file,
+        sourceSha256: historical10k.sha256,
         contextPressure: historical10k.data.contextPressure,
         queryCount: historical10k.data.config.queryCount,
         scenarios: [
@@ -206,6 +218,7 @@ const publicResultsManifest = {
       },
       memories50000: {
         sourceFile: historical50k.file,
+        sourceSha256: historical50k.sha256,
         contextPressure: historical50k.data.contextPressure,
         queryCount: historical50k.data.config.queryCount,
         scenarios: [
@@ -216,6 +229,7 @@ const publicResultsManifest = {
       },
       semantic80: {
         sourceFile: historicalSemantic80.file,
+        sourceSha256: historicalSemantic80.sha256,
         contextPressure: historicalSemantic80.data.contextPressure,
         queryCount: historicalSemantic80.data.config.queryCount,
         scenarios: [
@@ -232,6 +246,13 @@ const publicResultsManifest = {
     latest50kEnvironment,
     correctedTopicFilteredExactId: latestValidationRows,
   },
+  artifactDigests: results.map((result) => ({
+    sourceFile: result.file,
+    sha256: result.sha256,
+    timestamp: result.data.timestamp,
+    totalMemories: result.data.config.totalMemories,
+    queryCount: result.data.config.queryCount,
+  })),
 };
 
 const output = `# ReMEM Context Window Benchmark Results - 2026-05-03
@@ -255,6 +276,7 @@ It does **not** claim that ReMEM changes a model's native context length. It tes
 - Seed: \`1337\`
 - This file is generated from raw result JSON by \`benchmarks/generate-public-results.mjs\`
 - Machine-readable companion: \`benchmarks/PUBLIC-RESULTS-2026-05-03.json\`
+- Every cited raw JSON artifact is fingerprinted with SHA-256 in both this markdown and the JSON manifest
 
 ## Reproducibility notes
 
@@ -280,6 +302,7 @@ ${renderCorpusSection('Core retrieval, 2,000 memories', historical2k)}
 ### Small semantic embedding run, 80 memories
 
 Source file: \`${historicalSemantic80.file}\`
+Artifact SHA-256: \`${historicalSemantic80.sha256}\`
 
 - Approx corpus: **${historicalSemantic80.data.contextPressure.corpusApproxTokens.toLocaleString()} tokens**
 - Simulated fixed window: **${historicalSemantic80.data.contextPressure.fixedWindowApproxTokens.toLocaleString()} tokens**
@@ -300,8 +323,8 @@ These reruns were executed after the exact-topic-match fix landed in source. The
 
 ### Corrected topic-filtered exact-ID results
 
-| Corpus size | Source file | Fixed recall@1 | ReMEM exact-codename recall@1 | ReMEM exact-codename recall@5 | ReMEM topic-filtered exact-ID recall@1/@5 | Avg exact-codename query | Avg topic-filtered query |
-|---|---|---:|---:|---:|---:|---:|---:|
+| Corpus size | Source file | Artifact SHA-256 | Fixed recall@1 | ReMEM exact-codename recall@1 | ReMEM exact-codename recall@5 | ReMEM topic-filtered exact-ID recall@1/@5 | Avg exact-codename query | Avg topic-filtered query |
+|---|---|---|---:|---:|---:|---:|---:|---:|
 ${latestRows.join('\n')}
 
 ## Interpretation
