@@ -1,5 +1,7 @@
 {
-  "generatedAt": "2026-05-31T04:30:37.275Z",
+  "generatedAt": "2026-05-31T09:00:23.551Z",
+  "$schema": "./PUBLIC-RESULTS.schema.json",
+  "schemaVersion": 1,
   "generator": "benchmarks/generate-public-results.mjs",
   "benchmark": "remem-context-window-suite-v1",
   "claimBoundary": {
@@ -346,7 +348,7 @@
             "queryStyle": "semantic",
             "queryTopics": false,
             "embeddings": {
-              "baseUrl": "http://192.168.68.69:11434",
+              "baseUrl": "[redacted-private-host]",
               "model": "nomic-embed-text"
             },
             "metrics": {

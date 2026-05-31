@@ -25,6 +25,7 @@ It does **not** claim that ReMEM changes a model's native context length. It tes
 
 - Each raw JSON result now carries runtime metadata (node, platform, arch, CLI args, cwd) so benchmark claims can be tied back to the execution environment instead of only the high-level config.
 - Historical May 3 artifacts predate that metadata field, so they remain valid for the original scores but are less provenance-rich than the latest validation reruns.
+- Public benchmark artifacts sanitize private/local embedding hosts so the package can ship reproducible evidence without leaking LAN details.
 - Latest 50k validation runtime: runtime metadata unavailable.
 
 ## Results summary
@@ -93,7 +94,7 @@ Artifact SHA-256: `a24bca08524066f12d5a5d7674d290723e6cdd7941f5e923458d853a3d17d
 - Simulated fixed window: **711 tokens**
 - Corpus/window pressure: **8x**
 - Queries: **30**, all outside the fixed window
-- Embeddings: Ollama `nomic-embed-text` at `http://192.168.68.69:11434`
+- Embeddings: Ollama `nomic-embed-text` at `[redacted-private-host]`
 
 | Scenario | Fixed recall@1 | ReMEM recall@1 | ReMEM recall@5 | MRR | Avg query | p95 query | Store time |
 |---|---:|---:|---:|---:|---:|---:|---:|

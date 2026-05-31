@@ -35,8 +35,10 @@ node ./benchmarks/context-window-suite.mjs --memories 50000 --queries 500 --cont
 Small semantic embedding run with local Ollama:
 
 ```bash
-node ./benchmarks/context-window-suite.mjs --memories 80 --queries 30 --contextEntries 10 --limit 5 --seed 1337 --embeddings --embeddingBaseUrl http://192.168.68.69:11434 --progress
+node ./benchmarks/context-window-suite.mjs --memories 80 --queries 30 --contextEntries 10 --limit 5 --seed 1337 --embeddings --embeddingBaseUrl http://127.0.0.1:11434 --progress
 ```
+
+If Ollama is running on another host in your network, pass that explicitly with `--embeddingBaseUrl`. Avoid publishing private LAN addresses in examples or benchmark claims.
 
 Outputs are written to `benchmarks/results/*.json` and `benchmarks/results/*.md`.
 
@@ -48,10 +50,28 @@ To regenerate the public benchmark summary plus the machine-readable manifest fr
 npm run bench:public-results
 ```
 
+To verify the checked-in public artifacts still match the raw benchmark JSON byte-for-byte:
+
+```bash
+npm run bench:public-results:verify
+```
+
 This writes:
 
+- `benchmarks/public-results.schema.json`
 - `benchmarks/PUBLIC-RESULTS-2026-05-03.md`
 - `benchmarks/PUBLIC-RESULTS-2026-05-03.json`
+
+The JSON manifest is intentionally a public contract now: `benchmarks/public-results.schema.json` documents the machine-readable shape for downstream audit tooling, npm consumers, and docs/tests that want to validate published claims without scraping markdown.
+
+If you install ReMEM from npm, the package now exports stable benchmark subpaths too:
+
+```ts
+import manifest from '@darksol/remem/benchmarks/public-results';
+import schema from '@darksol/remem/benchmarks/public-results.schema';
+```
+
+That keeps benchmark validation consumers off brittle repo-relative paths.
 
 ## Claim boundaries
 

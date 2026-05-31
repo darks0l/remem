@@ -2,8 +2,15 @@
  * Benchmark public-results generator smoke test
  */
 
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import manifest from '../benchmarks/PUBLIC-RESULTS-2026-05-03.json';
+
+function sha256(buffer: Buffer) {
+  return createHash('sha256').update(buffer).digest('hex');
+}
 
 describe('benchmark public results manifest', () => {
   it('captures current validation claims in machine-readable and auditable form', () => {
@@ -32,5 +39,18 @@ describe('benchmark public results manifest', () => {
     expect(manifest.claimBoundary.notSafeToClaim).toContain(
       'Natural-language retrieval works without embeddings.'
     );
+  });
+
+  it('fingerprints each checked-in raw benchmark artifact correctly', () => {
+    for (const artifact of manifest.artifactDigests) {
+      const artifactPath = path.resolve(__dirname, '..', artifact.sourceFile);
+      const raw = readFileSync(artifactPath);
+      const parsed = JSON.parse(raw.toString('utf8'));
+
+      expect(sha256(raw)).toBe(artifact.sha256);
+      expect(parsed.timestamp).toBe(artifact.timestamp);
+      expect(parsed.config.totalMemories).toBe(artifact.totalMemories);
+      expect(parsed.config.queryCount).toBe(artifact.queryCount);
+    }
   });
 });

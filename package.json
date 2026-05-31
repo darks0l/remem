@@ -1,6 +1,6 @@
 {
   "name": "@darksol/remem",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Persistent, queryable memory for AI agents with graph recall, procedural rules, identity audits, snapshots, and multi-agent scoping",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -10,7 +10,26 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
-    }
+    },
+    "./package.json": "./package.json",
+    "./benchmarks/public-results": {
+      "types": "./benchmarks/public-results.d.ts",
+      "default": "./benchmarks/PUBLIC-RESULTS-2026-05-03.json"
+    },
+    "./benchmarks/public-results.json": {
+      "types": "./benchmarks/public-results.d.ts",
+      "default": "./benchmarks/PUBLIC-RESULTS-2026-05-03.json"
+    },
+    "./benchmarks/public-results.schema": {
+      "types": "./benchmarks/public-results.schema.d.ts",
+      "default": "./benchmarks/public-results.schema.json"
+    },
+    "./benchmarks/public-results.schema.json": {
+      "types": "./benchmarks/public-results.schema.d.ts",
+      "default": "./benchmarks/public-results.schema.json"
+    },
+    "./benchmarks/README.md": "./benchmarks/README.md",
+    "./benchmarks/PUBLIC-RESULTS-2026-05-03.md": "./benchmarks/PUBLIC-RESULTS-2026-05-03.md"
   },
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
@@ -19,6 +38,7 @@
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
     "bench:public-results": "node ./benchmarks/generate-public-results.mjs",
+    "bench:public-results:verify": "node ./benchmarks/generate-public-results.mjs --verify",
     "prepublishOnly": "npm run lint && npm test && npm run build && npm pack --dry-run"
   },
   "keywords": [
@@ -77,6 +97,9 @@
     "README.md",
     "CHANGELOG.md",
     "benchmarks/README.md",
+    "benchmarks/public-results.d.ts",
+    "benchmarks/public-results.schema.d.ts",
+    "benchmarks/public-results.schema.json",
     "benchmarks/PUBLIC-RESULTS-2026-05-03.md",
     "benchmarks/PUBLIC-RESULTS-2026-05-03.json",
     "benchmarks/context-window-suite.mjs",

@@ -4,7 +4,7 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.10.0] — 2026-05-31
 
 ### Changed
 
@@ -12,7 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Updated README benchmark claims to distinguish historical May 3 baseline numbers from current-source validation results.
 - Added a generated benchmark-summary workflow (`npm run bench:public-results`) so public benchmark claims can be regenerated directly from checked-in raw JSON artifacts instead of hand-editing the summary file.
 - Added benchmark runtime provenance to raw JSON artifacts and surfaced it in the public-results docs; also ship the summary generator script in the npm package so benchmark claims can be regenerated from packaged artifacts.
-- Added a machine-readable public benchmark manifest (`benchmarks/PUBLIC-RESULTS-2026-05-03.json`) plus a smoke test so published benchmark claims can be validated programmatically instead of only through markdown.
+- Added a machine-readable public benchmark manifest (`benchmarks/PUBLIC-RESULTS-2026-05-03.json`) plus tests that validate both the published claim structure and the SHA-256 fingerprints of each checked-in raw benchmark artifact.
+- Replaced the README's hardcoded passing-test-count badge with a non-rotating status badge and added docs hygiene coverage so public package metadata does not silently drift as the test suite grows.
+- Refactored the benchmark public-results generator into a deterministic write path with an output-directory option, then added regression coverage that re-runs the generator and verifies the checked-in markdown + JSON artifacts still match the raw benchmark results.
 
 ## [0.9.0] — 2026-05-27
 

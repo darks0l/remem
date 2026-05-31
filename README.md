@@ -11,8 +11,8 @@ Built by DARKSOL 🌑
 [![npm version](https://img.shields.io/npm/v/@darksol/remem?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.npmjs.com/package/@darksol/remem)
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
-[![Test Status](https://img.shields.io/badge/tests-82%2F82%20passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.9.0](https://img.shields.io/badge/v0.9.0-metadata--aware--recall-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
+[![v0.10.0](https://img.shields.io/badge/v0.10.0-benchmark--credibility--release-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -169,6 +169,15 @@ Latest validated benchmark pass on current source:
 
 Read the full claim boundaries plus both the historical May 3 baseline and the regenerated current validation reruns in [`benchmarks/PUBLIC-RESULTS-2026-05-03.md`](./benchmarks/PUBLIC-RESULTS-2026-05-03.md). For machine-readable benchmark citations and downstream validation, use [`benchmarks/PUBLIC-RESULTS-2026-05-03.json`](./benchmarks/PUBLIC-RESULTS-2026-05-03.json). Both are generated from the raw JSON result artifacts via `npm run bench:public-results`.
 
+If you consume ReMEM from npm, the published benchmark contract is also available through stable package subpaths:
+
+```ts
+import manifest from '@darksol/remem/benchmarks/public-results';
+import schema from '@darksol/remem/benchmarks/public-results.schema';
+```
+
+That gives downstream docs/tests/tooling a clean import path for audited benchmark claims instead of requiring repo-relative file access.
+
 Safe wording: ReMEM lets agents retrieve relevant memories from a stored corpus much larger than the active context window. Do **not** claim infinite context or universal semantic recall.
 
 ---
@@ -184,7 +193,7 @@ const memory = new ReMEM({
   // LLM for RLM REPL, recursive queries, episodic compression
   llm: { type: 'bankr', apiKey: process.env.BANKR_API_KEY },
   // Vector embeddings for semantic search (via Ollama)
-  embeddings: { enabled: true, baseUrl: 'http://192.168.68.73:11434', model: 'nomic-embed-text' },
+  embeddings: { enabled: true, baseUrl: 'http://127.0.0.1:11434', model: 'nomic-embed-text' },
 });
 
 // Initialize and optionally restore persisted layer state
@@ -550,7 +559,7 @@ const memory = new ReMEM({
   dbPath: './remem.db',
   embeddings: {
     enabled: true,                    // enable vector embeddings (v0.3.2)
-    baseUrl: 'http://192.168.68.73:11434',  // your Ollama instance
+    baseUrl: 'http://127.0.0.1:11434',      // your Ollama instance
     model: 'nomic-embed-text',       // embedding model (or mxbai-embed-large)
     asyncEmbed: true,                // generate embeddings in background (non-blocking store)
   },

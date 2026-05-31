@@ -1,13 +1,19 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const resultsDir = path.join(__dirname, 'results');
-const outputPath = path.join(__dirname, 'PUBLIC-RESULTS-2026-05-03.md');
-const outputJsonPath = path.join(__dirname, 'PUBLIC-RESULTS-2026-05-03.json');
+const defaultOutputDir = __dirname;
+const exactNames = {
+  exact: 'core exact codename',
+  natural: 'core natural language no embeddings',
+  topic: 'core topic-filtered exact id',
+  semantic: 'core semantic embeddings',
+};
 
 function pct(value) {
   return `${(value * 100).toFixed(value === 1 || value === 0 ? 0 : 1)}%`;
@@ -100,6 +106,36 @@ function renderCorpusSection(title, run) {
   ].join('\n');
 }
 
+function sanitizeEmbeddingConfig(embeddings) {
+  if (!embeddings || typeof embeddings !== 'object' || Array.isArray(embeddings)) {
+    return embeddings ?? false;
+  }
+
+  const sanitized = { ...embeddings };
+
+  if (typeof sanitized.baseUrl === 'string') {
+    try {
+      const url = new URL(sanitized.baseUrl);
+      const host = url.hostname.toLowerCase();
+      const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+      const isPrivateIpv4 =
+        /^10\./.test(host) ||
+        /^192\.168\./.test(host) ||
+        /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+
+      if (isLocalHost) {
+        sanitized.baseUrl = '[local-ollama]';
+      } else if (isPrivateIpv4) {
+        sanitized.baseUrl = '[redacted-private-host]';
+      }
+    } catch {
+      // Leave unparseable values as-is; this sanitizer is only for known URL-like hosts.
+    }
+  }
+
+  return sanitized;
+}
+
 function scenarioManifest(run, scenarioName) {
   const scenario = scenarioByName(run.data, scenarioName);
   if (!scenario) throw new Error(`Missing scenario ${scenarioName} in ${run.file}`);
@@ -110,152 +146,148 @@ function scenarioManifest(run, scenarioName) {
     sourceSha256: run.sha256,
     queryStyle: scenario.queryStyle,
     queryTopics: scenario.queryTopics,
-    embeddings: scenario.embeddings,
+    embeddings: sanitizeEmbeddingConfig(scenario.embeddings),
     metrics: scenario.metrics,
   };
 }
 
-const results = readResults();
-const grouped = groupRuns(results);
+function buildPublicResultsArtifacts({ generatedAt = new Date().toISOString() } = {}) {
+  const results = readResults();
+  const grouped = groupRuns(results);
 
-const historical50k = findRun(grouped.get(50000) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03') && run.data.scenarios.length === 3);
-const historical10k = findRun(grouped.get(10000) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03'));
-const historical2k = findRun(grouped.get(2000) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03'));
-const historicalSemantic80 = findRun(grouped.get(80) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03'));
+  const historical50k = findRun(grouped.get(50000) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03') && run.data.scenarios.length === 3);
+  const historical10k = findRun(grouped.get(10000) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03'));
+  const historical2k = findRun(grouped.get(2000) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03'));
+  const historicalSemantic80 = findRun(grouped.get(80) ?? [], (run) => run.data.timestamp.startsWith('2026-05-03'));
 
-const latest2k = (grouped.get(2000) ?? []).at(-1);
-const latest10k = (grouped.get(10000) ?? []).at(-1);
-const latest50k = (grouped.get(50000) ?? []).at(-1);
+  const latest2k = (grouped.get(2000) ?? []).at(-1);
+  const latest10k = (grouped.get(10000) ?? []).at(-1);
+  const latest50k = (grouped.get(50000) ?? []).at(-1);
 
-if (!latest2k || !latest10k || !latest50k) {
-  throw new Error('Missing latest validation reruns for 2k / 10k / 50k');
-}
+  if (!latest2k || !latest10k || !latest50k) {
+    throw new Error('Missing latest validation reruns for 2k / 10k / 50k');
+  }
 
-const exactNames = {
-  exact: 'core exact codename',
-  natural: 'core natural language no embeddings',
-  topic: 'core topic-filtered exact id',
-  semantic: 'core semantic embeddings',
-};
+  const semanticScenario = scenarioByName(historicalSemantic80.data, exactNames.semantic);
+  const semanticTopicScenario = scenarioByName(historicalSemantic80.data, exactNames.topic);
+  const semanticExactScenario = scenarioByName(historicalSemantic80.data, exactNames.exact);
+  const semanticNaturalScenario = scenarioByName(historicalSemantic80.data, exactNames.natural);
+  const latest50kEnvironment = latest50k.data.environment ?? {};
 
-const semanticScenario = scenarioByName(historicalSemantic80.data, exactNames.semantic);
-const semanticTopicScenario = scenarioByName(historicalSemantic80.data, exactNames.topic);
-const semanticExactScenario = scenarioByName(historicalSemantic80.data, exactNames.exact);
-const semanticNaturalScenario = scenarioByName(historicalSemantic80.data, exactNames.natural);
-const latest50kEnvironment = latest50k.data.environment ?? {};
+  const latestRuns = [latest2k, latest10k, latest50k];
+  const latestValidationRows = latestRuns.map((run) => {
+    const exact = scenarioByName(run.data, exactNames.exact);
+    const topic = scenarioByName(run.data, exactNames.topic);
+    if (!exact || !topic) throw new Error(`Missing validation scenarios in ${run.file}`);
+    return {
+      corpusSize: run.data.config.totalMemories,
+      sourceFile: run.file,
+      sourceSha256: run.sha256,
+      fixedRecallAt1: exact.metrics.fixedContextRecallAt1,
+      exactCodenameRecallAt1: exact.metrics.rememRecallAt1,
+      exactCodenameRecallAt5: exact.metrics.rememRecallAtK,
+      topicFilteredExactIdRecallAt1: topic.metrics.rememRecallAt1,
+      topicFilteredExactIdRecallAt5: topic.metrics.rememRecallAtK,
+      avgExactCodenameQueryMs: exact.metrics.avgQueryMs,
+      avgTopicFilteredQueryMs: topic.metrics.avgQueryMs,
+    };
+  });
+  const latestRows = latestValidationRows.map((row) =>
+    `| ${row.corpusSize.toLocaleString()} memories | \`${row.sourceFile}\` | \`${row.sourceSha256.slice(0, 12)}…\` | ${pct(row.fixedRecallAt1)} | ${pct(row.exactCodenameRecallAt1)} | ${pct(row.exactCodenameRecallAt5)} | ${pct(row.topicFilteredExactIdRecallAt1)} | ${ms(row.avgExactCodenameQueryMs)} | ${ms(row.avgTopicFilteredQueryMs)} |`
+  );
 
-const latestRuns = [latest2k, latest10k, latest50k];
-const latestValidationRows = latestRuns.map((run) => {
-  const exact = scenarioByName(run.data, exactNames.exact);
-  const topic = scenarioByName(run.data, exactNames.topic);
-  if (!exact || !topic) throw new Error(`Missing validation scenarios in ${run.file}`);
-  return {
-    corpusSize: run.data.config.totalMemories,
-    sourceFile: run.file,
-    sourceSha256: run.sha256,
-    fixedRecallAt1: exact.metrics.fixedContextRecallAt1,
-    exactCodenameRecallAt1: exact.metrics.rememRecallAt1,
-    exactCodenameRecallAt5: exact.metrics.rememRecallAtK,
-    topicFilteredExactIdRecallAt1: topic.metrics.rememRecallAt1,
-    topicFilteredExactIdRecallAt5: topic.metrics.rememRecallAtK,
-    avgExactCodenameQueryMs: exact.metrics.avgQueryMs,
-    avgTopicFilteredQueryMs: topic.metrics.avgQueryMs,
-  };
-});
-const latestRows = latestValidationRows.map((row) =>
-  `| ${row.corpusSize.toLocaleString()} memories | \`${row.sourceFile}\` | \`${row.sourceSha256.slice(0, 12)}…\` | ${pct(row.fixedRecallAt1)} | ${pct(row.exactCodenameRecallAt1)} | ${pct(row.exactCodenameRecallAt5)} | ${pct(row.topicFilteredExactIdRecallAt1)} | ${ms(row.avgExactCodenameQueryMs)} | ${ms(row.avgTopicFilteredQueryMs)} |`
-);
+  const safeClaim50k = scenarioByName(latest50k.data, exactNames.exact);
+  if (!safeClaim50k || !semanticScenario || !semanticTopicScenario || !semanticExactScenario || !semanticNaturalScenario) {
+    throw new Error('Expected benchmark scenarios missing from result artifacts');
+  }
 
-const safeClaim50k = scenarioByName(latest50k.data, exactNames.exact);
-if (!safeClaim50k || !semanticScenario || !semanticTopicScenario || !semanticExactScenario || !semanticNaturalScenario) {
-  throw new Error('Expected benchmark scenarios missing from result artifacts');
-}
-
-const publicResultsManifest = {
-  generatedAt: new Date().toISOString(),
-  generator: 'benchmarks/generate-public-results.mjs',
-  benchmark: 'remem-context-window-suite-v1',
-  claimBoundary: {
-    summary: 'Synthetic fixed-window stress test measuring retrieval of facts deliberately placed outside a simulated active context window.',
-    safeShortClaim: "ReMEM does not make the model's native context window bigger. It gives agents a searchable external memory layer, letting them work over far more history than fits in the prompt.",
-    notSafeToClaim: [
-      'ReMEM gives any model infinite context.',
-      '100% semantic recall at millions of tokens.',
-      `Production latency is ${safeClaim50k.metrics.avgQueryMs.toFixed(0)}ms.`,
-      'Natural-language retrieval works without embeddings.',
-    ],
-  },
-  harness: {
-    script: 'benchmarks/context-window-suite.mjs',
-    storage: "in-memory sql.js via ReMEM storage: 'memory'",
-    seed: 1337,
-    metrics: ['fixed recall@1', 'ReMEM recall@1', 'ReMEM recall@K', 'MRR', 'store time', 'average/p50/p95 query latency'],
-  },
-  historicalBaseline: {
-    releasedAt: '2026-05-03',
-    runs: {
-      memories2000: {
-        sourceFile: historical2k.file,
-        sourceSha256: historical2k.sha256,
-        contextPressure: historical2k.data.contextPressure,
-        queryCount: historical2k.data.config.queryCount,
-        scenarios: [
-          scenarioManifest(historical2k, exactNames.exact),
-          scenarioManifest(historical2k, exactNames.natural),
-          scenarioManifest(historical2k, exactNames.topic),
-        ],
-      },
-      memories10000: {
-        sourceFile: historical10k.file,
-        sourceSha256: historical10k.sha256,
-        contextPressure: historical10k.data.contextPressure,
-        queryCount: historical10k.data.config.queryCount,
-        scenarios: [
-          scenarioManifest(historical10k, exactNames.exact),
-          scenarioManifest(historical10k, exactNames.natural),
-          scenarioManifest(historical10k, exactNames.topic),
-        ],
-      },
-      memories50000: {
-        sourceFile: historical50k.file,
-        sourceSha256: historical50k.sha256,
-        contextPressure: historical50k.data.contextPressure,
-        queryCount: historical50k.data.config.queryCount,
-        scenarios: [
-          scenarioManifest(historical50k, exactNames.exact),
-          scenarioManifest(historical50k, exactNames.natural),
-          scenarioManifest(historical50k, exactNames.topic),
-        ],
-      },
-      semantic80: {
-        sourceFile: historicalSemantic80.file,
-        sourceSha256: historicalSemantic80.sha256,
-        contextPressure: historicalSemantic80.data.contextPressure,
-        queryCount: historicalSemantic80.data.config.queryCount,
-        scenarios: [
-          scenarioManifest(historicalSemantic80, exactNames.exact),
-          scenarioManifest(historicalSemantic80, exactNames.natural),
-          scenarioManifest(historicalSemantic80, exactNames.topic),
-          scenarioManifest(historicalSemantic80, exactNames.semantic),
-        ],
+  const publicResultsManifest = {
+    generatedAt,
+    $schema: './PUBLIC-RESULTS.schema.json',
+    schemaVersion: 1,
+    generator: 'benchmarks/generate-public-results.mjs',
+    benchmark: 'remem-context-window-suite-v1',
+    claimBoundary: {
+      summary: 'Synthetic fixed-window stress test measuring retrieval of facts deliberately placed outside a simulated active context window.',
+      safeShortClaim: "ReMEM does not make the model's native context window bigger. It gives agents a searchable external memory layer, letting them work over far more history than fits in the prompt.",
+      notSafeToClaim: [
+        'ReMEM gives any model infinite context.',
+        '100% semantic recall at millions of tokens.',
+        `Production latency is ${safeClaim50k.metrics.avgQueryMs.toFixed(0)}ms.`,
+        'Natural-language retrieval works without embeddings.',
+      ],
+    },
+    harness: {
+      script: 'benchmarks/context-window-suite.mjs',
+      storage: "in-memory sql.js via ReMEM storage: 'memory'",
+      seed: 1337,
+      metrics: ['fixed recall@1', 'ReMEM recall@1', 'ReMEM recall@K', 'MRR', 'store time', 'average/p50/p95 query latency'],
+    },
+    historicalBaseline: {
+      releasedAt: '2026-05-03',
+      runs: {
+        memories2000: {
+          sourceFile: historical2k.file,
+          sourceSha256: historical2k.sha256,
+          contextPressure: historical2k.data.contextPressure,
+          queryCount: historical2k.data.config.queryCount,
+          scenarios: [
+            scenarioManifest(historical2k, exactNames.exact),
+            scenarioManifest(historical2k, exactNames.natural),
+            scenarioManifest(historical2k, exactNames.topic),
+          ],
+        },
+        memories10000: {
+          sourceFile: historical10k.file,
+          sourceSha256: historical10k.sha256,
+          contextPressure: historical10k.data.contextPressure,
+          queryCount: historical10k.data.config.queryCount,
+          scenarios: [
+            scenarioManifest(historical10k, exactNames.exact),
+            scenarioManifest(historical10k, exactNames.natural),
+            scenarioManifest(historical10k, exactNames.topic),
+          ],
+        },
+        memories50000: {
+          sourceFile: historical50k.file,
+          sourceSha256: historical50k.sha256,
+          contextPressure: historical50k.data.contextPressure,
+          queryCount: historical50k.data.config.queryCount,
+          scenarios: [
+            scenarioManifest(historical50k, exactNames.exact),
+            scenarioManifest(historical50k, exactNames.natural),
+            scenarioManifest(historical50k, exactNames.topic),
+          ],
+        },
+        semantic80: {
+          sourceFile: historicalSemantic80.file,
+          sourceSha256: historicalSemantic80.sha256,
+          contextPressure: historicalSemantic80.data.contextPressure,
+          queryCount: historicalSemantic80.data.config.queryCount,
+          scenarios: [
+            scenarioManifest(historicalSemantic80, exactNames.exact),
+            scenarioManifest(historicalSemantic80, exactNames.natural),
+            scenarioManifest(historicalSemantic80, exactNames.topic),
+            scenarioManifest(historicalSemantic80, exactNames.semantic),
+          ],
+        },
       },
     },
-  },
-  currentValidation: {
-    rerunDate: '2026-05-31',
-    latest50kEnvironment,
-    correctedTopicFilteredExactId: latestValidationRows,
-  },
-  artifactDigests: results.map((result) => ({
-    sourceFile: result.file,
-    sha256: result.sha256,
-    timestamp: result.data.timestamp,
-    totalMemories: result.data.config.totalMemories,
-    queryCount: result.data.config.queryCount,
-  })),
-};
+    currentValidation: {
+      rerunDate: '2026-05-31',
+      latest50kEnvironment,
+      correctedTopicFilteredExactId: latestValidationRows,
+    },
+    artifactDigests: results.map((result) => ({
+      sourceFile: result.file,
+      sha256: result.sha256,
+      timestamp: result.data.timestamp,
+      totalMemories: result.data.config.totalMemories,
+      queryCount: result.data.config.queryCount,
+    })),
+  };
 
-const output = `# ReMEM Context Window Benchmark Results - 2026-05-03
+  const markdown = `# ReMEM Context Window Benchmark Results - 2026-05-03
 
 These are reproducible synthetic benchmarks for \`@darksol/remem\`.
 
@@ -282,6 +314,7 @@ It does **not** claim that ReMEM changes a model's native context length. It tes
 
 - Each raw JSON result now carries runtime metadata (node, platform, arch, CLI args, cwd) so benchmark claims can be tied back to the execution environment instead of only the high-level config.
 - Historical May 3 artifacts predate that metadata field, so they remain valid for the original scores but are less provenance-rich than the latest validation reruns.
+- Public benchmark artifacts sanitize private/local embedding hosts so the package can ship reproducible evidence without leaking LAN details.
 - Latest 50k validation runtime: ${latest50kEnvironment.node ? `**Node ${latest50kEnvironment.node}** on **${latest50kEnvironment.platform}/${latest50kEnvironment.arch}**` : 'runtime metadata unavailable'}.
 
 ## Results summary
@@ -308,7 +341,7 @@ Artifact SHA-256: \`${historicalSemantic80.sha256}\`
 - Simulated fixed window: **${historicalSemantic80.data.contextPressure.fixedWindowApproxTokens.toLocaleString()} tokens**
 - Corpus/window pressure: **${historicalSemantic80.data.contextPressure.effectiveCorpusToWindowMultiple}x**
 - Queries: **${historicalSemantic80.data.config.queryCount}**, all outside the fixed window
-- Embeddings: Ollama \`${semanticScenario.embeddings?.model}\` at \`${semanticScenario.embeddings?.baseUrl}\`
+- Embeddings: Ollama \`${semanticScenario.embeddings?.model}\` at \`${sanitizeEmbeddingConfig(semanticScenario.embeddings)?.baseUrl}\`
 
 | Scenario | Fixed recall@1 | ReMEM recall@1 | ReMEM recall@5 | MRR | Avg query | p95 query | Store time |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -361,7 +394,86 @@ Short version:
 - Consider splitting benchmark docs into \`historical-baseline\` vs \`current-validation\` files if we want cleaner citation paths for README/npm consumers.
 `;
 
-writeFileSync(outputPath, output);
-writeFileSync(outputJsonPath, `${JSON.stringify(publicResultsManifest, null, 2)}\n`);
-console.log(`Wrote ${outputPath}`);
-console.log(`Wrote ${outputJsonPath}`);
+  return {
+    markdown,
+    manifest: publicResultsManifest,
+  };
+}
+
+function getCliArg(prefix) {
+  return process.argv.find((arg) => arg.startsWith(prefix));
+}
+
+function resolveOutputDir() {
+  const cliArg = getCliArg('--outputDir=');
+  if (cliArg) return path.resolve(cliArg.slice('--outputDir='.length));
+  return defaultOutputDir;
+}
+
+function resolveGeneratedAt() {
+  const cliArg = getCliArg('--generatedAt=');
+  if (!cliArg) return undefined;
+  const value = cliArg.slice('--generatedAt='.length);
+  if (Number.isNaN(Date.parse(value))) {
+    throw new Error(`Invalid --generatedAt value: ${value}`);
+  }
+  return value;
+}
+
+function serializeManifest(manifest) {
+  return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
+function writePublicResults(outputDir, { generatedAt } = {}) {
+  mkdirSync(outputDir, { recursive: true });
+  const outputPath = path.join(outputDir, 'PUBLIC-RESULTS-2026-05-03.md');
+  const outputJsonPath = path.join(outputDir, 'PUBLIC-RESULTS-2026-05-03.json');
+  const { markdown, manifest } = buildPublicResultsArtifacts({ generatedAt });
+  writeFileSync(outputPath, markdown);
+  writeFileSync(outputJsonPath, serializeManifest(manifest));
+  return { outputPath, outputJsonPath, markdown, manifest };
+}
+
+function verifyPublicResults({ generatedAt } = {}) {
+  const expectedMarkdownPath = path.join(defaultOutputDir, 'PUBLIC-RESULTS-2026-05-03.md');
+  const expectedManifestPath = path.join(defaultOutputDir, 'PUBLIC-RESULTS-2026-05-03.json');
+  const expectedMarkdown = readFileSync(expectedMarkdownPath, 'utf8');
+  const expectedManifestRaw = readFileSync(expectedManifestPath, 'utf8');
+  const expectedManifest = JSON.parse(expectedManifestRaw);
+  const effectiveGeneratedAt = generatedAt ?? expectedManifest.generatedAt;
+  const { markdown, manifest } = writePublicResults(path.join(os.tmpdir(), `remem-public-results-${Date.now()}`), {
+    generatedAt: effectiveGeneratedAt,
+  });
+  const actualManifestRaw = serializeManifest(manifest);
+
+  if (markdown !== expectedMarkdown || actualManifestRaw !== expectedManifestRaw) {
+    throw new Error(
+      'Checked-in PUBLIC-RESULTS artifacts are out of date. Run `npm run bench:public-results` to regenerate them.'
+    );
+  }
+
+  return {
+    generatedAt: effectiveGeneratedAt,
+    markdownPath: expectedMarkdownPath,
+    manifestPath: expectedManifestPath,
+  };
+}
+
+if (process.argv.includes('--verify')) {
+  const result = verifyPublicResults({ generatedAt: resolveGeneratedAt() });
+  console.log(`Verified ${result.markdownPath}`);
+  console.log(`Verified ${result.manifestPath}`);
+} else if (process.argv.includes('--self-test-output-dir')) {
+  const tempDir = path.join(os.tmpdir(), `remem-public-results-${Date.now()}`);
+  const { outputPath, outputJsonPath } = writePublicResults(tempDir, {
+    generatedAt: resolveGeneratedAt(),
+  });
+  console.log(outputPath);
+  console.log(outputJsonPath);
+} else {
+  const { outputPath, outputJsonPath } = writePublicResults(resolveOutputDir(), {
+    generatedAt: resolveGeneratedAt(),
+  });
+  console.log(`Wrote ${outputPath}`);
+  console.log(`Wrote ${outputJsonPath}`);
+}
