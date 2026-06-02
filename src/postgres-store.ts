@@ -221,20 +221,32 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     return validated;
   }
 
-  async get(id: string): Promise<MemoryEntry | null> {
-    await this.pgQuery(`UPDATE ${this.table('memory')} SET access_count = access_count + 1, accessed_at = $1 WHERE id = $2`, [Date.now(), id]);
-    const result = await this.pgQuery<Record<string, unknown>>(`SELECT * FROM ${this.table('memory')} WHERE id = $1`, [id]);
+  async get(id: string, opts?: StoreMemoryOptions): Promise<MemoryEntry | null> {
+    const where: string[] = ['id = $1'];
+    const params: unknown[] = [id];
+    let idx = 2;
+    if (opts?.agentId) { where.push(`(agent_id = $${idx} OR agent_id IS NULL)`); params.push(opts.agentId); idx++; }
+    if (opts?.userId) { where.push(`(user_id = $${idx} OR user_id IS NULL)`); params.push(opts.userId); idx++; }
+
+    const result = await this.pgQuery<Record<string, unknown>>(
+      `SELECT * FROM ${this.table('memory')} WHERE ${where.join(' AND ')}`,
+      params
+    );
     if (result.rowCount === 0) return null;
+
+    await this.pgQuery(`UPDATE ${this.table('memory')} SET access_count = access_count + 1, accessed_at = $1 WHERE id = $2`, [Date.now(), id]);
     await this.logEvent('memory.accessed', { id });
     return memoryEntrySchema.parse(this.rowToMemory(result.rows[0]));
   }
 
-  async query(text: string, options?: QueryOptions): Promise<{ results: QueryResult[]; totalAvailable: number }> {
+  async query(text: string, options?: QueryOptions, scope?: StoreMemoryOptions): Promise<{ results: QueryResult[]; totalAvailable: number }> {
     const opts = queryOptionsSchema.parse(options ?? {});
     const where: string[] = ['content ILIKE $1'];
     const params: unknown[] = [`%${text}%`];
     let idx = 2;
 
+    if (scope?.agentId) { where.push(`(agent_id = $${idx} OR agent_id IS NULL)`); params.push(scope.agentId); idx++; }
+    if (scope?.userId) { where.push(`(user_id = $${idx} OR user_id IS NULL)`); params.push(scope.userId); idx++; }
     if (opts.topics && opts.topics.length > 0) {
       where.push(`topics ?| $${idx}::text[]`);
       params.push(opts.topics);
@@ -266,26 +278,35 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     return { results, totalAvailable };
   }
 
-  async getAllEntries(): Promise<QueryResult[]> {
-    const result = await this.pgQuery<Record<string, unknown>>(`SELECT * FROM ${this.table('memory')} ORDER BY created_at DESC`);
+  async getAllEntries(opts?: StoreMemoryOptions): Promise<QueryResult[]> {
+    const { where, params } = this.scopeWhere(opts);
+    const result = await this.pgQuery<Record<string, unknown>>(`SELECT * FROM ${this.table('memory')} ${where} ORDER BY created_at DESC`, params);
     return result.rows.map((row) => this.toQueryResult(memoryEntrySchema.parse(this.rowToMemory(row)), 0));
   }
 
-  async getRecent(n: number = 10): Promise<QueryResult[]> {
-    const result = await this.pgQuery<Record<string, unknown>>(`SELECT * FROM ${this.table('memory')} ORDER BY accessed_at DESC LIMIT $1`, [n]);
+  async getRecent(n: number = 10, opts?: StoreMemoryOptions): Promise<QueryResult[]> {
+    const { where, params } = this.scopeWhere(opts);
+    const result = await this.pgQuery<Record<string, unknown>>(`SELECT * FROM ${this.table('memory')} ${where} ORDER BY accessed_at DESC LIMIT $${params.length + 1}`, [...params, n]);
     return result.rows.map((row) => this.toQueryResult(memoryEntrySchema.parse(this.rowToMemory(row))));
   }
 
-  async getByTopic(topic: string, limit: number = 20): Promise<QueryResult[]> {
+  async getByTopic(topic: string, limit: number = 20, opts?: StoreMemoryOptions): Promise<QueryResult[]> {
+    const { where, params } = this.scopeWhere(opts);
+    const whereSql = where ? `${where} AND topics ? $${params.length + 1}` : `WHERE topics ? $1`;
     const result = await this.pgQuery<Record<string, unknown>>(
-      `SELECT * FROM ${this.table('memory')} WHERE topics ? $1 ORDER BY accessed_at DESC LIMIT $2`,
-      [topic, limit]
+      `SELECT * FROM ${this.table('memory')} ${whereSql} ORDER BY accessed_at DESC LIMIT $${params.length + 2}`,
+      [...params, topic, limit]
     );
     return result.rows.map((row) => this.toQueryResult(memoryEntrySchema.parse(this.rowToMemory(row))));
   }
 
-  async forget(id: string): Promise<boolean> {
-    const result = await this.pgQuery(`DELETE FROM ${this.table('memory')} WHERE id = $1`, [id]);
+  async forget(id: string, opts?: StoreMemoryOptions): Promise<boolean> {
+    const where: string[] = ['id = $1'];
+    const params: unknown[] = [id];
+    let idx = 2;
+    if (opts?.agentId) { where.push(`(agent_id = $${idx} OR agent_id IS NULL)`); params.push(opts.agentId); idx++; }
+    if (opts?.userId) { where.push(`(user_id = $${idx} OR user_id IS NULL)`); params.push(opts.userId); idx++; }
+    const result = await this.pgQuery(`DELETE FROM ${this.table('memory')} WHERE ${where.join(' AND ')}`, params);
     const forgotten = (result.rowCount ?? 0) > 0;
     if (forgotten) await this.logEvent('memory.forgotten', { id });
     return forgotten;
@@ -349,12 +370,23 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     return deleted;
   }
 
-  async getEntryById(id: string): Promise<QueryResult | null> {
-    let result = await this.pgQuery<Record<string, unknown>>(`SELECT * FROM ${this.table('memory')} WHERE id = $1`, [id]);
+  async getEntryById(id: string, opts?: StoreMemoryOptions): Promise<QueryResult | null> {
+    const memoryWhere: string[] = ['id = $1'];
+    const memoryParams: unknown[] = [id];
+    let idx = 2;
+    if (opts?.agentId) { memoryWhere.push(`(agent_id = $${idx} OR agent_id IS NULL)`); memoryParams.push(opts.agentId); idx++; }
+    if (opts?.userId) { memoryWhere.push(`(user_id = $${idx} OR user_id IS NULL)`); memoryParams.push(opts.userId); idx++; }
+
+    let result = await this.pgQuery<Record<string, unknown>>(`SELECT * FROM ${this.table('memory')} WHERE ${memoryWhere.join(' AND ')}`, memoryParams);
     if ((result.rowCount ?? 0) > 0) {
       return this.toQueryResult(memoryEntrySchema.parse(this.rowToMemory(result.rows[0])));
     }
-    result = await this.pgQuery<Record<string, unknown>>(`SELECT * FROM ${this.table('layered_memories')} WHERE id = $1`, [id]);
+    const layeredWhere: string[] = ['id = $1'];
+    const layeredParams: unknown[] = [id];
+    let layeredIdx = 2;
+    if (opts?.agentId) { layeredWhere.push(`(agent_id = $${layeredIdx} OR agent_id IS NULL)`); layeredParams.push(opts.agentId); layeredIdx++; }
+    if (opts?.userId) { layeredWhere.push(`(user_id = $${layeredIdx} OR user_id IS NULL)`); layeredParams.push(opts.userId); layeredIdx++; }
+    result = await this.pgQuery<Record<string, unknown>>(`SELECT * FROM ${this.table('layered_memories')} WHERE ${layeredWhere.join(' AND ')}`, layeredParams);
     if ((result.rowCount ?? 0) === 0) return null;
     const entry = this.rowToLayerEntry(result.rows[0]);
     return {
@@ -533,9 +565,9 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     await this.pgQuery(`DELETE FROM ${this.table('embeddings')} WHERE memory_id = $1`, [memoryId]);
   }
 
-  async semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions): Promise<{ results: QueryResult[]; totalAvailable: number }> {
+  async semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions, scope?: StoreMemoryOptions): Promise<{ results: QueryResult[]; totalAvailable: number }> {
     if (queryVector && this.pgvectorAvailable) {
-      const native = await this.semanticQueryPgvector(queryText, queryVector, opts);
+      const native = await this.semanticQueryPgvector(queryText, queryVector, opts, scope);
       if (native) return native;
     }
 
@@ -543,6 +575,8 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     const where: string[] = [];
     const params: unknown[] = [];
     let idx = 1;
+    if (scope?.agentId) { where.push(`(agent_id = $${idx} OR agent_id IS NULL)`); params.push(scope.agentId); idx++; }
+    if (scope?.userId) { where.push(`(user_id = $${idx} OR user_id IS NULL)`); params.push(scope.userId); idx++; }
     if (opts?.topics && opts.topics.length > 0) { where.push(`topics ?| $${idx}::text[]`); params.push(opts.topics); idx++; }
     if (opts?.since) { where.push(`created_at >= $${idx++}`); params.push(opts.since); }
     if (opts?.until) { where.push(`created_at <= $${idx++}`); params.push(opts.until); }
@@ -618,7 +652,7 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     }
   }
 
-  private async semanticQueryPgvector(_queryText: string, queryVector: number[], opts?: QueryOptions): Promise<{ results: QueryResult[]; totalAvailable: number } | null> {
+  private async semanticQueryPgvector(_queryText: string, queryVector: number[], opts?: QueryOptions, scope?: StoreMemoryOptions): Promise<{ results: QueryResult[]; totalAvailable: number } | null> {
     const limit = opts?.limit ?? 10;
     const vectorLiteral = this.toPgvectorLiteral(queryVector);
     const embeddingType = this.config.pgvector?.embeddingType ?? 'memory';
@@ -627,6 +661,8 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     const where: string[] = [];
     const params: unknown[] = [vectorLiteral];
     let idx = 2;
+    if (scope?.agentId) { where.push(`(m.agent_id = $${idx} OR m.agent_id IS NULL)`); params.push(scope.agentId); idx++; }
+    if (scope?.userId) { where.push(`(m.user_id = $${idx} OR m.user_id IS NULL)`); params.push(scope.userId); idx++; }
     if (opts?.topics && opts.topics.length > 0) { where.push(`m.topics ?| $${idx}::text[]`); params.push(opts.topics); idx++; }
     if (opts?.since) { where.push(`m.created_at >= $${idx++}`); params.push(opts.since); }
     if (opts?.until) { where.push(`m.created_at <= $${idx++}`); params.push(opts.until); }

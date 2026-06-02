@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.10.0](https://img.shields.io/badge/v0.10.0-benchmark--credibility--release-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.11.0](https://img.shields.io/badge/v0.11.0-scope--aware--memory--release-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -157,6 +157,7 @@ A reproducible synthetic benchmark is included in [`benchmarks/`](./benchmarks).
 
 Latest validated benchmark pass on current source:
 
+<!-- BENCHMARK_SUMMARY:START -->
 - **50,000 memories**
 - Approx **3,625,526 stored tokens**
 - Simulated active context: **7,264 tokens**
@@ -166,6 +167,7 @@ Latest validated benchmark pass on current source:
 - ReMEM topic-filtered exact-ID lookup: **100% recall@1/@5** after the exact-topic-match fix
 - Avg query latency: **25.55ms** local in-memory sql.js run on the 50k exact-codename pass
 - Small embedding-backed semantic run: **100% recall@1/@5** on 80 memories, with embedding ingestion identified as the current bottleneck
+<!-- BENCHMARK_SUMMARY:END -->
 
 Read the full claim boundaries plus both the historical May 3 baseline and the regenerated current validation reruns in [`benchmarks/PUBLIC-RESULTS-2026-05-03.md`](./benchmarks/PUBLIC-RESULTS-2026-05-03.md). For machine-readable benchmark citations and downstream validation, use [`benchmarks/PUBLIC-RESULTS-2026-05-03.json`](./benchmarks/PUBLIC-RESULTS-2026-05-03.json). Both are generated from the raw JSON result artifacts via `npm run bench:public-results`.
 

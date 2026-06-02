@@ -13,6 +13,7 @@ const generatorPath = path.join(repoRoot, 'benchmarks', 'generate-public-results
 const checkedInMarkdownPath = path.join(repoRoot, 'benchmarks', 'PUBLIC-RESULTS-2026-05-03.md');
 const checkedInManifestPath = path.join(repoRoot, 'benchmarks', 'PUBLIC-RESULTS-2026-05-03.json');
 const checkedInSchemaPath = path.join(repoRoot, 'benchmarks', 'public-results.schema.json');
+const checkedInReadmePath = path.join(repoRoot, 'README.md');
 
 describe('benchmark public-results generator', () => {
   it('sanitizes private embedding hosts before publishing benchmark artifacts', () => {
@@ -53,7 +54,7 @@ describe('benchmark public-results generator', () => {
     expect(schemaRaw).toContain('"title": "ReMEM public benchmark results manifest"');
   });
 
-  it('reproduces the checked-in markdown and JSON artifacts from raw benchmark results', () => {
+  it('reproduces the checked-in markdown, JSON artifacts, and README benchmark summary from raw benchmark results', () => {
     const tempDir = mkdtempSync(path.join(os.tmpdir(), 'remem-bench-public-results-'));
 
     try {
@@ -78,10 +79,22 @@ describe('benchmark public-results generator', () => {
         'utf8'
       );
       const checkedInMarkdown = readFileSync(checkedInMarkdownPath, 'utf8');
+      const checkedInReadme = readFileSync(checkedInReadmePath, 'utf8');
 
       expect(generatedMarkdown).toBe(checkedInMarkdown);
 
       const generatedManifest = JSON.parse(generatedManifestRaw);
+      const latest50k = generatedManifest.currentValidation.correctedTopicFilteredExactId.find(
+        (row: any) => row.corpusSize === 50000
+      );
+
+      expect(latest50k).toBeTruthy();
+      expect(checkedInReadme).toContain('<!-- BENCHMARK_SUMMARY:START -->');
+      expect(checkedInReadme).toContain('<!-- BENCHMARK_SUMMARY:END -->');
+      expect(checkedInReadme).toContain(`- Approx **3,625,526 stored tokens**`);
+      expect(checkedInReadme).toContain(
+        `- Avg query latency: **${latest50k?.avgExactCodenameQueryMs.toFixed(2)}ms** local in-memory sql.js run on the 50k exact-codename pass`
+      );
 
       expect(generatedManifest.generatedAt).toBe(checkedInManifest.generatedAt);
       expect(generatedManifest).toEqual(checkedInManifest);
@@ -90,7 +103,7 @@ describe('benchmark public-results generator', () => {
     }
   });
 
-  it('verifies checked-in benchmark artifacts via the CLI', () => {
+  it('verifies checked-in benchmark artifacts and README benchmark summary via the CLI', () => {
     expect(() =>
       execFileSync(process.execPath, [generatorPath, '--verify'], {
         cwd: repoRoot,

@@ -699,25 +699,43 @@ var MemoryStore = class {
     this.persist();
     return validated;
   }
-  async get(id) {
+  async get(id, opts) {
     this.ensureInitialized();
+    let sql = "SELECT * FROM memory WHERE id = ?";
+    const params = [id];
+    if (opts?.agentId) {
+      sql += " AND (agent_id = ? OR agent_id IS NULL)";
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(opts.userId);
+    }
+    const result = this.db.exec(sql, params);
+    if (result.length === 0 || result[0].values.length === 0) return null;
     this.db.run(`UPDATE memory SET access_count = access_count + 1, accessed_at = ? WHERE id = ?`, [
       Date.now(),
       id
     ]);
-    const result = this.db.exec("SELECT * FROM memory WHERE id = ?", [id]);
-    if (result.length === 0 || result[0].values.length === 0) return null;
     const row = this.rowToObject(result[0].columns, result[0].values[0]);
     const entry = memoryEntrySchema.parse(row);
     this.logEvent("memory.accessed", { id });
     this.persist();
     return entry;
   }
-  async query(text, options) {
+  async query(text, options, scope) {
     this.ensureInitialized();
     const opts = queryOptionsSchema.parse(options ?? {});
     let sql = "SELECT * FROM memory WHERE content LIKE ?";
     const params = [`%${text}%`];
+    if (scope?.agentId) {
+      sql += " AND (agent_id = ? OR agent_id IS NULL)";
+      params.push(scope.agentId);
+    }
+    if (scope?.userId) {
+      sql += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(scope.userId);
+    }
     if (opts.since) {
       sql += " AND created_at >= ?";
       params.push(opts.since);
@@ -752,9 +770,20 @@ var MemoryStore = class {
    * Get all memory entries (no text filter, ignores limit).
    * Used internally by the duplication/export feature.
    */
-  async getAllEntries() {
+  async getAllEntries(opts) {
     this.ensureInitialized();
-    const result = this.db.exec("SELECT * FROM memory ORDER BY created_at DESC");
+    let sql = "SELECT * FROM memory WHERE 1=1";
+    const params = [];
+    if (opts?.agentId) {
+      sql += " AND (agent_id = ? OR agent_id IS NULL)";
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(opts.userId);
+    }
+    sql += " ORDER BY created_at DESC";
+    const result = this.db.exec(sql, params);
     if (result.length === 0) return [];
     return result[0].values.map((v) => {
       const entry = memoryEntrySchema.parse(this.rowToObject(result[0].columns, v));
@@ -770,9 +799,21 @@ var MemoryStore = class {
       };
     });
   }
-  async getRecent(n = 10) {
+  async getRecent(n = 10, opts) {
     this.ensureInitialized();
-    const result = this.db.exec("SELECT * FROM memory ORDER BY accessed_at DESC LIMIT ?", [n]);
+    let sql = "SELECT * FROM memory WHERE 1=1";
+    const params = [];
+    if (opts?.agentId) {
+      sql += " AND (agent_id = ? OR agent_id IS NULL)";
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(opts.userId);
+    }
+    sql += " ORDER BY accessed_at DESC LIMIT ?";
+    params.push(n);
+    const result = this.db.exec(sql, params);
     if (result.length === 0) return [];
     return result[0].values.map((v) => {
       const entry = memoryEntrySchema.parse(this.rowToObject(result[0].columns, v));
@@ -787,9 +828,20 @@ var MemoryStore = class {
       };
     });
   }
-  async getByTopic(topic, limit = 20) {
+  async getByTopic(topic, limit = 20, opts) {
     this.ensureInitialized();
-    const result = this.db.exec("SELECT * FROM memory ORDER BY accessed_at DESC");
+    let sql = "SELECT * FROM memory WHERE 1=1";
+    const params = [];
+    if (opts?.agentId) {
+      sql += " AND (agent_id = ? OR agent_id IS NULL)";
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(opts.userId);
+    }
+    sql += " ORDER BY accessed_at DESC";
+    const result = this.db.exec(sql, params);
     if (result.length === 0) return [];
     return result[0].values.map((v) => {
       const entry = memoryEntrySchema.parse(this.rowToObject(result[0].columns, v));
@@ -804,9 +856,19 @@ var MemoryStore = class {
       };
     }).filter((entry) => entry.topics.includes(topic)).slice(0, limit);
   }
-  async forget(id) {
+  async forget(id, opts) {
     this.ensureInitialized();
-    this.db.run("DELETE FROM memory WHERE id = ?", [id]);
+    let sql = "DELETE FROM memory WHERE id = ?";
+    const params = [id];
+    if (opts?.agentId) {
+      sql += " AND (agent_id = ? OR agent_id IS NULL)";
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(opts.userId);
+    }
+    this.db.run(sql, params);
     const changes = this.db.getRowsModified();
     if (changes > 0) {
       this.logEvent("memory.forgotten", { id });
@@ -888,9 +950,19 @@ var MemoryStore = class {
     }
     return false;
   }
-  async getEntryById(id) {
+  async getEntryById(id, opts) {
     this.ensureInitialized();
-    const core = this.db.exec("SELECT * FROM memory WHERE id = ?", [id]);
+    let coreSql = "SELECT * FROM memory WHERE id = ?";
+    const coreParams = [id];
+    if (opts?.agentId) {
+      coreSql += " AND (agent_id = ? OR agent_id IS NULL)";
+      coreParams.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      coreSql += " AND (user_id = ? OR user_id IS NULL)";
+      coreParams.push(opts.userId);
+    }
+    const core = this.db.exec(coreSql, coreParams);
     if (core.length > 0 && core[0].values.length > 0) {
       const entry = memoryEntrySchema.parse(this.rowToObject(core[0].columns, core[0].values[0]));
       return {
@@ -903,7 +975,17 @@ var MemoryStore = class {
         accessCount: entry.accessCount
       };
     }
-    const layered = this.db.exec("SELECT * FROM layered_memories WHERE id = ?", [id]);
+    let layeredSql = "SELECT * FROM layered_memories WHERE id = ?";
+    const layeredParams = [id];
+    if (opts?.agentId) {
+      layeredSql += " AND (agent_id = ? OR agent_id IS NULL)";
+      layeredParams.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      layeredSql += " AND (user_id = ? OR user_id IS NULL)";
+      layeredParams.push(opts.userId);
+    }
+    const layered = this.db.exec(layeredSql, layeredParams);
     if (layered.length === 0 || layered[0].values.length === 0) return null;
     const obj = this.rowToObject(layered[0].columns, layered[0].values[0]);
     return {
@@ -1324,17 +1406,25 @@ var MemoryStore = class {
    * @param opts          Query options (limit, topics, etc.)
    * @returns             Top results scored by semantic similarity
    */
-  async semanticQuery(queryText, queryVector, opts) {
+  async semanticQuery(queryText, queryVector, opts, scope) {
     this.ensureInitialized();
     const limit = opts?.limit ?? 10;
-    let sql = "SELECT id, content, topics, metadata, created_at, accessed_at, access_count FROM memory m";
+    let sql = "SELECT id, content, topics, metadata, created_at, accessed_at, access_count FROM memory m WHERE 1=1";
     const params = [];
+    if (scope?.agentId) {
+      sql += " AND (m.agent_id = ? OR m.agent_id IS NULL)";
+      params.push(scope.agentId);
+    }
+    if (scope?.userId) {
+      sql += " AND (m.user_id = ? OR m.user_id IS NULL)";
+      params.push(scope.userId);
+    }
     if (opts?.since) {
-      sql += " WHERE m.created_at >= ?";
+      sql += " AND m.created_at >= ?";
       params.push(opts.since);
     }
     if (opts?.until) {
-      sql += params.length ? " AND m.created_at <= ?" : " WHERE m.created_at <= ?";
+      sql += " AND m.created_at <= ?";
       params.push(opts.until);
     }
     const result = this.db.exec(sql, params);
@@ -1672,18 +1762,44 @@ var PostgresMemoryStore = class {
     await this.logEvent("memory.stored", { entry: validated });
     return validated;
   }
-  async get(id) {
-    await this.pgQuery(`UPDATE ${this.table("memory")} SET access_count = access_count + 1, accessed_at = $1 WHERE id = $2`, [Date.now(), id]);
-    const result = await this.pgQuery(`SELECT * FROM ${this.table("memory")} WHERE id = $1`, [id]);
+  async get(id, opts) {
+    const where = ["id = $1"];
+    const params = [id];
+    let idx = 2;
+    if (opts?.agentId) {
+      where.push(`(agent_id = $${idx} OR agent_id IS NULL)`);
+      params.push(opts.agentId);
+      idx++;
+    }
+    if (opts?.userId) {
+      where.push(`(user_id = $${idx} OR user_id IS NULL)`);
+      params.push(opts.userId);
+      idx++;
+    }
+    const result = await this.pgQuery(
+      `SELECT * FROM ${this.table("memory")} WHERE ${where.join(" AND ")}`,
+      params
+    );
     if (result.rowCount === 0) return null;
+    await this.pgQuery(`UPDATE ${this.table("memory")} SET access_count = access_count + 1, accessed_at = $1 WHERE id = $2`, [Date.now(), id]);
     await this.logEvent("memory.accessed", { id });
     return memoryEntrySchema.parse(this.rowToMemory(result.rows[0]));
   }
-  async query(text, options) {
+  async query(text, options, scope) {
     const opts = queryOptionsSchema.parse(options ?? {});
     const where = ["content ILIKE $1"];
     const params = [`%${text}%`];
     let idx = 2;
+    if (scope?.agentId) {
+      where.push(`(agent_id = $${idx} OR agent_id IS NULL)`);
+      params.push(scope.agentId);
+      idx++;
+    }
+    if (scope?.userId) {
+      where.push(`(user_id = $${idx} OR user_id IS NULL)`);
+      params.push(scope.userId);
+      idx++;
+    }
     if (opts.topics && opts.topics.length > 0) {
       where.push(`topics ?| $${idx}::text[]`);
       params.push(opts.topics);
@@ -1721,23 +1837,40 @@ var PostgresMemoryStore = class {
     await this.logEvent("memory.queried", { text, options: opts, resultCount: results.length });
     return { results, totalAvailable };
   }
-  async getAllEntries() {
-    const result = await this.pgQuery(`SELECT * FROM ${this.table("memory")} ORDER BY created_at DESC`);
+  async getAllEntries(opts) {
+    const { where, params } = this.scopeWhere(opts);
+    const result = await this.pgQuery(`SELECT * FROM ${this.table("memory")} ${where} ORDER BY created_at DESC`, params);
     return result.rows.map((row) => this.toQueryResult(memoryEntrySchema.parse(this.rowToMemory(row)), 0));
   }
-  async getRecent(n = 10) {
-    const result = await this.pgQuery(`SELECT * FROM ${this.table("memory")} ORDER BY accessed_at DESC LIMIT $1`, [n]);
+  async getRecent(n = 10, opts) {
+    const { where, params } = this.scopeWhere(opts);
+    const result = await this.pgQuery(`SELECT * FROM ${this.table("memory")} ${where} ORDER BY accessed_at DESC LIMIT $${params.length + 1}`, [...params, n]);
     return result.rows.map((row) => this.toQueryResult(memoryEntrySchema.parse(this.rowToMemory(row))));
   }
-  async getByTopic(topic, limit = 20) {
+  async getByTopic(topic, limit = 20, opts) {
+    const { where, params } = this.scopeWhere(opts);
+    const whereSql = where ? `${where} AND topics ? $${params.length + 1}` : `WHERE topics ? $1`;
     const result = await this.pgQuery(
-      `SELECT * FROM ${this.table("memory")} WHERE topics ? $1 ORDER BY accessed_at DESC LIMIT $2`,
-      [topic, limit]
+      `SELECT * FROM ${this.table("memory")} ${whereSql} ORDER BY accessed_at DESC LIMIT $${params.length + 2}`,
+      [...params, topic, limit]
     );
     return result.rows.map((row) => this.toQueryResult(memoryEntrySchema.parse(this.rowToMemory(row))));
   }
-  async forget(id) {
-    const result = await this.pgQuery(`DELETE FROM ${this.table("memory")} WHERE id = $1`, [id]);
+  async forget(id, opts) {
+    const where = ["id = $1"];
+    const params = [id];
+    let idx = 2;
+    if (opts?.agentId) {
+      where.push(`(agent_id = $${idx} OR agent_id IS NULL)`);
+      params.push(opts.agentId);
+      idx++;
+    }
+    if (opts?.userId) {
+      where.push(`(user_id = $${idx} OR user_id IS NULL)`);
+      params.push(opts.userId);
+      idx++;
+    }
+    const result = await this.pgQuery(`DELETE FROM ${this.table("memory")} WHERE ${where.join(" AND ")}`, params);
     const forgotten = (result.rowCount ?? 0) > 0;
     if (forgotten) await this.logEvent("memory.forgotten", { id });
     return forgotten;
@@ -1804,12 +1937,38 @@ var PostgresMemoryStore = class {
     if (deleted) await this.logEvent("memory.unlinked", { linkId });
     return deleted;
   }
-  async getEntryById(id) {
-    let result = await this.pgQuery(`SELECT * FROM ${this.table("memory")} WHERE id = $1`, [id]);
+  async getEntryById(id, opts) {
+    const memoryWhere = ["id = $1"];
+    const memoryParams = [id];
+    let idx = 2;
+    if (opts?.agentId) {
+      memoryWhere.push(`(agent_id = $${idx} OR agent_id IS NULL)`);
+      memoryParams.push(opts.agentId);
+      idx++;
+    }
+    if (opts?.userId) {
+      memoryWhere.push(`(user_id = $${idx} OR user_id IS NULL)`);
+      memoryParams.push(opts.userId);
+      idx++;
+    }
+    let result = await this.pgQuery(`SELECT * FROM ${this.table("memory")} WHERE ${memoryWhere.join(" AND ")}`, memoryParams);
     if ((result.rowCount ?? 0) > 0) {
       return this.toQueryResult(memoryEntrySchema.parse(this.rowToMemory(result.rows[0])));
     }
-    result = await this.pgQuery(`SELECT * FROM ${this.table("layered_memories")} WHERE id = $1`, [id]);
+    const layeredWhere = ["id = $1"];
+    const layeredParams = [id];
+    let layeredIdx = 2;
+    if (opts?.agentId) {
+      layeredWhere.push(`(agent_id = $${layeredIdx} OR agent_id IS NULL)`);
+      layeredParams.push(opts.agentId);
+      layeredIdx++;
+    }
+    if (opts?.userId) {
+      layeredWhere.push(`(user_id = $${layeredIdx} OR user_id IS NULL)`);
+      layeredParams.push(opts.userId);
+      layeredIdx++;
+    }
+    result = await this.pgQuery(`SELECT * FROM ${this.table("layered_memories")} WHERE ${layeredWhere.join(" AND ")}`, layeredParams);
     if ((result.rowCount ?? 0) === 0) return null;
     const entry = this.rowToLayerEntry(result.rows[0]);
     return {
@@ -1977,15 +2136,25 @@ var PostgresMemoryStore = class {
   async deleteEmbedding(memoryId) {
     await this.pgQuery(`DELETE FROM ${this.table("embeddings")} WHERE memory_id = $1`, [memoryId]);
   }
-  async semanticQuery(queryText, queryVector, opts) {
+  async semanticQuery(queryText, queryVector, opts, scope) {
     if (queryVector && this.pgvectorAvailable) {
-      const native = await this.semanticQueryPgvector(queryText, queryVector, opts);
+      const native = await this.semanticQueryPgvector(queryText, queryVector, opts, scope);
       if (native) return native;
     }
     const limit = opts?.limit ?? 10;
     const where = [];
     const params = [];
     let idx = 1;
+    if (scope?.agentId) {
+      where.push(`(agent_id = $${idx} OR agent_id IS NULL)`);
+      params.push(scope.agentId);
+      idx++;
+    }
+    if (scope?.userId) {
+      where.push(`(user_id = $${idx} OR user_id IS NULL)`);
+      params.push(scope.userId);
+      idx++;
+    }
     if (opts?.topics && opts.topics.length > 0) {
       where.push(`topics ?| $${idx}::text[]`);
       params.push(opts.topics);
@@ -2063,7 +2232,7 @@ var PostgresMemoryStore = class {
       );
     }
   }
-  async semanticQueryPgvector(_queryText, queryVector, opts) {
+  async semanticQueryPgvector(_queryText, queryVector, opts, scope) {
     const limit = opts?.limit ?? 10;
     const vectorLiteral = this.toPgvectorLiteral(queryVector);
     const embeddingType = this.config.pgvector?.embeddingType ?? "memory";
@@ -2071,6 +2240,16 @@ var PostgresMemoryStore = class {
     const where = [];
     const params = [vectorLiteral];
     let idx = 2;
+    if (scope?.agentId) {
+      where.push(`(m.agent_id = $${idx} OR m.agent_id IS NULL)`);
+      params.push(scope.agentId);
+      idx++;
+    }
+    if (scope?.userId) {
+      where.push(`(m.user_id = $${idx} OR m.user_id IS NULL)`);
+      params.push(scope.userId);
+      idx++;
+    }
     if (opts?.topics && opts.topics.length > 0) {
       where.push(`m.topics ?| $${idx}::text[]`);
       params.push(opts.topics);
@@ -5205,17 +5384,22 @@ var ReMEM = class {
     if (this._embeddingEnabled && this.embeddingService) {
       try {
         const queryVector = await this.embeddingService.embed(query);
-        const { results, totalAvailable } = await this._store.semanticQuery(
+        const { results: results2, totalAvailable: totalAvailable2 } = await this._store.semanticQuery(
           query,
           queryVector,
-          options
+          options,
+          { agentId: this._agentId, userId: this._userId }
         );
-        return { results, totalAvailable, query, tookMs: Date.now() - start };
+        return { results: results2, totalAvailable: totalAvailable2, query, tookMs: Date.now() - start };
       } catch (err) {
         console.warn(`[ReMEM] Semantic query failed, falling back to keyword: ${err}`);
       }
     }
-    return this.engine.query(query, options);
+    const { results, totalAvailable } = await this._store.query(query, options, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
+    return { results, totalAvailable, query, tookMs: Date.now() - start };
   }
   async linkMemories(fromId, toId, type, metadata = {}) {
     return this._store.createLink({ fromId, toId, type, metadata }, {
@@ -5363,13 +5547,19 @@ var ReMEM = class {
    * Get recent memory entries.
    */
   async getRecent(n = 10) {
-    return this.engine.getRecent(n);
+    return this._store.getRecent(n, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
   }
   /**
    * Get entries by topic.
    */
   async getByTopic(topic, limit = 20) {
-    return this.engine.getByTopic(topic, limit);
+    return this._store.getByTopic(topic, limit, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
   }
   /**
    * Recursive query — RLM-style iterative refinement.

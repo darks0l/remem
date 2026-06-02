@@ -84,6 +84,67 @@ describe('ReMEM', () => {
     expect(results.results[0].metadata).toEqual({ project: 'remem', kind: 'note', shipped: true });
   });
 
+  it('enforces agent/user scope on reads and queries', async () => {
+    const alpha = new ReMEM({
+      storage: 'memory',
+      dbPath: ':memory:',
+      storageConfig: { agentId: 'agent-alpha', userId: 'user-a' },
+    });
+    const beta = new ReMEM({
+      storage: 'memory',
+      dbPath: ':memory:',
+      storageConfig: { agentId: 'agent-beta', userId: 'user-b' },
+    });
+
+    await alpha.init();
+    await beta.init();
+
+    const shared = new MemoryStore(':memory:');
+    await shared.init();
+
+    const alphaOnly = await shared.store(
+      { content: 'Alpha private launch checklist', topics: ['release', 'alpha'] },
+      { agentId: 'agent-alpha', userId: 'user-a' }
+    );
+    await shared.store(
+      { content: 'Beta confidential roadmap', topics: ['release', 'beta'] },
+      { agentId: 'agent-beta', userId: 'user-b' }
+    );
+    await shared.store(
+      { content: 'Global publish rule for everyone', topics: ['release', 'global'] },
+      {}
+    );
+
+    (alpha as unknown as { _store: MemoryStore })._store = shared;
+    (beta as unknown as { _store: MemoryStore })._store = shared;
+
+    const alphaQuery = await alpha.query('launch');
+    expect(alphaQuery.results.map((result) => result.content)).toEqual([
+      'Alpha private launch checklist',
+    ]);
+
+    const alphaRecent = await alpha.getRecent(10);
+    expect(alphaRecent.map((result) => result.content)).toEqual(
+      expect.arrayContaining(['Alpha private launch checklist', 'Global publish rule for everyone'])
+    );
+    expect(alphaRecent.some((result) => result.content.includes('Beta confidential'))).toBe(false);
+
+    const alphaTopics = await alpha.getByTopic('release');
+    expect(alphaTopics.map((result) => result.content)).toEqual(
+      expect.arrayContaining(['Alpha private launch checklist', 'Global publish rule for everyone'])
+    );
+    expect(alphaTopics.some((result) => result.content.includes('Beta confidential'))).toBe(false);
+
+    const alphaEntry = await shared.get(alphaOnly.id, { agentId: 'agent-alpha', userId: 'user-a' });
+    const betaCannotReadAlpha = await shared.get(alphaOnly.id, { agentId: 'agent-beta', userId: 'user-b' });
+    expect(alphaEntry?.content).toContain('Alpha private');
+    expect(betaCannotReadAlpha).toBeNull();
+
+    await shared.close();
+    alpha.close();
+    beta.close();
+  });
+
   it('closes cleanly', () => {
     memory.close();
   });

@@ -43,12 +43,12 @@ export interface MemoryStoreLike {
   matchMetadata?(entryMetadata: Record<string, unknown>, filters: Record<string, MetadataFilterValue>): boolean;
   init(): Promise<void>;
   store(input: StoreMemoryInput, opts?: StoreMemoryOptions): Promise<MemoryEntry>;
-  get(id: string): Promise<MemoryEntry | null>;
-  query(text: string, options?: QueryOptions): Promise<{ results: QueryResult[]; totalAvailable: number }>;
-  getAllEntries(): Promise<QueryResult[]>;
-  getRecent(n?: number): Promise<QueryResult[]>;
-  getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
-  forget(id: string): Promise<boolean>;
+  get(id: string, opts?: StoreMemoryOptions): Promise<MemoryEntry | null>;
+  query(text: string, options?: QueryOptions, opts?: StoreMemoryOptions): Promise<{ results: QueryResult[]; totalAvailable: number }>;
+  getAllEntries(opts?: StoreMemoryOptions): Promise<QueryResult[]>;
+  getRecent(n?: number, opts?: StoreMemoryOptions): Promise<QueryResult[]>;
+  getByTopic(topic: string, limit?: number, opts?: StoreMemoryOptions): Promise<QueryResult[]>;
+  forget(id: string, opts?: StoreMemoryOptions): Promise<boolean>;
   createLink(input: MemoryLinkInput, opts?: StoreMemoryOptions): Promise<MemoryLink>;
   getLinks(memoryId: string, options?: LinkedMemoryQueryOptions, opts?: StoreMemoryOptions): Promise<MemoryLink[]>;
   deleteLink(linkId: string): Promise<boolean>;
@@ -65,7 +65,7 @@ export interface MemoryStoreLike {
   storeEmbedding(memoryId: string, base64: string, dimension: number, model: string, type?: 'memory' | 'layered'): Promise<void>;
   getEmbedding(memoryId: string): Promise<{ base64: string; dimension: number } | null>;
   deleteEmbedding(memoryId: string): Promise<void>;
-  semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions): Promise<{ results: QueryResult[]; totalAvailable: number }>;
+  semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions, scope?: StoreMemoryOptions): Promise<{ results: QueryResult[]; totalAvailable: number }>;
   supportsNativeVectorSearch?(): boolean;
   getEventLog(limit?: number): MemoryEvent[];
   persist(): void;

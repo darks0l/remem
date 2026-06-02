@@ -115,6 +115,16 @@ These reruns were executed after the exact-topic-match fix landed in source. The
 | 10,000 memories | `benchmarks/results/context-window-2026-05-31T02-35-33-564Z-10000m-250q.json` | `c67db1f7a8d6…` | 0% | 99.2% | 100% | 100% | 4.95ms | 4.25ms |
 | 50,000 memories | `benchmarks/results/context-window-2026-05-31T02-36-21-642Z-50000m-500q.json` | `36212c5304ca…` | 0% | 99.4% | 100% | 100% | 25.55ms | 22.25ms |
 
+### Delta vs May 3 baseline
+
+Positive recall deltas are improvements. Negative latency deltas mean the current rerun got faster than the original release artifact.
+
+| Corpus size | Exact-codename recall@1 delta | Topic-filtered exact-ID recall@1 delta | Avg exact-codename query delta | Avg topic-filtered query delta |
+|---|---:|---:|---:|---:|
+| 2,000 memories | 0 pts | +9.2 pts | -0.93ms | -0.77ms |
+| 10,000 memories | 0 pts | +10.4 pts | -5.05ms | -4.57ms |
+| 50,000 memories | 0 pts | +10.4 pts | -24.43ms | -21.10ms |
+
 ## Interpretation
 
 1. **Fixed context fails by construction.** Every query targets a fact outside the simulated recent window, so fixed-context recall is 0%.

@@ -151,6 +151,83 @@ function scenarioManifest(run, scenarioName) {
   };
 }
 
+function summarizeLatestBenchmarkClaims({ latest50k, semanticScenario }) {
+  const exactScenario = scenarioByName(latest50k.data, exactNames.exact);
+  const topicScenario = scenarioByName(latest50k.data, exactNames.topic);
+
+  if (!exactScenario || !topicScenario || !semanticScenario) {
+    throw new Error('Expected benchmark scenarios missing while building README benchmark summary');
+  }
+
+  return [
+    '- **50,000 memories**',
+    `- Approx **${latest50k.data.contextPressure.corpusApproxTokens.toLocaleString()} stored tokens**`,
+    `- Simulated active context: **${latest50k.data.contextPressure.fixedWindowApproxTokens.toLocaleString()} tokens**`,
+    `- Corpus/window pressure: **${Math.round(latest50k.data.contextPressure.effectiveCorpusToWindowMultiple)}x**`,
+    `- Fixed recent-context recall: **${pct(exactScenario.metrics.fixedContextRecallAt1)}**`,
+    `- ReMEM exact-codename lookup: **${pct(exactScenario.metrics.rememRecallAt1)} recall@1**, **${pct(exactScenario.metrics.rememRecallAtK)} recall@5**`,
+    `- ReMEM topic-filtered exact-ID lookup: **${pct(topicScenario.metrics.rememRecallAt1)} recall@1/@5** after the exact-topic-match fix`,
+    `- Avg query latency: **${exactScenario.metrics.avgQueryMs.toFixed(2)}ms** local in-memory sql.js run on the 50k exact-codename pass`,
+    `- Small embedding-backed semantic run: **${pct(semanticScenario.metrics.rememRecallAt1)} recall@1/@5** on 80 memories, with embedding ingestion identified as the current bottleneck`,
+  ].join('\n');
+}
+
+function roundDelta(value) {
+  return Number(value.toFixed(4));
+}
+
+function buildValidationDeltaRows({ latestRows, historicalRuns }) {
+  return latestRows.map((row) => {
+    const baselineRun = historicalRuns[`memories${row.corpusSize}`];
+    if (!baselineRun) {
+      throw new Error(`Missing historical baseline for ${row.corpusSize} memories`);
+    }
+
+    const baselineExact = baselineRun.scenarios.find((scenario) => scenario.name === exactNames.exact);
+    const baselineTopic = baselineRun.scenarios.find((scenario) => scenario.name === exactNames.topic);
+
+    if (!baselineExact || !baselineTopic) {
+      throw new Error(`Missing baseline scenarios for ${row.corpusSize} memories`);
+    }
+
+    return {
+      corpusSize: row.corpusSize,
+      baselineSourceFile: baselineRun.sourceFile,
+      baselineSourceSha256: baselineRun.sourceSha256,
+      validationSourceFile: row.sourceFile,
+      validationSourceSha256: row.sourceSha256,
+      exactCodenameRecallAt1Delta: roundDelta(row.exactCodenameRecallAt1 - baselineExact.metrics.rememRecallAt1),
+      exactCodenameRecallAt5Delta: roundDelta(row.exactCodenameRecallAt5 - baselineExact.metrics.rememRecallAtK),
+      topicFilteredExactIdRecallAt1Delta: roundDelta(row.topicFilteredExactIdRecallAt1 - baselineTopic.metrics.rememRecallAt1),
+      topicFilteredExactIdRecallAt5Delta: roundDelta(row.topicFilteredExactIdRecallAt5 - baselineTopic.metrics.rememRecallAtK),
+      avgExactCodenameQueryMsDelta: roundDelta(row.avgExactCodenameQueryMs - baselineExact.metrics.avgQueryMs),
+      avgTopicFilteredQueryMsDelta: roundDelta(row.avgTopicFilteredQueryMs - baselineTopic.metrics.avgQueryMs),
+    };
+  });
+}
+
+function formatSignedPctDelta(value) {
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${(value * 100).toFixed(value === 0 ? 0 : 1)} pts`;
+}
+
+function formatSignedMsDelta(value) {
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(2)}ms`;
+}
+
+function injectReadmeBenchmarkSummary(readme, summary) {
+  const startMarker = '<!-- BENCHMARK_SUMMARY:START -->';
+  const endMarker = '<!-- BENCHMARK_SUMMARY:END -->';
+  const pattern = new RegExp(`${startMarker}[\\s\\S]*?${endMarker}`);
+
+  if (!pattern.test(readme)) {
+    throw new Error('README benchmark summary markers not found');
+  }
+
+  return readme.replace(pattern, `${startMarker}\n${summary}\n${endMarker}`);
+}
+
 function buildPublicResultsArtifacts({ generatedAt = new Date().toISOString() } = {}) {
   const results = readResults();
   const grouped = groupRuns(results);
@@ -192,14 +269,73 @@ function buildPublicResultsArtifacts({ generatedAt = new Date().toISOString() } 
       avgTopicFilteredQueryMs: topic.metrics.avgQueryMs,
     };
   });
+  const historicalRuns = {
+    memories2000: {
+      sourceFile: historical2k.file,
+      sourceSha256: historical2k.sha256,
+      contextPressure: historical2k.data.contextPressure,
+      queryCount: historical2k.data.config.queryCount,
+      scenarios: [
+        scenarioManifest(historical2k, exactNames.exact),
+        scenarioManifest(historical2k, exactNames.natural),
+        scenarioManifest(historical2k, exactNames.topic),
+      ],
+    },
+    memories10000: {
+      sourceFile: historical10k.file,
+      sourceSha256: historical10k.sha256,
+      contextPressure: historical10k.data.contextPressure,
+      queryCount: historical10k.data.config.queryCount,
+      scenarios: [
+        scenarioManifest(historical10k, exactNames.exact),
+        scenarioManifest(historical10k, exactNames.natural),
+        scenarioManifest(historical10k, exactNames.topic),
+      ],
+    },
+    memories50000: {
+      sourceFile: historical50k.file,
+      sourceSha256: historical50k.sha256,
+      contextPressure: historical50k.data.contextPressure,
+      queryCount: historical50k.data.config.queryCount,
+      scenarios: [
+        scenarioManifest(historical50k, exactNames.exact),
+        scenarioManifest(historical50k, exactNames.natural),
+        scenarioManifest(historical50k, exactNames.topic),
+      ],
+    },
+    semantic80: {
+      sourceFile: historicalSemantic80.file,
+      sourceSha256: historicalSemantic80.sha256,
+      contextPressure: historicalSemantic80.data.contextPressure,
+      queryCount: historicalSemantic80.data.config.queryCount,
+      scenarios: [
+        scenarioManifest(historicalSemantic80, exactNames.exact),
+        scenarioManifest(historicalSemantic80, exactNames.natural),
+        scenarioManifest(historicalSemantic80, exactNames.topic),
+        scenarioManifest(historicalSemantic80, exactNames.semantic),
+      ],
+    },
+  };
+  const validationDeltas = buildValidationDeltaRows({
+    latestRows: latestValidationRows,
+    historicalRuns,
+  });
   const latestRows = latestValidationRows.map((row) =>
     `| ${row.corpusSize.toLocaleString()} memories | \`${row.sourceFile}\` | \`${row.sourceSha256.slice(0, 12)}…\` | ${pct(row.fixedRecallAt1)} | ${pct(row.exactCodenameRecallAt1)} | ${pct(row.exactCodenameRecallAt5)} | ${pct(row.topicFilteredExactIdRecallAt1)} | ${ms(row.avgExactCodenameQueryMs)} | ${ms(row.avgTopicFilteredQueryMs)} |`
+  );
+  const deltaRows = validationDeltas.map((row) =>
+    `| ${row.corpusSize.toLocaleString()} memories | ${formatSignedPctDelta(row.exactCodenameRecallAt1Delta)} | ${formatSignedPctDelta(row.topicFilteredExactIdRecallAt1Delta)} | ${formatSignedMsDelta(row.avgExactCodenameQueryMsDelta)} | ${formatSignedMsDelta(row.avgTopicFilteredQueryMsDelta)} |`
   );
 
   const safeClaim50k = scenarioByName(latest50k.data, exactNames.exact);
   if (!safeClaim50k || !semanticScenario || !semanticTopicScenario || !semanticExactScenario || !semanticNaturalScenario) {
     throw new Error('Expected benchmark scenarios missing from result artifacts');
   }
+
+  const readmeBenchmarkSummary = summarizeLatestBenchmarkClaims({
+    latest50k,
+    semanticScenario,
+  });
 
   const publicResultsManifest = {
     generatedAt,
@@ -225,58 +361,13 @@ function buildPublicResultsArtifacts({ generatedAt = new Date().toISOString() } 
     },
     historicalBaseline: {
       releasedAt: '2026-05-03',
-      runs: {
-        memories2000: {
-          sourceFile: historical2k.file,
-          sourceSha256: historical2k.sha256,
-          contextPressure: historical2k.data.contextPressure,
-          queryCount: historical2k.data.config.queryCount,
-          scenarios: [
-            scenarioManifest(historical2k, exactNames.exact),
-            scenarioManifest(historical2k, exactNames.natural),
-            scenarioManifest(historical2k, exactNames.topic),
-          ],
-        },
-        memories10000: {
-          sourceFile: historical10k.file,
-          sourceSha256: historical10k.sha256,
-          contextPressure: historical10k.data.contextPressure,
-          queryCount: historical10k.data.config.queryCount,
-          scenarios: [
-            scenarioManifest(historical10k, exactNames.exact),
-            scenarioManifest(historical10k, exactNames.natural),
-            scenarioManifest(historical10k, exactNames.topic),
-          ],
-        },
-        memories50000: {
-          sourceFile: historical50k.file,
-          sourceSha256: historical50k.sha256,
-          contextPressure: historical50k.data.contextPressure,
-          queryCount: historical50k.data.config.queryCount,
-          scenarios: [
-            scenarioManifest(historical50k, exactNames.exact),
-            scenarioManifest(historical50k, exactNames.natural),
-            scenarioManifest(historical50k, exactNames.topic),
-          ],
-        },
-        semantic80: {
-          sourceFile: historicalSemantic80.file,
-          sourceSha256: historicalSemantic80.sha256,
-          contextPressure: historicalSemantic80.data.contextPressure,
-          queryCount: historicalSemantic80.data.config.queryCount,
-          scenarios: [
-            scenarioManifest(historicalSemantic80, exactNames.exact),
-            scenarioManifest(historicalSemantic80, exactNames.natural),
-            scenarioManifest(historicalSemantic80, exactNames.topic),
-            scenarioManifest(historicalSemantic80, exactNames.semantic),
-          ],
-        },
-      },
+      runs: historicalRuns,
     },
     currentValidation: {
       rerunDate: '2026-05-31',
       latest50kEnvironment,
       correctedTopicFilteredExactId: latestValidationRows,
+      deltasVsHistoricalBaseline: validationDeltas,
     },
     artifactDigests: results.map((result) => ({
       sourceFile: result.file,
@@ -360,6 +451,14 @@ These reruns were executed after the exact-topic-match fix landed in source. The
 |---|---|---|---:|---:|---:|---:|---:|---:|
 ${latestRows.join('\n')}
 
+### Delta vs May 3 baseline
+
+Positive recall deltas are improvements. Negative latency deltas mean the current rerun got faster than the original release artifact.
+
+| Corpus size | Exact-codename recall@1 delta | Topic-filtered exact-ID recall@1 delta | Avg exact-codename query delta | Avg topic-filtered query delta |
+|---|---:|---:|---:|---:|
+${deltaRows.join('\n')}
+
 ## Interpretation
 
 1. **Fixed context fails by construction.** Every query targets a fact outside the simulated recent window, so fixed-context recall is 0%.
@@ -397,6 +496,7 @@ Short version:
   return {
     markdown,
     manifest: publicResultsManifest,
+    readmeBenchmarkSummary,
   };
 }
 
@@ -424,31 +524,47 @@ function serializeManifest(manifest) {
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 
-function writePublicResults(outputDir, { generatedAt } = {}) {
+function writePublicResults(outputDir, { generatedAt, writeReadme = outputDir === defaultOutputDir } = {}) {
   mkdirSync(outputDir, { recursive: true });
   const outputPath = path.join(outputDir, 'PUBLIC-RESULTS-2026-05-03.md');
   const outputJsonPath = path.join(outputDir, 'PUBLIC-RESULTS-2026-05-03.json');
-  const { markdown, manifest } = buildPublicResultsArtifacts({ generatedAt });
+  const { markdown, manifest, readmeBenchmarkSummary } = buildPublicResultsArtifacts({ generatedAt });
   writeFileSync(outputPath, markdown);
   writeFileSync(outputJsonPath, serializeManifest(manifest));
-  return { outputPath, outputJsonPath, markdown, manifest };
+
+  let readmePath;
+  if (writeReadme) {
+    readmePath = path.join(path.dirname(__dirname), 'README.md');
+    const readme = readFileSync(readmePath, 'utf8');
+    const updatedReadme = injectReadmeBenchmarkSummary(readme, readmeBenchmarkSummary);
+    writeFileSync(readmePath, updatedReadme);
+  }
+
+  return { outputPath, outputJsonPath, markdown, manifest, readmePath, readmeBenchmarkSummary };
 }
 
 function verifyPublicResults({ generatedAt } = {}) {
   const expectedMarkdownPath = path.join(defaultOutputDir, 'PUBLIC-RESULTS-2026-05-03.md');
   const expectedManifestPath = path.join(defaultOutputDir, 'PUBLIC-RESULTS-2026-05-03.json');
+  const expectedReadmePath = path.join(path.dirname(__dirname), 'README.md');
   const expectedMarkdown = readFileSync(expectedMarkdownPath, 'utf8');
   const expectedManifestRaw = readFileSync(expectedManifestPath, 'utf8');
+  const expectedReadme = readFileSync(expectedReadmePath, 'utf8');
   const expectedManifest = JSON.parse(expectedManifestRaw);
   const effectiveGeneratedAt = generatedAt ?? expectedManifest.generatedAt;
-  const { markdown, manifest } = writePublicResults(path.join(os.tmpdir(), `remem-public-results-${Date.now()}`), {
-    generatedAt: effectiveGeneratedAt,
-  });
+  const { markdown, manifest, readmeBenchmarkSummary } = writePublicResults(
+    path.join(os.tmpdir(), `remem-public-results-${Date.now()}`),
+    {
+      generatedAt: effectiveGeneratedAt,
+      writeReadme: false,
+    }
+  );
   const actualManifestRaw = serializeManifest(manifest);
+  const actualReadme = injectReadmeBenchmarkSummary(expectedReadme, readmeBenchmarkSummary);
 
-  if (markdown !== expectedMarkdown || actualManifestRaw !== expectedManifestRaw) {
+  if (markdown !== expectedMarkdown || actualManifestRaw !== expectedManifestRaw || actualReadme !== expectedReadme) {
     throw new Error(
-      'Checked-in PUBLIC-RESULTS artifacts are out of date. Run `npm run bench:public-results` to regenerate them.'
+      'Checked-in PUBLIC-RESULTS artifacts or README benchmark summary are out of date. Run `npm run bench:public-results` to regenerate them.'
     );
   }
 
@@ -467,6 +583,7 @@ if (process.argv.includes('--verify')) {
   const tempDir = path.join(os.tmpdir(), `remem-public-results-${Date.now()}`);
   const { outputPath, outputJsonPath } = writePublicResults(tempDir, {
     generatedAt: resolveGeneratedAt(),
+    writeReadme: false,
   });
   console.log(outputPath);
   console.log(outputJsonPath);

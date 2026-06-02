@@ -196,7 +196,8 @@ export class ReMEM {
         const { results, totalAvailable } = await this._store.semanticQuery(
           query,
           queryVector,
-          options
+          options,
+          { agentId: this._agentId, userId: this._userId }
         );
         return { results, totalAvailable, query, tookMs: Date.now() - start };
       } catch (err) {
@@ -206,7 +207,11 @@ export class ReMEM {
     }
 
     // Fallback: standard keyword + access_count query
-    return this.engine.query(query, options);
+    const { results, totalAvailable } = await this._store.query(query, options, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
+    return { results, totalAvailable, query, tookMs: Date.now() - start };
   }
 
   async linkMemories(fromId: string, toId: string, type: string, metadata: Record<string, unknown> = {}): Promise<MemoryLink> {
@@ -379,14 +384,20 @@ export class ReMEM {
    * Get recent memory entries.
    */
   async getRecent(n: number = 10): Promise<QueryResult[]> {
-    return this.engine.getRecent(n);
+    return this._store.getRecent(n, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
   }
 
   /**
    * Get entries by topic.
    */
   async getByTopic(topic: string, limit: number = 20): Promise<QueryResult[]> {
-    return this.engine.getByTopic(topic, limit);
+    return this._store.getByTopic(topic, limit, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
   }
 
   /**

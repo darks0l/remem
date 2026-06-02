@@ -1669,15 +1669,15 @@ interface MemoryStoreLike {
     matchMetadata?(entryMetadata: Record<string, unknown>, filters: Record<string, MetadataFilterValue>): boolean;
     init(): Promise<void>;
     store(input: StoreMemoryInput, opts?: StoreMemoryOptions): Promise<MemoryEntry>;
-    get(id: string): Promise<MemoryEntry | null>;
-    query(text: string, options?: QueryOptions): Promise<{
+    get(id: string, opts?: StoreMemoryOptions): Promise<MemoryEntry | null>;
+    query(text: string, options?: QueryOptions, opts?: StoreMemoryOptions): Promise<{
         results: QueryResult[];
         totalAvailable: number;
     }>;
-    getAllEntries(): Promise<QueryResult[]>;
-    getRecent(n?: number): Promise<QueryResult[]>;
-    getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
-    forget(id: string): Promise<boolean>;
+    getAllEntries(opts?: StoreMemoryOptions): Promise<QueryResult[]>;
+    getRecent(n?: number, opts?: StoreMemoryOptions): Promise<QueryResult[]>;
+    getByTopic(topic: string, limit?: number, opts?: StoreMemoryOptions): Promise<QueryResult[]>;
+    forget(id: string, opts?: StoreMemoryOptions): Promise<boolean>;
     createLink(input: MemoryLinkInput, opts?: StoreMemoryOptions): Promise<MemoryLink>;
     getLinks(memoryId: string, options?: LinkedMemoryQueryOptions, opts?: StoreMemoryOptions): Promise<MemoryLink[]>;
     deleteLink(linkId: string): Promise<boolean>;
@@ -1699,7 +1699,7 @@ interface MemoryStoreLike {
         dimension: number;
     } | null>;
     deleteEmbedding(memoryId: string): Promise<void>;
-    semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions): Promise<{
+    semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions, scope?: StoreMemoryOptions): Promise<{
         results: QueryResult[];
         totalAvailable: number;
     }>;
@@ -1960,8 +1960,8 @@ declare class MemoryStore implements MemoryStoreLike {
     private initTables;
     private ensureInitialized;
     store(input: StoreMemoryInput, opts?: StoreMemoryOptions): Promise<MemoryEntry>;
-    get(id: string): Promise<MemoryEntry | null>;
-    query(text: string, options?: QueryOptions): Promise<{
+    get(id: string, opts?: StoreMemoryOptions): Promise<MemoryEntry | null>;
+    query(text: string, options?: QueryOptions, scope?: StoreMemoryOptions): Promise<{
         results: QueryResult[];
         totalAvailable: number;
     }>;
@@ -1969,14 +1969,14 @@ declare class MemoryStore implements MemoryStoreLike {
      * Get all memory entries (no text filter, ignores limit).
      * Used internally by the duplication/export feature.
      */
-    getAllEntries(): Promise<QueryResult[]>;
-    getRecent(n?: number): Promise<QueryResult[]>;
-    getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
-    forget(id: string): Promise<boolean>;
+    getAllEntries(opts?: StoreMemoryOptions): Promise<QueryResult[]>;
+    getRecent(n?: number, opts?: StoreMemoryOptions): Promise<QueryResult[]>;
+    getByTopic(topic: string, limit?: number, opts?: StoreMemoryOptions): Promise<QueryResult[]>;
+    forget(id: string, opts?: StoreMemoryOptions): Promise<boolean>;
     createLink(input: MemoryLinkInput, opts?: StoreMemoryOptions): Promise<MemoryLink>;
     getLinks(memoryId: string, options?: LinkedMemoryQueryOptions, opts?: StoreMemoryOptions): Promise<MemoryLink[]>;
     deleteLink(linkId: string): Promise<boolean>;
-    getEntryById(id: string): Promise<QueryResult | null>;
+    getEntryById(id: string, opts?: StoreMemoryOptions): Promise<QueryResult | null>;
     /**
      * Persist a LayerManager entry to SQLite.
      * This is what makes layers survive process restarts.
@@ -2060,7 +2060,7 @@ declare class MemoryStore implements MemoryStoreLike {
      * @param opts          Query options (limit, topics, etc.)
      * @returns             Top results scored by semantic similarity
      */
-    semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions): Promise<{
+    semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions, scope?: StoreMemoryOptions): Promise<{
         results: QueryResult[];
         totalAvailable: number;
     }>;
@@ -2109,19 +2109,19 @@ declare class PostgresMemoryStore implements MemoryStoreLike {
     private pgQuery;
     private initTables;
     store(input: StoreMemoryInput, opts?: StoreMemoryOptions): Promise<MemoryEntry>;
-    get(id: string): Promise<MemoryEntry | null>;
-    query(text: string, options?: QueryOptions): Promise<{
+    get(id: string, opts?: StoreMemoryOptions): Promise<MemoryEntry | null>;
+    query(text: string, options?: QueryOptions, scope?: StoreMemoryOptions): Promise<{
         results: QueryResult[];
         totalAvailable: number;
     }>;
-    getAllEntries(): Promise<QueryResult[]>;
-    getRecent(n?: number): Promise<QueryResult[]>;
-    getByTopic(topic: string, limit?: number): Promise<QueryResult[]>;
-    forget(id: string): Promise<boolean>;
+    getAllEntries(opts?: StoreMemoryOptions): Promise<QueryResult[]>;
+    getRecent(n?: number, opts?: StoreMemoryOptions): Promise<QueryResult[]>;
+    getByTopic(topic: string, limit?: number, opts?: StoreMemoryOptions): Promise<QueryResult[]>;
+    forget(id: string, opts?: StoreMemoryOptions): Promise<boolean>;
     createLink(input: MemoryLinkInput, opts?: StoreMemoryOptions): Promise<MemoryLink>;
     getLinks(memoryId: string, options?: LinkedMemoryQueryOptions, opts?: StoreMemoryOptions): Promise<MemoryLink[]>;
     deleteLink(linkId: string): Promise<boolean>;
-    getEntryById(id: string): Promise<QueryResult | null>;
+    getEntryById(id: string, opts?: StoreMemoryOptions): Promise<QueryResult | null>;
     persistLayerEntry(entry: LayeredMemoryEntry, opts?: StoreMemoryOptions): Promise<void>;
     loadAllLayerEntries(opts?: StoreMemoryOptions): Promise<LayeredMemoryEntry[]>;
     forgetLayerEntry(id: string): Promise<boolean>;
@@ -2141,7 +2141,7 @@ declare class PostgresMemoryStore implements MemoryStoreLike {
         dimension: number;
     } | null>;
     deleteEmbedding(memoryId: string): Promise<void>;
-    semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions): Promise<{
+    semanticQuery(queryText: string, queryVector: number[] | null, opts?: QueryOptions, scope?: StoreMemoryOptions): Promise<{
         results: QueryResult[];
         totalAvailable: number;
     }>;

@@ -151,5 +151,6 @@ describe('benchmark manifest schema', () => {
     expect(issues).toEqual([]);
     expect(manifest.$schema).toBe('./PUBLIC-RESULTS.schema.json');
     expect(manifest.schemaVersion).toBe(1);
+    expect(manifest.currentValidation.deltasVsHistoricalBaseline).toHaveLength(3);
   });
 });

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-31T09:00:23.551Z",
+  "generatedAt": "2026-05-31T12:31:26.152Z",
   "$schema": "./PUBLIC-RESULTS.schema.json",
   "schemaVersion": 1,
   "generator": "benchmarks/generate-public-results.mjs",
@@ -408,6 +408,47 @@
         "topicFilteredExactIdRecallAt5": 1,
         "avgExactCodenameQueryMs": 25.55,
         "avgTopicFilteredQueryMs": 22.25
+      }
+    ],
+    "deltasVsHistoricalBaseline": [
+      {
+        "corpusSize": 2000,
+        "baselineSourceFile": "benchmarks/results/context-window-2026-05-03T14-52-06-069Z-2000m-120q.json",
+        "baselineSourceSha256": "829a0fa7e463e22032dd2b8c2ca756aba1feb74cef9b8bba6ff6a903149211cc",
+        "validationSourceFile": "benchmarks/results/context-window-2026-05-31T02-31-09-008Z-2000m-120q.json",
+        "validationSourceSha256": "306af9d9787282c5a29742f4a1bad17aaeeedd5b2204e62f8d18461fcfdb33a2",
+        "exactCodenameRecallAt1Delta": 0,
+        "exactCodenameRecallAt5Delta": 0,
+        "topicFilteredExactIdRecallAt1Delta": 0.0917,
+        "topicFilteredExactIdRecallAt5Delta": 0.0917,
+        "avgExactCodenameQueryMsDelta": -0.93,
+        "avgTopicFilteredQueryMsDelta": -0.77
+      },
+      {
+        "corpusSize": 10000,
+        "baselineSourceFile": "benchmarks/results/context-window-2026-05-03T14-52-32-122Z-10000m-250q.json",
+        "baselineSourceSha256": "a5ece962aece5a337cd21448bdea726f83334b5b4bd67cebed6b036da376d82e",
+        "validationSourceFile": "benchmarks/results/context-window-2026-05-31T02-35-33-564Z-10000m-250q.json",
+        "validationSourceSha256": "c67db1f7a8d620d18a265929c8f5d9644a0e1b350ff58af50a7bcc5e93c204ce",
+        "exactCodenameRecallAt1Delta": 0,
+        "exactCodenameRecallAt5Delta": 0,
+        "topicFilteredExactIdRecallAt1Delta": 0.104,
+        "topicFilteredExactIdRecallAt5Delta": 0.104,
+        "avgExactCodenameQueryMsDelta": -5.05,
+        "avgTopicFilteredQueryMsDelta": -4.57
+      },
+      {
+        "corpusSize": 50000,
+        "baselineSourceFile": "benchmarks/results/context-window-2026-05-03T15-00-07-882Z-50000m-500q.json",
+        "baselineSourceSha256": "471ce4b2f5260448834cb02153dc25237c5ebc715a2e354b906ecff7f68c0ae5",
+        "validationSourceFile": "benchmarks/results/context-window-2026-05-31T02-36-21-642Z-50000m-500q.json",
+        "validationSourceSha256": "36212c5304ca0ee94aef804eeb3000ba35ca45618c90c62cb5bac2c5063b2686",
+        "exactCodenameRecallAt1Delta": 0,
+        "exactCodenameRecallAt5Delta": 0,
+        "topicFilteredExactIdRecallAt1Delta": 0.104,
+        "topicFilteredExactIdRecallAt5Delta": 0.104,
+        "avgExactCodenameQueryMsDelta": -24.43,
+        "avgTopicFilteredQueryMsDelta": -21.1
       }
     ]
   },

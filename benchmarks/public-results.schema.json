@@ -91,7 +91,7 @@
     "currentValidation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["rerunDate", "latest50kEnvironment", "correctedTopicFilteredExactId"],
+      "required": ["rerunDate", "latest50kEnvironment", "correctedTopicFilteredExactId", "deltasVsHistoricalBaseline"],
       "properties": {
         "rerunDate": {
           "type": "string",
@@ -104,6 +104,11 @@
           "type": "array",
           "minItems": 3,
           "items": { "$ref": "#/$defs/validationRow" }
+        },
+        "deltasVsHistoricalBaseline": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "#/$defs/validationDeltaRow" }
         }
       }
     },
@@ -247,6 +252,36 @@
         "topicFilteredExactIdRecallAt5": { "type": "number" },
         "avgExactCodenameQueryMs": { "type": "number" },
         "avgTopicFilteredQueryMs": { "type": "number" }
+      }
+    },
+    "validationDeltaRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "corpusSize",
+        "baselineSourceFile",
+        "baselineSourceSha256",
+        "validationSourceFile",
+        "validationSourceSha256",
+        "exactCodenameRecallAt1Delta",
+        "exactCodenameRecallAt5Delta",
+        "topicFilteredExactIdRecallAt1Delta",
+        "topicFilteredExactIdRecallAt5Delta",
+        "avgExactCodenameQueryMsDelta",
+        "avgTopicFilteredQueryMsDelta"
+      ],
+      "properties": {
+        "corpusSize": { "type": "integer", "minimum": 1 },
+        "baselineSourceFile": { "$ref": "#/$defs/sourceFile" },
+        "baselineSourceSha256": { "$ref": "#/$defs/sha256" },
+        "validationSourceFile": { "$ref": "#/$defs/sourceFile" },
+        "validationSourceSha256": { "$ref": "#/$defs/sha256" },
+        "exactCodenameRecallAt1Delta": { "type": "number" },
+        "exactCodenameRecallAt5Delta": { "type": "number" },
+        "topicFilteredExactIdRecallAt1Delta": { "type": "number" },
+        "topicFilteredExactIdRecallAt5Delta": { "type": "number" },
+        "avgExactCodenameQueryMsDelta": { "type": "number" },
+        "avgTopicFilteredQueryMsDelta": { "type": "number" }
       }
     },
     "artifactDigest": {

@@ -19,6 +19,8 @@ describe('benchmark public results manifest', () => {
     expect(manifest.currentValidation.rerunDate).toBe('2026-05-31');
     expect(Array.isArray(manifest.currentValidation.correctedTopicFilteredExactId)).toBe(true);
     expect(manifest.currentValidation.correctedTopicFilteredExactId).toHaveLength(3);
+    expect(Array.isArray(manifest.currentValidation.deltasVsHistoricalBaseline)).toBe(true);
+    expect(manifest.currentValidation.deltasVsHistoricalBaseline).toHaveLength(3);
     expect(Array.isArray(manifest.artifactDigests)).toBe(true);
     expect(manifest.artifactDigests.length).toBeGreaterThanOrEqual(7);
 
@@ -31,6 +33,15 @@ describe('benchmark public results manifest', () => {
     expect(latest50k?.topicFilteredExactIdRecallAt5).toBe(1);
     expect(latest50k?.exactCodenameRecallAt5).toBe(1);
     expect(latest50k?.sourceSha256).toMatch(/^[a-f0-9]{64}$/);
+
+    const delta50k = manifest.currentValidation.deltasVsHistoricalBaseline.find(
+      (row) => row.corpusSize === 50000
+    );
+
+    expect(delta50k).toBeTruthy();
+    expect(delta50k?.baselineSourceSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(delta50k?.validationSourceSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(delta50k?.topicFilteredExactIdRecallAt1Delta).toBeGreaterThan(0);
 
     const baseline50k = manifest.historicalBaseline.runs.memories50000;
     expect(baseline50k.sourceSha256).toMatch(/^[a-f0-9]{64}$/);

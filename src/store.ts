@@ -234,17 +234,29 @@ export class MemoryStore implements MemoryStoreLike {
     return validated;
   }
 
-  async get(id: string): Promise<MemoryEntry | null> {
+  async get(id: string, opts?: StoreMemoryOptions): Promise<MemoryEntry | null> {
     this.ensureInitialized();
+
+    let sql = 'SELECT * FROM memory WHERE id = ?';
+    const params: (string | number | null)[] = [id];
+
+    if (opts?.agentId) {
+      sql += ' AND (agent_id = ? OR agent_id IS NULL)';
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += ' AND (user_id = ? OR user_id IS NULL)';
+      params.push(opts.userId);
+    }
+
+    const result = this.db!.exec(sql, params);
+
+    if (result.length === 0 || result[0].values.length === 0) return null;
 
     this.db!.run(`UPDATE memory SET access_count = access_count + 1, accessed_at = ? WHERE id = ?`, [
       Date.now(),
       id,
     ]);
-
-    const result = this.db!.exec('SELECT * FROM memory WHERE id = ?', [id]);
-
-    if (result.length === 0 || result[0].values.length === 0) return null;
 
     const row = this.rowToObject(result[0].columns, result[0].values[0]);
     const entry = memoryEntrySchema.parse(row);
@@ -255,12 +267,22 @@ export class MemoryStore implements MemoryStoreLike {
     return entry;
   }
 
-  async query(text: string, options?: QueryOptions): Promise<{ results: QueryResult[]; totalAvailable: number }> {
+  async query(text: string, options?: QueryOptions, scope?: StoreMemoryOptions): Promise<{ results: QueryResult[]; totalAvailable: number }> {
     this.ensureInitialized();
     const opts = queryOptionsSchema.parse(options ?? {});
 
     let sql = 'SELECT * FROM memory WHERE content LIKE ?';
-    const params: (string | number)[] = [`%${text}%`];
+    const params: (string | number | null)[] = [`%${text}%`];
+
+    if (scope?.agentId) {
+      sql += ' AND (agent_id = ? OR agent_id IS NULL)';
+      params.push(scope.agentId);
+    }
+
+    if (scope?.userId) {
+      sql += ' AND (user_id = ? OR user_id IS NULL)';
+      params.push(scope.userId);
+    }
 
     if (opts.since) {
       sql += ' AND created_at >= ?';
@@ -311,10 +333,24 @@ export class MemoryStore implements MemoryStoreLike {
    * Get all memory entries (no text filter, ignores limit).
    * Used internally by the duplication/export feature.
    */
-  async getAllEntries(): Promise<QueryResult[]> {
+  async getAllEntries(opts?: StoreMemoryOptions): Promise<QueryResult[]> {
     this.ensureInitialized();
 
-    const result = this.db!.exec('SELECT * FROM memory ORDER BY created_at DESC');
+    let sql = 'SELECT * FROM memory WHERE 1=1';
+    const params: (string | null)[] = [];
+
+    if (opts?.agentId) {
+      sql += ' AND (agent_id = ? OR agent_id IS NULL)';
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += ' AND (user_id = ? OR user_id IS NULL)';
+      params.push(opts.userId);
+    }
+
+    sql += ' ORDER BY created_at DESC';
+
+    const result = this.db!.exec(sql, params);
 
     if (result.length === 0) return [];
 
@@ -333,10 +369,25 @@ export class MemoryStore implements MemoryStoreLike {
     });
   }
 
-  async getRecent(n: number = 10): Promise<QueryResult[]> {
+  async getRecent(n: number = 10, opts?: StoreMemoryOptions): Promise<QueryResult[]> {
     this.ensureInitialized();
 
-    const result = this.db!.exec('SELECT * FROM memory ORDER BY accessed_at DESC LIMIT ?', [n]);
+    let sql = 'SELECT * FROM memory WHERE 1=1';
+    const params: (string | number | null)[] = [];
+
+    if (opts?.agentId) {
+      sql += ' AND (agent_id = ? OR agent_id IS NULL)';
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += ' AND (user_id = ? OR user_id IS NULL)';
+      params.push(opts.userId);
+    }
+
+    sql += ' ORDER BY accessed_at DESC LIMIT ?';
+    params.push(n);
+
+    const result = this.db!.exec(sql, params);
 
     if (result.length === 0) return [];
 
@@ -354,10 +405,24 @@ export class MemoryStore implements MemoryStoreLike {
     });
   }
 
-  async getByTopic(topic: string, limit: number = 20): Promise<QueryResult[]> {
+  async getByTopic(topic: string, limit: number = 20, opts?: StoreMemoryOptions): Promise<QueryResult[]> {
     this.ensureInitialized();
 
-    const result = this.db!.exec('SELECT * FROM memory ORDER BY accessed_at DESC');
+    let sql = 'SELECT * FROM memory WHERE 1=1';
+    const params: (string | null)[] = [];
+
+    if (opts?.agentId) {
+      sql += ' AND (agent_id = ? OR agent_id IS NULL)';
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += ' AND (user_id = ? OR user_id IS NULL)';
+      params.push(opts.userId);
+    }
+
+    sql += ' ORDER BY accessed_at DESC';
+
+    const result = this.db!.exec(sql, params);
 
     if (result.length === 0) return [];
 
@@ -378,10 +443,22 @@ export class MemoryStore implements MemoryStoreLike {
       .slice(0, limit);
   }
 
-  async forget(id: string): Promise<boolean> {
+  async forget(id: string, opts?: StoreMemoryOptions): Promise<boolean> {
     this.ensureInitialized();
 
-    this.db!.run('DELETE FROM memory WHERE id = ?', [id]);
+    let sql = 'DELETE FROM memory WHERE id = ?';
+    const params: (string | null)[] = [id];
+
+    if (opts?.agentId) {
+      sql += ' AND (agent_id = ? OR agent_id IS NULL)';
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      sql += ' AND (user_id = ? OR user_id IS NULL)';
+      params.push(opts.userId);
+    }
+
+    this.db!.run(sql, params);
     const changes = this.db!.getRowsModified();
 
     if (changes > 0) {
@@ -475,10 +552,21 @@ export class MemoryStore implements MemoryStoreLike {
     return false;
   }
 
-  async getEntryById(id: string): Promise<QueryResult | null> {
+  async getEntryById(id: string, opts?: StoreMemoryOptions): Promise<QueryResult | null> {
     this.ensureInitialized();
 
-    const core = this.db!.exec('SELECT * FROM memory WHERE id = ?', [id]);
+    let coreSql = 'SELECT * FROM memory WHERE id = ?';
+    const coreParams: (string | null)[] = [id];
+    if (opts?.agentId) {
+      coreSql += ' AND (agent_id = ? OR agent_id IS NULL)';
+      coreParams.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      coreSql += ' AND (user_id = ? OR user_id IS NULL)';
+      coreParams.push(opts.userId);
+    }
+
+    const core = this.db!.exec(coreSql, coreParams);
     if (core.length > 0 && core[0].values.length > 0) {
       const entry = memoryEntrySchema.parse(this.rowToObject(core[0].columns, core[0].values[0]));
       return {
@@ -492,7 +580,18 @@ export class MemoryStore implements MemoryStoreLike {
       };
     }
 
-    const layered = this.db!.exec('SELECT * FROM layered_memories WHERE id = ?', [id]);
+    let layeredSql = 'SELECT * FROM layered_memories WHERE id = ?';
+    const layeredParams: (string | null)[] = [id];
+    if (opts?.agentId) {
+      layeredSql += ' AND (agent_id = ? OR agent_id IS NULL)';
+      layeredParams.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      layeredSql += ' AND (user_id = ? OR user_id IS NULL)';
+      layeredParams.push(opts.userId);
+    }
+
+    const layered = this.db!.exec(layeredSql, layeredParams);
     if (layered.length === 0 || layered[0].values.length === 0) return null;
     const obj = this.rowToObject(layered[0].columns, layered[0].values[0]);
     return {
@@ -969,7 +1068,8 @@ export class MemoryStore implements MemoryStoreLike {
   async semanticQuery(
     queryText: string,
     queryVector: number[] | null,
-    opts?: QueryOptions
+    opts?: QueryOptions,
+    scope?: StoreMemoryOptions
   ): Promise<{ results: QueryResult[]; totalAvailable: number }> {
     this.ensureInitialized();
     const limit = opts?.limit ?? 10;
@@ -977,15 +1077,24 @@ export class MemoryStore implements MemoryStoreLike {
     // Fetch all memory entries with embeddings
     // We load them in memory and compute cosine similarity here
     // (SQLite doesn't have vector indexes; for large datasets consider pgvector/faiss separately)
-    let sql = 'SELECT id, content, topics, metadata, created_at, accessed_at, access_count FROM memory m';
-    const params: (string | number)[] = [];
+    let sql = 'SELECT id, content, topics, metadata, created_at, accessed_at, access_count FROM memory m WHERE 1=1';
+    const params: (string | number | null)[] = [];
+
+    if (scope?.agentId) {
+      sql += ' AND (m.agent_id = ? OR m.agent_id IS NULL)';
+      params.push(scope.agentId);
+    }
+    if (scope?.userId) {
+      sql += ' AND (m.user_id = ? OR m.user_id IS NULL)';
+      params.push(scope.userId);
+    }
 
     if (opts?.since) {
-      sql += ' WHERE m.created_at >= ?';
+      sql += ' AND m.created_at >= ?';
       params.push(opts.since);
     }
     if (opts?.until) {
-      sql += params.length ? ' AND m.created_at <= ?' : ' WHERE m.created_at <= ?';
+      sql += ' AND m.created_at <= ?';
       params.push(opts.until);
     }
 
