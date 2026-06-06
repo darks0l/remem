@@ -25,6 +25,7 @@ import {
   linkedMemoryQueryOptionsSchema,
   queryWithNeighborsOptionsSchema,
   rememConfigSchema,
+  smartRecallOptionsSchema,
   type LinkedMemoryQueryOptions,
   type MemoryLink,
   type NeighborPath,
@@ -32,6 +33,8 @@ import {
   type ProceduralTrigger,
   type QueryWithNeighborsOptions,
   type ReMEMConfig,
+  type SmartRecallOptions,
+  type SmartRecallResponse,
   type StoreMemoryInput,
   type QueryOptions,
   type QueryResponse,
@@ -39,8 +42,12 @@ import {
   type ConstitutionStatement,
   type DriftResult,
   type MemoryLayer,
+  type NamespaceInput,
+  type NamespaceQueryScope,
   type DuplicateResult,
   type InfectionResult,
+  namespaceInputSchema,
+  namespaceQueryScopeSchema,
   storeMemoryInputSchema,
 } from './types.js';
 
@@ -69,6 +76,36 @@ export class ReMEM {
   private _layersEnabled: boolean = false;
   private _agentId?: string;
   private _userId?: string;
+
+  private normalizeNamespace(namespace: NamespaceInput): string {
+    const parsed = namespaceInputSchema.parse(namespace);
+    return Array.isArray(parsed) ? parsed.join('/') : parsed;
+  }
+
+  private buildScopedMetadataFilters(
+    scope?: NamespaceQueryScope,
+    namespace?: string,
+    existing?: QueryOptions['metadata']
+  ): QueryOptions['metadata'] {
+    const parsedScope = namespaceQueryScopeSchema.parse(scope ?? {});
+    const metadata: NonNullable<QueryOptions['metadata']> = { ...(existing ?? {}) };
+
+    if (namespace) {
+      metadata.namespace = parsedScope.includeDescendants
+        ? { contains: namespace }
+        : namespace;
+    }
+
+    if (parsedScope.visibility === 'private') {
+      metadata.visibility = { in: ['private'] };
+    } else if (parsedScope.visibility === 'shared') {
+      metadata.visibility = { in: ['shared'] };
+    } else {
+      metadata.visibility = { in: ['private', 'shared'] };
+    }
+
+    return metadata;
+  }
 
   constructor(config: ReMEMConfig) {
     const validated = rememConfigSchema.parse(config);
@@ -319,6 +356,111 @@ export class ReMEM {
     };
   }
 
+  async smartRecall(query: string, options?: SmartRecallOptions): Promise<SmartRecallResponse> {
+    const start = Date.now();
+    const opts = smartRecallOptionsSchema.parse(options ?? {});
+
+    const profileDefaults: Record<SmartRecallOptions['profile'], Partial<SmartRecallOptions>> = {
+      fast: { hops: 1, includeRecent: false, includeProcedural: true, limit: 8 },
+      deep: { hops: 2, includeRecent: true, includeProcedural: true, limit: 12, recentLimit: 6 },
+      'agent-safe': { hops: 1, includeRecent: true, includeProcedural: true, limit: 8, minNeighborScore: 0.3 },
+      'ops-debug': { hops: 2, includeRecent: true, includeProcedural: true, limit: 15, recentLimit: 10, proceduralLimit: 10 },
+    };
+
+    const merged = { ...profileDefaults[opts.profile], ...opts } as SmartRecallOptions;
+    const semanticBase = await this.query(query, merged);
+    const graphBase = await this.queryWithNeighbors(query, {
+      ...merged,
+      includeBaseResults: true,
+    });
+
+    const proceduralMatches = merged.includeProcedural
+      ? this.matchProcedural(query).slice(0, merged.proceduralLimit)
+      : [];
+
+    const recentResults = merged.includeRecent
+      ? (await this.getRecent(merged.recentLimit)).filter((entry) => {
+          if (merged.topics && merged.topics.length > 0 && !merged.topics.some((topic) => entry.topics.includes(topic))) return false;
+          if (merged.minAccessCount && entry.accessCount < merged.minAccessCount) return false;
+          if (merged.metadata && this._store.matchMetadata && !this._store.matchMetadata(entry.metadata ?? {}, merged.metadata)) return false;
+          return true;
+        })
+      : [];
+
+    const mergedResults = new Map<string, import('./types.js').SmartRecallResult>();
+
+    const upsert = (
+      result: QueryResult,
+      sourceLane: 'semantic' | 'graph' | 'procedural' | 'recent',
+      combinedScore: number,
+      reasons: string[]
+    ) => {
+      const existing = mergedResults.get(result.id);
+      const nextReasons = Array.from(new Set([...(existing?.reasons ?? []), ...reasons]));
+      const nextScore = Math.max(existing?.combinedScore ?? 0, combinedScore);
+      const nextLane = (existing?.combinedScore ?? -1) > combinedScore ? existing!.sourceLane : sourceLane;
+
+      mergedResults.set(result.id, {
+        ...result,
+        metadata: result.metadata ?? {},
+        relevanceScore: Math.max(result.relevanceScore ?? 0, existing?.relevanceScore ?? 0),
+        sourceLane: nextLane,
+        reasons: nextReasons,
+        combinedScore: nextScore,
+      });
+    };
+
+    for (const result of semanticBase.results) {
+      upsert(result, 'semantic', result.relevanceScore ?? 0.4, [`semantic:${(result.relevanceScore ?? 0).toFixed(2)}`]);
+    }
+
+    for (const result of graphBase.results) {
+      const score = Math.min(1.5, (result.relevanceScore ?? 0.35) + 0.12);
+      upsert(result, 'graph', score, ['graph:linked-neighbor']);
+    }
+
+    for (const match of proceduralMatches) {
+      upsert(
+        {
+          id: match.entry.id,
+          content: match.entry.content,
+          topics: match.entry.topics,
+          metadata: match.entry.metadata,
+          relevanceScore: match.score,
+          createdAt: match.entry.createdAt,
+          accessedAt: match.entry.accessedAt,
+          accessCount: match.entry.accessCount,
+        },
+        'procedural',
+        Math.min(1.5, match.score + 0.2),
+        match.reasons.map((reason) => `procedural:${reason}`)
+      );
+    }
+
+    for (const result of recentResults) {
+      const recencyBoost = 0.15 + Math.min(0.2, result.accessCount * 0.02);
+      upsert(result, 'recent', (result.relevanceScore ?? 0.2) + recencyBoost, ['recent:active-context']);
+    }
+
+    const results = Array.from(mergedResults.values())
+      .sort((a, b) => b.combinedScore - a.combinedScore)
+      .slice(0, merged.limit);
+
+    return {
+      results,
+      totalAvailable: mergedResults.size,
+      query,
+      tookMs: Date.now() - start,
+      profile: merged.profile,
+      lanes: {
+        semantic: semanticBase.results.length,
+        graph: Math.max(0, graphBase.results.length - semanticBase.results.length),
+        procedural: proceduralMatches.length,
+        recent: recentResults.length,
+      },
+    };
+  }
+
   /**
    * Returns true if semantic embeddings are enabled and configured.
    */
@@ -398,6 +540,59 @@ export class ReMEM {
       agentId: this._agentId,
       userId: this._userId,
     });
+  }
+
+  async storeShared(input: StoreMemoryInput & { namespace: NamespaceInput; visibility?: 'private' | 'shared' }): Promise<void> {
+    const { namespace: rawNamespace, visibility: rawVisibility, ...rest } = input;
+    const namespace = this.normalizeNamespace(rawNamespace);
+    const visibility = rawVisibility ?? 'shared';
+    const topics = Array.from(new Set([...(rest.topics ?? []), namespace]));
+
+    await this.store({
+      content: rest.content,
+      topics,
+      metadata: {
+        ...(rest.metadata ?? {}),
+        namespace,
+        visibility,
+      },
+    });
+  }
+
+  async queryNamespace(
+    namespace: NamespaceInput,
+    query: string,
+    options?: QueryOptions,
+    scope?: NamespaceQueryScope
+  ): Promise<QueryResponse> {
+    const normalizedNamespace = this.normalizeNamespace(namespace);
+    const queryOptions = queryWithNeighborsOptionsSchema.pick({
+      limit: true,
+      topics: true,
+      metadata: true,
+      minAccessCount: true,
+      since: true,
+      until: true,
+    }).parse({
+      ...(options ?? {}),
+      topics: Array.from(new Set([...(options?.topics ?? []), normalizedNamespace])),
+      metadata: this.buildScopedMetadataFilters(scope, normalizedNamespace, options?.metadata),
+    });
+    return this.query(query, queryOptions);
+  }
+
+  async getRecentInNamespace(
+    namespace: NamespaceInput,
+    n: number = 10,
+    scope?: NamespaceQueryScope
+  ): Promise<QueryResult[]> {
+    const normalizedNamespace = this.normalizeNamespace(namespace);
+    const recent = await this.getRecent(Math.max(n * 3, n));
+    const filters = this.buildScopedMetadataFilters(scope, normalizedNamespace);
+
+    return recent
+      .filter((entry) => this._store.matchMetadata ? this._store.matchMetadata(entry.metadata ?? {}, filters ?? {}) : true)
+      .slice(0, n);
   }
 
   /**
@@ -1050,6 +1245,7 @@ export { MemoryConsolidator } from './consolidate.js';
 export { EpisodicCapturePipeline } from './episodic-capture.js';
 export {
   createVercelAIAdapter,
+  createHermesAdapter,
   createLangGraphStoreAdapter,
   createOpenClawAdapter,
 } from './adapters.js';

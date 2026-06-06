@@ -93,6 +93,56 @@ describe('HttpAdapter', () => {
     expect(graphJson.results.length).toBeGreaterThan(0);
     expect(graphJson.paths?.length).toBeGreaterThan(0);
 
+    const smartRecall = await fetch('http://127.0.0.1:18913/memory/smart-recall', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: 'publish remem', options: { profile: 'deep', includeRecent: true } }),
+    });
+    expect(smartRecall.status).toBe(200);
+    const smartRecallJson = await readJson(smartRecall) as { results: Array<{ sourceLane: string }>; lanes: Record<string, number> };
+    expect(smartRecallJson.results.length).toBeGreaterThan(0);
+    expect(Object.keys(smartRecallJson.lanes)).toContain('procedural');
+
+    const sharedCreate = await fetch('http://127.0.0.1:18913/memory/shared', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: 'Shared team launch memory',
+        topics: ['launch'],
+        namespace: ['team', 'launch'],
+        visibility: 'shared',
+        metadata: { source: 'http-test' },
+      }),
+    });
+    expect(sharedCreate.status).toBe(201);
+
+    const namespaceQuery = await fetch('http://127.0.0.1:18913/memory/namespace/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        namespace: ['team', 'launch'],
+        query: 'launch memory',
+        scope: { visibility: 'shared' },
+        options: { limit: 5 },
+      }),
+    });
+    expect(namespaceQuery.status).toBe(200);
+    const namespaceQueryJson = await readJson(namespaceQuery) as { results: Array<{ content: string }> };
+    expect(namespaceQueryJson.results.some((result) => result.content.includes('Shared team launch memory'))).toBe(true);
+
+    const namespaceRecent = await fetch('http://127.0.0.1:18913/memory/namespace/recent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        namespace: ['team', 'launch'],
+        n: 5,
+        scope: { visibility: 'shared' },
+      }),
+    });
+    expect(namespaceRecent.status).toBe(200);
+    const namespaceRecentJson = await readJson(namespaceRecent) as { results: Array<{ metadata: Record<string, unknown> }> };
+    expect(namespaceRecentJson.results.some((result) => result.metadata.namespace === 'team/launch')).toBe(true);
+
     const procedural = await fetch('http://127.0.0.1:18913/memory/procedural/match', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

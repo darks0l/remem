@@ -3,14 +3,33 @@
  * Framework-agnostic HTTP interface for remote memory access
  */
 
-import type { DriftResult, NeighborPath, ProceduralMatch, QueryOptions, QueryResponse, QueryWithNeighborsOptions } from './types.js';
-import { queryWithNeighborsOptionsSchema, storeMemoryInputSchema } from './types.js';
+import type {
+  DriftResult,
+  NamespaceInput,
+  NamespaceQueryScope,
+  NeighborPath,
+  ProceduralMatch,
+  QueryOptions,
+  QueryResponse,
+  QueryResult,
+  QueryWithNeighborsOptions,
+} from './types.js';
+import {
+  namespaceInputSchema,
+  namespaceQueryScopeSchema,
+  queryWithNeighborsOptionsSchema,
+  storeMemoryInputSchema,
+} from './types.js';
 import type { MemoryStoreLike } from './storage-types.js';
 import { ModelAbstraction } from './model.js';
 import { QueryEngine } from './query.js';
 
 export interface AdvancedMemoryRuntime {
   queryWithNeighbors(query: string, options?: QueryWithNeighborsOptions): Promise<QueryResponse & { linksTraversed: number; paths?: NeighborPath[] }>;
+  smartRecall(query: string, options?: import('./types.js').SmartRecallOptions): Promise<import('./types.js').SmartRecallResponse>;
+  storeShared(input: import('./types.js').StoreMemoryInput & { namespace: NamespaceInput; visibility?: 'private' | 'shared' }): Promise<void>;
+  queryNamespace(namespace: NamespaceInput, query: string, options?: QueryOptions, scope?: NamespaceQueryScope): Promise<QueryResponse>;
+  getRecentInNamespace(namespace: NamespaceInput, n?: number, scope?: NamespaceQueryScope): Promise<QueryResult[]>;
   matchProcedural(context: string): ProceduralMatch[];
   auditIdentityAlignment(sessionText: string): Promise<{
     drift: DriftResult;
@@ -125,6 +144,20 @@ export class HttpAdapter {
       return { status: 201, body: { ok: true, message: 'Memory stored' } };
     }
 
+    // POST /memory/shared — store a shared/private namespaced entry
+    if (method === 'POST' && path === '/memory/shared') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      if (!body) return { status: 400, body: { error: 'Empty request body' } };
+      const parsed = JSON.parse(body) as Record<string, unknown>;
+      const input = storeMemoryInputSchema.parse(parsed);
+      const namespace = namespaceInputSchema.parse(parsed.namespace);
+      const visibility = parsed.visibility === 'private' ? 'private' : 'shared';
+      await this.memory.storeShared({ ...input, namespace, visibility });
+      return { status: 201, body: { ok: true, message: 'Shared memory stored', namespace, visibility } };
+    }
+
     // GET /memory — query memory
     if (method === 'GET' && path === '/memory') {
       const query = url.searchParams.get('q') ?? '';
@@ -142,10 +175,39 @@ export class HttpAdapter {
       return { status: 200, body: result };
     }
 
+    // POST /memory/namespace/query — query within a namespace with visibility scope
+    if (method === 'POST' && path === '/memory/namespace/query') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) as { namespace?: unknown; query?: unknown; options?: unknown; scope?: unknown } : {};
+      if (typeof parsed.query !== 'string' || !parsed.query.trim()) {
+        return { status: 400, body: { error: 'query string required' } };
+      }
+      const namespace = namespaceInputSchema.parse(parsed.namespace);
+      const scope = namespaceQueryScopeSchema.parse(parsed.scope ?? {});
+      const options = parsed.options ? JSON.parse(JSON.stringify(parsed.options)) as QueryOptions : undefined;
+      const result = await this.memory.queryNamespace(namespace, parsed.query, options, scope);
+      return { status: 200, body: result };
+    }
+
     // GET /memory/recent — get recent entries
     if (method === 'GET' && path === '/memory/recent') {
       const n = parseInt(url.searchParams.get('n') ?? '10', 10);
       const results = await this.engine.getRecent(n);
+      return { status: 200, body: { results } };
+    }
+
+    // POST /memory/namespace/recent — get recent entries within a namespace
+    if (method === 'POST' && path === '/memory/namespace/recent') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) as { namespace?: unknown; n?: unknown; scope?: unknown } : {};
+      const namespace = namespaceInputSchema.parse(parsed.namespace);
+      const scope = namespaceQueryScopeSchema.parse(parsed.scope ?? {});
+      const n = typeof parsed.n === 'number' ? parsed.n : 10;
+      const results = await this.memory.getRecentInNamespace(namespace, n, scope);
       return { status: 200, body: { results } };
     }
 
@@ -160,6 +222,19 @@ export class HttpAdapter {
       }
       const options = queryWithNeighborsOptionsSchema.parse(parsed.options ?? {});
       const result = await this.memory.queryWithNeighbors(parsed.query, options);
+      return { status: 200, body: result };
+    }
+
+    // POST /memory/smart-recall — fused semantic/graph/procedural/recent retrieval
+    if (method === 'POST' && path === '/memory/smart-recall') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) as { query?: unknown; options?: unknown } : {};
+      if (typeof parsed.query !== 'string' || !parsed.query.trim()) {
+        return { status: 400, body: { error: 'query string required' } };
+      }
+      const result = await this.memory.smartRecall(parsed.query, parsed.options as import('./types.js').SmartRecallOptions | undefined);
       return { status: 200, body: result };
     }
 

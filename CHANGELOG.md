@@ -4,6 +4,21 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.12.0] - 2026-06-06
+
+### Added
+
+- Added shared-memory namespace APIs on the core ReMEM surface: `storeShared()`, `queryNamespace()`, and `getRecentInNamespace()`.
+- Added smart multi-lane recall via `smartRecall()` with semantic, graph, procedural, and recent-context fusion profiles.
+- Added Hermes as a first-class harness adapter alongside OpenClaw with helpers for turns, artifacts, decisions, procedures, and shared namespace recall.
+- Added HTTP routes for shared-memory and smart-recall workflows.
+- Added regression coverage for shared namespace visibility, Hermes adapter flows, smart recall, and HTTP namespace routes.
+
+### Changed
+
+- Upgraded the LangGraph-style adapter to use namespace-aware shared/private memory semantics instead of plain topic-only scoping.
+- Refreshed README examples, release metadata, and package docs to reflect shared memory lanes, Hermes support, and smart recall.
+
 ## [0.11.0] - 2026-06-02
 
 ### Added

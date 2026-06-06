@@ -6,7 +6,7 @@ import type {
   MemoryEntry,
   MemoryEvent,
   MemoryLayer,
-  MetadataFilterValue,
+  MetadataFilter,
   QueryOptions,
   QueryResult,
   StoreMemoryInput,
@@ -40,7 +40,7 @@ export interface StoreMemoryOptions {
 }
 
 export interface MemoryStoreLike {
-  matchMetadata?(entryMetadata: Record<string, unknown>, filters: Record<string, MetadataFilterValue>): boolean;
+  matchMetadata?(entryMetadata: Record<string, unknown>, filters: Record<string, MetadataFilter>): boolean;
   init(): Promise<void>;
   store(input: StoreMemoryInput, opts?: StoreMemoryOptions): Promise<MemoryEntry>;
   get(id: string, opts?: StoreMemoryOptions): Promise<MemoryEntry | null>;

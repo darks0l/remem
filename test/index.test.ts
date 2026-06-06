@@ -84,6 +84,53 @@ describe('ReMEM', () => {
     expect(results.results[0].metadata).toEqual({ project: 'remem', kind: 'note', shipped: true });
   });
 
+  it('supports richer metadata operators', async () => {
+    await memory.store({
+      content: 'Production release memory',
+      topics: ['release'],
+      metadata: { project: 'remem', priority: 9, tags: ['prod', 'release'], shipped: true },
+    });
+    await memory.store({
+      content: 'Low priority draft memory',
+      topics: ['release'],
+      metadata: { project: 'remem', priority: 2, tags: ['draft'], shipped: false },
+    });
+
+    const results = await memory.query('memory', {
+      metadata: {
+        project: 'remem',
+        priority: { gte: 5 },
+        tags: { contains: 'prod' },
+        shipped: true,
+      },
+    });
+
+    expect(results.results).toHaveLength(1);
+    expect(results.results[0].content).toContain('Production release memory');
+  });
+
+  it('supports namespace-aware shared/private querying', async () => {
+    await memory.storeShared({
+      content: 'Shared operator memory',
+      namespace: ['team', 'ops'],
+      visibility: 'shared',
+      topics: ['ops'],
+    });
+    await memory.storeShared({
+      content: 'Private operator memory',
+      namespace: ['team', 'ops'],
+      visibility: 'private',
+      topics: ['ops'],
+    });
+
+    const sharedOnly = await memory.queryNamespace(['team', 'ops'], 'operator', { limit: 10 }, { visibility: 'shared' });
+    expect(sharedOnly.results).toHaveLength(1);
+    expect(sharedOnly.results[0].content).toContain('Shared operator memory');
+
+    const allScoped = await memory.queryNamespace(['team', 'ops'], 'operator', { limit: 10 }, { visibility: 'all' });
+    expect(allScoped.results).toHaveLength(2);
+  });
+
   it('enforces agent/user scope on reads and queries', async () => {
     const alpha = new ReMEM({
       storage: 'memory',
@@ -176,6 +223,24 @@ describe('ReMEM', () => {
     expect(expanded.linksTraversed).toBeGreaterThan(0);
   });
 
+  it('provides a unified smart recall surface', async () => {
+    await memory.enableLayers();
+    await memory.store({ content: 'Base launch note for remem', topics: ['release'], metadata: { project: 'remem', priority: 7 } });
+    const linked = await memory.storeInLayer({ content: 'Graph detail for launch note', topics: ['release', 'detail'] }, 'semantic');
+    await memory.storeProcedural(
+      { content: 'Always run release gates before publish', topics: ['release'] },
+      { phrases: ['launch remem'], terms: ['launch', 'publish'], minScore: 0.2 }
+    );
+    const base = await memory.query('launch note');
+    await memory.linkMemories(base.results[0].id, linked!.id, 'supports');
+
+    const recalled = await memory.smartRecall('launch note', { profile: 'deep', includeRecent: true });
+    expect(recalled.results.length).toBeGreaterThan(0);
+    expect(recalled.results.some((result) => result.sourceLane === 'procedural')).toBe(true);
+    expect(recalled.lanes.graph).toBeGreaterThan(0);
+    expect(recalled.profile).toBe('deep');
+  });
+
   it('returns neighbor paths and weighted graph recall details', async () => {
     await memory.store({ content: 'Base project memory', topics: ['project'] });
     await memory.store({ content: 'Supporting project memory', topics: ['project', 'support'] });
@@ -240,6 +305,28 @@ describe('MemoryStore', () => {
     expect(results.length).toBe(1);
     expect(results[0].metadata).toEqual({ project: 'remem' });
 
+    store.close();
+  });
+
+  it('supports operator-style metadata matching at store level', async () => {
+    const store = new MemoryStore(':memory:');
+    await store.init();
+
+    await store.store({
+      content: 'High priority ops note',
+      topics: ['ops'],
+      metadata: { priority: 10, tags: ['ops', 'prod'], owner: 'darksol' },
+    });
+
+    const queried = await store.query('note', {
+      metadata: {
+        priority: { gt: 5 },
+        tags: { contains: 'prod' },
+        owner: { in: ['darksol', 'meta'] },
+      },
+    });
+
+    expect(queried.results).toHaveLength(1);
     store.close();
   });
 

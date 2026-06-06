@@ -11,7 +11,7 @@ import {
   type QueryOptions,
   type QueryResult,
   type StoreMemoryInput,
-  type MetadataFilterValue,
+  type MetadataFilter,
   linkedMemoryQueryOptionsSchema,
   memoryEntrySchema,
   memoryLinkInputSchema,
@@ -795,12 +795,51 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     return { id: entry.id, content: entry.content, topics: entry.topics, metadata: entry.metadata, relevanceScore, createdAt: entry.createdAt, accessedAt: entry.accessedAt, accessCount: entry.accessCount };
   }
 
-  matchMetadata(entryMetadata: Record<string, unknown>, filters: Record<string, MetadataFilterValue>): boolean {
-    return Object.entries(filters).every(([key, expected]) => {
-      const actual = entryMetadata[key];
+  matchMetadata(entryMetadata: Record<string, unknown>, filters: Record<string, MetadataFilter>): boolean {
+    return Object.entries(filters).every(([key, expected]) => this.matchMetadataValue(entryMetadata[key], expected));
+  }
+
+  private matchMetadataValue(actual: unknown, expected: MetadataFilter): boolean {
+    if (expected === null || typeof expected !== 'object' || Array.isArray(expected)) {
       if (expected === null) return actual === null || actual === undefined;
       return actual === expected;
-    });
+    }
+
+    if ('exists' in expected && expected.exists !== undefined) {
+      const exists = actual !== undefined && actual !== null;
+      if (exists !== expected.exists) return false;
+    }
+    if ('eq' in expected && expected.eq !== undefined) {
+      if (!this.matchMetadataValue(actual, expected.eq)) return false;
+    }
+    if ('in' in expected && expected.in) {
+      if (!expected.in.some((candidate) => this.matchMetadataValue(actual, candidate))) return false;
+    }
+    if ('contains' in expected && expected.contains !== undefined) {
+      if (Array.isArray(actual)) {
+        if (!actual.includes(expected.contains)) return false;
+      } else if (typeof actual === 'string') {
+        if (!actual.includes(String(expected.contains))) return false;
+      } else {
+        return false;
+      }
+    }
+
+    if (typeof actual === 'number') {
+      if ('gt' in expected && expected.gt !== undefined && !(actual > expected.gt)) return false;
+      if ('gte' in expected && expected.gte !== undefined && !(actual >= expected.gte)) return false;
+      if ('lt' in expected && expected.lt !== undefined && !(actual < expected.lt)) return false;
+      if ('lte' in expected && expected.lte !== undefined && !(actual <= expected.lte)) return false;
+    } else if (
+      ('gt' in expected && expected.gt !== undefined) ||
+      ('gte' in expected && expected.gte !== undefined) ||
+      ('lt' in expected && expected.lt !== undefined) ||
+      ('lte' in expected && expected.lte !== undefined)
+    ) {
+      return false;
+    }
+
+    return true;
   }
 
   private async loadAllLinks(opts?: StoreMemoryOptions): Promise<MemoryLink[]> {

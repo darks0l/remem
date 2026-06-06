@@ -47,6 +47,7 @@ __export(index_exports, {
   buildIdentityPackage: () => buildIdentityPackage,
   constitutionSchema: () => constitutionSchema,
   constitutionStatementSchema: () => constitutionStatementSchema,
+  createHermesAdapter: () => createHermesAdapter,
   createIdentitySystem: () => createIdentitySystem,
   createLangGraphStoreAdapter: () => createLangGraphStoreAdapter,
   createOpenClawAdapter: () => createOpenClawAdapter,
@@ -73,8 +74,12 @@ __export(index_exports, {
   memoryLayerSchema: () => memoryLayerSchema,
   memoryLinkInputSchema: () => memoryLinkInputSchema,
   memoryLinkSchema: () => memoryLinkSchema,
+  metadataFilterOperatorSchema: () => metadataFilterOperatorSchema,
+  metadataFilterSchema: () => metadataFilterSchema,
   metadataFilterValueSchema: () => metadataFilterValueSchema,
   modelConfigSchema: () => modelConfigSchema,
+  namespaceInputSchema: () => namespaceInputSchema,
+  namespaceQueryScopeSchema: () => namespaceQueryScopeSchema,
   neighborPathSchema: () => neighborPathSchema,
   postgresStorageConfigSchema: () => postgresStorageConfigSchema,
   proceduralMatchSchema: () => proceduralMatchSchema,
@@ -84,6 +89,10 @@ __export(index_exports, {
   queryResultSchema: () => queryResultSchema,
   queryWithNeighborsOptionsSchema: () => queryWithNeighborsOptionsSchema,
   rememConfigSchema: () => rememConfigSchema,
+  smartRecallOptionsSchema: () => smartRecallOptionsSchema,
+  smartRecallProfileSchema: () => smartRecallProfileSchema,
+  smartRecallResponseSchema: () => smartRecallResponseSchema,
+  smartRecallResultSchema: () => smartRecallResultSchema,
   storeMemoryInputSchema: () => storeMemoryInputSchema,
   uploadPackage: () => uploadPackage
 });
@@ -112,10 +121,23 @@ var storeMemoryInputSchema = import_zod.z.object({
   metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
 });
 var metadataFilterValueSchema = import_zod.z.union([import_zod.z.string(), import_zod.z.number(), import_zod.z.boolean(), import_zod.z.null()]);
+var metadataFilterOperatorSchema = import_zod.z.object({
+  eq: metadataFilterValueSchema.optional(),
+  in: import_zod.z.array(metadataFilterValueSchema).min(1).optional(),
+  contains: import_zod.z.union([import_zod.z.string(), import_zod.z.number(), import_zod.z.boolean()]).optional(),
+  gt: import_zod.z.number().optional(),
+  gte: import_zod.z.number().optional(),
+  lt: import_zod.z.number().optional(),
+  lte: import_zod.z.number().optional(),
+  exists: import_zod.z.boolean().optional()
+}).refine((value) => Object.keys(value).length > 0, {
+  message: "Metadata operator filter must include at least one operator"
+});
+var metadataFilterSchema = import_zod.z.union([metadataFilterValueSchema, metadataFilterOperatorSchema]);
 var queryOptionsSchema = import_zod.z.object({
   limit: import_zod.z.number().min(1).max(100).default(10),
   topics: import_zod.z.array(import_zod.z.string()).optional(),
-  metadata: import_zod.z.record(metadataFilterValueSchema).optional(),
+  metadata: import_zod.z.record(metadataFilterSchema).optional(),
   minAccessCount: import_zod.z.number().optional(),
   since: import_zod.z.number().optional(),
   // unix timestamp ms
@@ -182,6 +204,40 @@ var neighborPathSchema = import_zod.z.object({
   type: import_zod.z.string(),
   hop: import_zod.z.number().min(1),
   score: import_zod.z.number().min(0).max(2)
+});
+var smartRecallProfileSchema = import_zod.z.enum(["fast", "deep", "agent-safe", "ops-debug"]);
+var smartRecallOptionsSchema = queryWithNeighborsOptionsSchema.extend({
+  profile: smartRecallProfileSchema.default("fast"),
+  includeProcedural: import_zod.z.boolean().default(true),
+  proceduralLimit: import_zod.z.number().min(1).max(50).default(5),
+  includeRecent: import_zod.z.boolean().default(false),
+  recentLimit: import_zod.z.number().min(1).max(50).default(5)
+});
+var smartRecallResultSchema = queryResultSchema.extend({
+  sourceLane: import_zod.z.enum(["semantic", "graph", "procedural", "recent"]),
+  reasons: import_zod.z.array(import_zod.z.string()).default([]),
+  combinedScore: import_zod.z.number()
+});
+var smartRecallResponseSchema = import_zod.z.object({
+  results: import_zod.z.array(smartRecallResultSchema),
+  totalAvailable: import_zod.z.number(),
+  query: import_zod.z.string(),
+  tookMs: import_zod.z.number(),
+  profile: smartRecallProfileSchema,
+  lanes: import_zod.z.object({
+    semantic: import_zod.z.number(),
+    graph: import_zod.z.number(),
+    procedural: import_zod.z.number(),
+    recent: import_zod.z.number()
+  })
+});
+var namespaceInputSchema = import_zod.z.union([
+  import_zod.z.string().min(1),
+  import_zod.z.array(import_zod.z.string().min(1)).min(1)
+]);
+var namespaceQueryScopeSchema = import_zod.z.object({
+  visibility: import_zod.z.enum(["private", "shared", "all"]).default("all"),
+  includeDescendants: import_zod.z.boolean().default(false)
 });
 var modelConfigSchema = import_zod.z.discriminatedUnion("type", [
   import_zod.z.object({
@@ -1578,11 +1634,41 @@ var MemoryStore = class {
     return obj;
   }
   matchMetadata(entryMetadata, filters) {
-    return Object.entries(filters).every(([key, expected]) => {
-      const actual = entryMetadata[key];
+    return Object.entries(filters).every(([key, expected]) => this.matchMetadataValue(entryMetadata[key], expected));
+  }
+  matchMetadataValue(actual, expected) {
+    if (expected === null || typeof expected !== "object" || Array.isArray(expected)) {
       if (expected === null) return actual === null || actual === void 0;
       return actual === expected;
-    });
+    }
+    if ("exists" in expected && expected.exists !== void 0) {
+      const exists = actual !== void 0 && actual !== null;
+      if (exists !== expected.exists) return false;
+    }
+    if ("eq" in expected && expected.eq !== void 0) {
+      if (!this.matchMetadataValue(actual, expected.eq)) return false;
+    }
+    if ("in" in expected && expected.in) {
+      if (!expected.in.some((candidate) => this.matchMetadataValue(actual, candidate))) return false;
+    }
+    if ("contains" in expected && expected.contains !== void 0) {
+      if (Array.isArray(actual)) {
+        if (!actual.includes(expected.contains)) return false;
+      } else if (typeof actual === "string") {
+        if (!actual.includes(String(expected.contains))) return false;
+      } else {
+        return false;
+      }
+    }
+    if (typeof actual === "number") {
+      if ("gt" in expected && expected.gt !== void 0 && !(actual > expected.gt)) return false;
+      if ("gte" in expected && expected.gte !== void 0 && !(actual >= expected.gte)) return false;
+      if ("lt" in expected && expected.lt !== void 0 && !(actual < expected.lt)) return false;
+      if ("lte" in expected && expected.lte !== void 0 && !(actual <= expected.lte)) return false;
+    } else if ("gt" in expected && expected.gt !== void 0 || "gte" in expected && expected.gte !== void 0 || "lt" in expected && expected.lt !== void 0 || "lte" in expected && expected.lte !== void 0) {
+      return false;
+    }
+    return true;
   }
   matchTopics(entryTopics, requestedTopics) {
     return requestedTopics.some((topic) => entryTopics.includes(topic));
@@ -2395,11 +2481,41 @@ var PostgresMemoryStore = class {
     return { id: entry.id, content: entry.content, topics: entry.topics, metadata: entry.metadata, relevanceScore, createdAt: entry.createdAt, accessedAt: entry.accessedAt, accessCount: entry.accessCount };
   }
   matchMetadata(entryMetadata, filters) {
-    return Object.entries(filters).every(([key, expected]) => {
-      const actual = entryMetadata[key];
+    return Object.entries(filters).every(([key, expected]) => this.matchMetadataValue(entryMetadata[key], expected));
+  }
+  matchMetadataValue(actual, expected) {
+    if (expected === null || typeof expected !== "object" || Array.isArray(expected)) {
       if (expected === null) return actual === null || actual === void 0;
       return actual === expected;
-    });
+    }
+    if ("exists" in expected && expected.exists !== void 0) {
+      const exists = actual !== void 0 && actual !== null;
+      if (exists !== expected.exists) return false;
+    }
+    if ("eq" in expected && expected.eq !== void 0) {
+      if (!this.matchMetadataValue(actual, expected.eq)) return false;
+    }
+    if ("in" in expected && expected.in) {
+      if (!expected.in.some((candidate) => this.matchMetadataValue(actual, candidate))) return false;
+    }
+    if ("contains" in expected && expected.contains !== void 0) {
+      if (Array.isArray(actual)) {
+        if (!actual.includes(expected.contains)) return false;
+      } else if (typeof actual === "string") {
+        if (!actual.includes(String(expected.contains))) return false;
+      } else {
+        return false;
+      }
+    }
+    if (typeof actual === "number") {
+      if ("gt" in expected && expected.gt !== void 0 && !(actual > expected.gt)) return false;
+      if ("gte" in expected && expected.gte !== void 0 && !(actual >= expected.gte)) return false;
+      if ("lt" in expected && expected.lt !== void 0 && !(actual < expected.lt)) return false;
+      if ("lte" in expected && expected.lte !== void 0 && !(actual <= expected.lte)) return false;
+    } else if ("gt" in expected && expected.gt !== void 0 || "gte" in expected && expected.gte !== void 0 || "lt" in expected && expected.lt !== void 0 || "lte" in expected && expected.lte !== void 0) {
+      return false;
+    }
+    return true;
   }
   async loadAllLinks(opts) {
     const { where, params } = this.scopeWhere(opts);
@@ -4321,6 +4437,18 @@ var HttpAdapter = class {
       await this.engine.store(input);
       return { status: 201, body: { ok: true, message: "Memory stored" } };
     }
+    if (method === "POST" && path === "/memory/shared") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      if (!body) return { status: 400, body: { error: "Empty request body" } };
+      const parsed = JSON.parse(body);
+      const input = storeMemoryInputSchema.parse(parsed);
+      const namespace = namespaceInputSchema.parse(parsed.namespace);
+      const visibility = parsed.visibility === "private" ? "private" : "shared";
+      await this.memory.storeShared({ ...input, namespace, visibility });
+      return { status: 201, body: { ok: true, message: "Shared memory stored", namespace, visibility } };
+    }
     if (method === "GET" && path === "/memory") {
       const query = url.searchParams.get("q") ?? "";
       const limit = parseInt(url.searchParams.get("limit") ?? "10", 10);
@@ -4334,9 +4462,34 @@ var HttpAdapter = class {
       const result = await this.engine.query(query, options);
       return { status: 200, body: result };
     }
+    if (method === "POST" && path === "/memory/namespace/query") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
+        return { status: 400, body: { error: "query string required" } };
+      }
+      const namespace = namespaceInputSchema.parse(parsed.namespace);
+      const scope = namespaceQueryScopeSchema.parse(parsed.scope ?? {});
+      const options = parsed.options ? JSON.parse(JSON.stringify(parsed.options)) : void 0;
+      const result = await this.memory.queryNamespace(namespace, parsed.query, options, scope);
+      return { status: 200, body: result };
+    }
     if (method === "GET" && path === "/memory/recent") {
       const n = parseInt(url.searchParams.get("n") ?? "10", 10);
       const results = await this.engine.getRecent(n);
+      return { status: 200, body: { results } };
+    }
+    if (method === "POST" && path === "/memory/namespace/recent") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      const namespace = namespaceInputSchema.parse(parsed.namespace);
+      const scope = namespaceQueryScopeSchema.parse(parsed.scope ?? {});
+      const n = typeof parsed.n === "number" ? parsed.n : 10;
+      const results = await this.memory.getRecentInNamespace(namespace, n, scope);
       return { status: 200, body: { results } };
     }
     if (method === "POST" && path === "/memory/query-with-neighbors") {
@@ -4349,6 +4502,17 @@ var HttpAdapter = class {
       }
       const options = queryWithNeighborsOptionsSchema.parse(parsed.options ?? {});
       const result = await this.memory.queryWithNeighbors(parsed.query, options);
+      return { status: 200, body: result };
+    }
+    if (method === "POST" && path === "/memory/smart-recall") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
+        return { status: 400, body: { error: "query string required" } };
+      }
+      const result = await this.memory.smartRecall(parsed.query, parsed.options);
       return { status: 200, body: result };
     }
     if (method === "POST" && path === "/memory/procedural/match") {
@@ -5126,6 +5290,9 @@ function contentFromMessages(messages) {
     return `${role}${JSON.stringify(content ?? "")}`;
   }).filter(Boolean).join("\n");
 }
+function normalizeNamespace(namespace) {
+  return Array.isArray(namespace) ? namespace.join("/") : namespace;
+}
 function createVercelAIAdapter(memory, options = {}) {
   return {
     name: "vercel-ai",
@@ -5157,22 +5324,24 @@ function createVercelAIAdapter(memory, options = {}) {
 function createLangGraphStoreAdapter(memory, options = {}) {
   return {
     name: "langgraph-store",
-    async put(namespace, key, value) {
-      const ns = Array.isArray(namespace) ? namespace.join("/") : namespace;
+    async put(namespace, key, value, putOptions) {
+      const ns = normalizeNamespace(namespace);
       const content = typeof value === "string" ? value : JSON.stringify(value);
-      await memory.store(withDefaultTopic({
+      const base = withDefaultTopic({
         content,
         topics: [ns],
         metadata: { key, namespace: ns, source: "langgraph.store" }
-      }, options.defaultTopic));
-    },
-    async search(namespace, query, queryOptions = { limit: options.defaultLimit ?? 10 }) {
-      const ns = Array.isArray(namespace) ? namespace.join("/") : namespace;
-      const response = await memory.query(query, {
-        ...queryOptions,
-        topics: Array.from(/* @__PURE__ */ new Set([...queryOptions.topics ?? [], ns])),
-        metadata: { ...queryOptions.metadata ?? {}, namespace: ns }
+      }, options.defaultTopic);
+      await memory.storeShared({
+        ...base,
+        namespace: ns,
+        visibility: putOptions?.visibility ?? "shared"
       });
+    },
+    async search(namespace, query, queryOptions = { limit: options.defaultLimit ?? 10 }, scopeOptions) {
+      const ns = normalizeNamespace(namespace);
+      const scope = namespaceQueryScopeSchema.parse(scopeOptions ?? {});
+      const response = await memory.queryNamespace(ns, query, queryOptions, scope);
       return response.results.map((result) => ({
         namespace: [ns],
         key: result.id,
@@ -5182,9 +5351,10 @@ function createLangGraphStoreAdapter(memory, options = {}) {
         score: result.relevanceScore
       }));
     },
-    async get(namespace, key) {
-      const ns = Array.isArray(namespace) ? namespace.join("/") : namespace;
-      const response = await memory.query(key, { limit: 20, topics: [ns], metadata: { namespace: ns } });
+    async get(namespace, key, scopeOptions) {
+      const ns = normalizeNamespace(namespace);
+      const scope = namespaceQueryScopeSchema.parse(scopeOptions ?? {});
+      const response = await memory.queryNamespace(ns, key, { limit: 20 }, scope);
       const found = response.results.find((result) => result.id === key || result.content.includes(key));
       return found ? {
         namespace: [ns],
@@ -5194,11 +5364,15 @@ function createLangGraphStoreAdapter(memory, options = {}) {
         updatedAt: found.accessedAt
       } : null;
     },
-    async listNamespaces() {
+    async listNamespaces(scopeOptions) {
+      const scope = namespaceQueryScopeSchema.parse(scopeOptions ?? {});
       const recent = await memory.getRecent(100);
       const namespaces = /* @__PURE__ */ new Set();
       for (const entry of recent) {
-        for (const topic of entry.topics) namespaces.add(topic);
+        const visibility = typeof entry.metadata?.visibility === "string" ? entry.metadata.visibility : "private";
+        if (scope.visibility !== "all" && visibility !== scope.visibility) continue;
+        const namespace = typeof entry.metadata?.namespace === "string" ? entry.metadata.namespace : null;
+        if (namespace) namespaces.add(namespace);
       }
       return [...namespaces].map((ns) => [ns]);
     }
@@ -5278,6 +5452,100 @@ function createOpenClawAdapter(memory, options = {}) {
     }
   };
 }
+function createHermesAdapter(memory, options = {}) {
+  return {
+    name: "hermes",
+    async rememberTurn(turn) {
+      await memory.store(withDefaultTopic({
+        content: `${turn.role}: ${turn.content}`,
+        topics: [
+          turn.threadId ? `thread:${turn.threadId}` : "thread",
+          ...turn.runId ? [`run:${turn.runId}`] : []
+        ],
+        metadata: {
+          ...turn.metadata,
+          role: turn.role,
+          threadId: turn.threadId,
+          runId: turn.runId,
+          messageId: turn.messageId,
+          source: "hermes.turn"
+        }
+      }, options.defaultTopic ?? "hermes"));
+    },
+    async rememberArtifact(artifact) {
+      const topics = [
+        ...artifact.topics ?? [],
+        `artifact:${artifact.kind}`,
+        ...artifact.threadId ? [`thread:${artifact.threadId}`] : []
+      ];
+      await memory.store({
+        content: artifact.content,
+        topics,
+        metadata: {
+          ...artifact.metadata ?? {},
+          kind: artifact.kind,
+          threadId: artifact.threadId,
+          runId: artifact.runId,
+          source: "hermes.artifact"
+        }
+      });
+    },
+    async rememberDecision(decision) {
+      const topics = [
+        ...decision.topics ?? [],
+        ...decision.threadId ? [`thread:${decision.threadId}`] : [],
+        "decision"
+      ];
+      const metadata = {
+        ...decision.metadata ?? {},
+        runId: decision.runId,
+        source: "hermes.decision"
+      };
+      await memory.store({ content: decision.content, topics, metadata });
+      await memory.storeInLayer({ content: decision.content, topics, metadata }, "semantic");
+    },
+    async rememberProcedure(rule) {
+      await memory.storeProcedural({
+        content: rule.content,
+        topics: [...rule.topics ?? [], "procedure"],
+        metadata: {
+          ...rule.metadata ?? {},
+          source: "hermes.procedure"
+        }
+      }, rule.trigger);
+    },
+    async rememberShared(input) {
+      await memory.storeShared({
+        content: input.content,
+        namespace: input.namespace,
+        visibility: input.visibility ?? "shared",
+        topics: input.topics ?? [],
+        metadata: {
+          ...input.metadata ?? {},
+          source: "hermes.shared"
+        }
+      });
+    },
+    async recallContext(query, queryOptions = { limit: options.defaultLimit ?? 8 }) {
+      const response = await memory.query(query, queryOptions);
+      return response.results.map((result) => {
+        const source = typeof result.metadata?.source === "string" ? ` [${result.metadata.source}]` : "";
+        return `- ${result.content}${source}`;
+      }).join("\n");
+    },
+    async recallShared(namespace, query, queryOptions = { limit: options.defaultLimit ?? 8 }, scopeOptions) {
+      const scope = namespaceQueryScopeSchema.parse(scopeOptions ?? { visibility: "shared" });
+      const response = await memory.queryNamespace(namespace, query, queryOptions, scope);
+      return response.results.map((result) => {
+        const visibility = typeof result.metadata?.visibility === "string" ? ` (${result.metadata.visibility})` : "";
+        return `- ${result.content}${visibility}`;
+      }).join("\n");
+    },
+    async query(query, queryOptions) {
+      return memory.query(query, queryOptions);
+    }
+  };
+}
 
 // src/index.ts
 var ReMEM = class {
@@ -5292,6 +5560,25 @@ var ReMEM = class {
   _layersEnabled = false;
   _agentId;
   _userId;
+  normalizeNamespace(namespace) {
+    const parsed = namespaceInputSchema.parse(namespace);
+    return Array.isArray(parsed) ? parsed.join("/") : parsed;
+  }
+  buildScopedMetadataFilters(scope, namespace, existing) {
+    const parsedScope = namespaceQueryScopeSchema.parse(scope ?? {});
+    const metadata = { ...existing ?? {} };
+    if (namespace) {
+      metadata.namespace = parsedScope.includeDescendants ? { contains: namespace } : namespace;
+    }
+    if (parsedScope.visibility === "private") {
+      metadata.visibility = { in: ["private"] };
+    } else if (parsedScope.visibility === "shared") {
+      metadata.visibility = { in: ["shared"] };
+    } else {
+      metadata.visibility = { in: ["private", "shared"] };
+    }
+    return metadata;
+  }
   constructor(config) {
     const validated = rememConfigSchema.parse(config);
     const storage = validated.storage ?? "sqlite";
@@ -5489,6 +5776,86 @@ var ReMEM = class {
       ...opts.includePathDetails ? { paths } : {}
     };
   }
+  async smartRecall(query, options) {
+    const start = Date.now();
+    const opts = smartRecallOptionsSchema.parse(options ?? {});
+    const profileDefaults = {
+      fast: { hops: 1, includeRecent: false, includeProcedural: true, limit: 8 },
+      deep: { hops: 2, includeRecent: true, includeProcedural: true, limit: 12, recentLimit: 6 },
+      "agent-safe": { hops: 1, includeRecent: true, includeProcedural: true, limit: 8, minNeighborScore: 0.3 },
+      "ops-debug": { hops: 2, includeRecent: true, includeProcedural: true, limit: 15, recentLimit: 10, proceduralLimit: 10 }
+    };
+    const merged = { ...profileDefaults[opts.profile], ...opts };
+    const semanticBase = await this.query(query, merged);
+    const graphBase = await this.queryWithNeighbors(query, {
+      ...merged,
+      includeBaseResults: true
+    });
+    const proceduralMatches = merged.includeProcedural ? this.matchProcedural(query).slice(0, merged.proceduralLimit) : [];
+    const recentResults = merged.includeRecent ? (await this.getRecent(merged.recentLimit)).filter((entry) => {
+      if (merged.topics && merged.topics.length > 0 && !merged.topics.some((topic) => entry.topics.includes(topic))) return false;
+      if (merged.minAccessCount && entry.accessCount < merged.minAccessCount) return false;
+      if (merged.metadata && this._store.matchMetadata && !this._store.matchMetadata(entry.metadata ?? {}, merged.metadata)) return false;
+      return true;
+    }) : [];
+    const mergedResults = /* @__PURE__ */ new Map();
+    const upsert = (result, sourceLane, combinedScore, reasons) => {
+      const existing = mergedResults.get(result.id);
+      const nextReasons = Array.from(/* @__PURE__ */ new Set([...existing?.reasons ?? [], ...reasons]));
+      const nextScore = Math.max(existing?.combinedScore ?? 0, combinedScore);
+      const nextLane = (existing?.combinedScore ?? -1) > combinedScore ? existing.sourceLane : sourceLane;
+      mergedResults.set(result.id, {
+        ...result,
+        metadata: result.metadata ?? {},
+        relevanceScore: Math.max(result.relevanceScore ?? 0, existing?.relevanceScore ?? 0),
+        sourceLane: nextLane,
+        reasons: nextReasons,
+        combinedScore: nextScore
+      });
+    };
+    for (const result of semanticBase.results) {
+      upsert(result, "semantic", result.relevanceScore ?? 0.4, [`semantic:${(result.relevanceScore ?? 0).toFixed(2)}`]);
+    }
+    for (const result of graphBase.results) {
+      const score = Math.min(1.5, (result.relevanceScore ?? 0.35) + 0.12);
+      upsert(result, "graph", score, ["graph:linked-neighbor"]);
+    }
+    for (const match of proceduralMatches) {
+      upsert(
+        {
+          id: match.entry.id,
+          content: match.entry.content,
+          topics: match.entry.topics,
+          metadata: match.entry.metadata,
+          relevanceScore: match.score,
+          createdAt: match.entry.createdAt,
+          accessedAt: match.entry.accessedAt,
+          accessCount: match.entry.accessCount
+        },
+        "procedural",
+        Math.min(1.5, match.score + 0.2),
+        match.reasons.map((reason) => `procedural:${reason}`)
+      );
+    }
+    for (const result of recentResults) {
+      const recencyBoost = 0.15 + Math.min(0.2, result.accessCount * 0.02);
+      upsert(result, "recent", (result.relevanceScore ?? 0.2) + recencyBoost, ["recent:active-context"]);
+    }
+    const results = Array.from(mergedResults.values()).sort((a, b) => b.combinedScore - a.combinedScore).slice(0, merged.limit);
+    return {
+      results,
+      totalAvailable: mergedResults.size,
+      query,
+      tookMs: Date.now() - start,
+      profile: merged.profile,
+      lanes: {
+        semantic: semanticBase.results.length,
+        graph: Math.max(0, graphBase.results.length - semanticBase.results.length),
+        procedural: proceduralMatches.length,
+        recent: recentResults.length
+      }
+    };
+  }
   /**
    * Returns true if semantic embeddings are enabled and configured.
    */
@@ -5560,6 +5927,43 @@ var ReMEM = class {
       agentId: this._agentId,
       userId: this._userId
     });
+  }
+  async storeShared(input) {
+    const { namespace: rawNamespace, visibility: rawVisibility, ...rest } = input;
+    const namespace = this.normalizeNamespace(rawNamespace);
+    const visibility = rawVisibility ?? "shared";
+    const topics = Array.from(/* @__PURE__ */ new Set([...rest.topics ?? [], namespace]));
+    await this.store({
+      content: rest.content,
+      topics,
+      metadata: {
+        ...rest.metadata ?? {},
+        namespace,
+        visibility
+      }
+    });
+  }
+  async queryNamespace(namespace, query, options, scope) {
+    const normalizedNamespace = this.normalizeNamespace(namespace);
+    const queryOptions = queryWithNeighborsOptionsSchema.pick({
+      limit: true,
+      topics: true,
+      metadata: true,
+      minAccessCount: true,
+      since: true,
+      until: true
+    }).parse({
+      ...options ?? {},
+      topics: Array.from(/* @__PURE__ */ new Set([...options?.topics ?? [], normalizedNamespace])),
+      metadata: this.buildScopedMetadataFilters(scope, normalizedNamespace, options?.metadata)
+    });
+    return this.query(query, queryOptions);
+  }
+  async getRecentInNamespace(namespace, n = 10, scope) {
+    const normalizedNamespace = this.normalizeNamespace(namespace);
+    const recent = await this.getRecent(Math.max(n * 3, n));
+    const filters = this.buildScopedMetadataFilters(scope, normalizedNamespace);
+    return recent.filter((entry) => this._store.matchMetadata ? this._store.matchMetadata(entry.metadata ?? {}, filters ?? {}) : true).slice(0, n);
   }
   /**
    * Recursive query — RLM-style iterative refinement.
@@ -6079,6 +6483,7 @@ var ReMEM = class {
   buildIdentityPackage,
   constitutionSchema,
   constitutionStatementSchema,
+  createHermesAdapter,
   createIdentitySystem,
   createLangGraphStoreAdapter,
   createOpenClawAdapter,
@@ -6105,8 +6510,12 @@ var ReMEM = class {
   memoryLayerSchema,
   memoryLinkInputSchema,
   memoryLinkSchema,
+  metadataFilterOperatorSchema,
+  metadataFilterSchema,
   metadataFilterValueSchema,
   modelConfigSchema,
+  namespaceInputSchema,
+  namespaceQueryScopeSchema,
   neighborPathSchema,
   postgresStorageConfigSchema,
   proceduralMatchSchema,
@@ -6116,6 +6525,10 @@ var ReMEM = class {
   queryResultSchema,
   queryWithNeighborsOptionsSchema,
   rememConfigSchema,
+  smartRecallOptionsSchema,
+  smartRecallProfileSchema,
+  smartRecallResponseSchema,
+  smartRecallResultSchema,
   storeMemoryInputSchema,
   uploadPackage
 });

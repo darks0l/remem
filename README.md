@@ -12,11 +12,11 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.11.0](https://img.shields.io/badge/v0.11.0-scope--aware--memory--release-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.12.0](https://img.shields.io/badge/v0.12.0-shared--memory--and--harness--release-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
-> ⚠️ **IN TESTING** - This project is under active development. API surface may change.
+> Production-minded agent memory for teams that need durable recall, scoped access, and benchmarked retrieval beyond the active prompt window.
 
 **Persistent, queryable memory for AI agents.**
 
@@ -74,6 +74,9 @@ ReMEM does something different:
 - **Multi-agent scoping** - agent_id + user_id isolation for shared deployments
 - **Plug-and-play LLM abstraction** - Bankr, OpenAI, Anthropic, Ollama - swap without changing your code
 - **Framework adapters** (v0.6.1, expanded in v0.9.0) - Dependency-free helpers for Vercel AI SDK, LangGraph-style stores, and OpenClaw/session memory with decision/procedure/project-context helpers plus metadata-aware recall
+- **Harness adapters** (v0.12.0) - Includes polished OpenClaw and Hermes harness-facing adapters for turns, decisions, procedures, artifacts, and shared namespace recall
+- **Shared memory namespaces** (v0.12.0) - Store reusable memory inside explicit team/project lanes with private/shared visibility controls and scoped recall
+- **Smart recall** (v0.12.0) - Fuse semantic, graph, procedural, and recent-context lanes into one higher-signal retrieval pass
 - **Memory links + neighbor-aware retrieval** (v0.8.0, expanded in v0.8.5) - Explicit typed links between memories (`about`, `supports`, `contradicts`, etc.), weighted graph-adjacent recall, and optional traversal path details
 - **Identity alignment audits** (v0.8.5) - Drift scoring plus corrective injection text for agents that need to keep behavior anchored to a constitution
 - **Production-aware Postgres vector lane** (v0.8.5) - Native pgvector detection, ivfflat index bootstrap, and runtime introspection for deployments that want in-database vector search
@@ -329,6 +332,7 @@ const triggered = memory.fireProcedural('User is asking about Solana DeFi');
 ```typescript
 import {
   createVercelAIAdapter,
+  createHermesAdapter,
   createLangGraphStoreAdapter,
   createOpenClawAdapter,
 } from '@darksol/remem';
@@ -360,9 +364,27 @@ await openclaw.rememberDecision({
   sessionId: 'general',
   topics: ['release'],
 });
+
+// Hermes harness adapter
+const hermes = createHermesAdapter(memory);
+await hermes.rememberTurn({
+  role: 'user',
+  content: 'Ship Hermes support after tests pass',
+  threadId: 'general',
+  runId: 'run-42',
+});
+
+await hermes.rememberShared({
+  namespace: ['team', 'hermes'],
+  content: 'Shared rollout lane for Hermes harness work',
+  visibility: 'shared',
+  topics: ['release'],
+});
+
+const hermesShared = await hermes.recallShared(['team', 'hermes'], 'rollout lane');
 ```
 
-Adapters are intentionally dependency-free. They expose structural interfaces you can wrap into your framework of choice without dragging Vercel, LangChain, or OpenClaw into your runtime.
+Adapters are intentionally dependency-free. They expose structural interfaces you can wrap into your framework of choice without dragging Vercel, LangChain, OpenClaw, or Hermes-specific runtime code into your memory layer.
 
 ### For Long-Running Agents (1-3 year lifespan)
 
@@ -710,7 +732,7 @@ When pgvector is enabled and available, ReMEM bootstraps the extension, backfill
 
 ### HTTP Adapter Advanced Routes
 
-When you pass the full `ReMEM` instance as `memory`, the HTTP adapter exposes graph/procedural/identity routes in addition to core CRUD:
+When you pass the full `ReMEM` instance as `memory`, the HTTP adapter exposes graph/procedural/identity/shared-memory routes in addition to core CRUD:
 
 ```typescript
 const adapter = new HttpAdapter({
@@ -723,10 +745,46 @@ await adapter.start();
 ```
 
 - `POST /memory/query-with-neighbors` — graph-aware retrieval with `query` + `options`
+- `POST /memory/shared` — store namespaced shared/private memory with `namespace` + `visibility`
+- `POST /memory/namespace/query` — query a namespace with optional visibility scope
+- `POST /memory/namespace/recent` — get recent entries inside a namespace
 - `POST /memory/procedural/match` — procedural trigger matching with `context`
 - `POST /identity/audit` — identity drift audit with `sessionText`
 - `GET /health` — includes `advancedRoutes` and `nativeVectorSearch`
 ```
+
+### Shared memory namespaces
+
+Use namespaces when you want memory to be intentionally reusable across a project, team, or workflow without dumping everything into one giant recall pool.
+
+```typescript
+await memory.storeShared({
+  content: 'Launch checklist lives in the ops lane',
+  namespace: ['team', 'ops'],
+  visibility: 'shared',
+  topics: ['launch', 'ops'],
+  metadata: { source: 'runbook' },
+});
+
+const scoped = await memory.queryNamespace(
+  ['team', 'ops'],
+  'launch checklist',
+  { limit: 5 },
+  { visibility: 'shared' }
+);
+
+const recentScoped = await memory.getRecentInNamespace(
+  ['team', 'ops'],
+  10,
+  { visibility: 'shared' }
+);
+```
+
+- `namespace` accepts either a string (`"team/ops"`) or path array (`["team", "ops"]`)
+- `visibility: 'private'` keeps the entry in the namespace but marks it as private-only
+- `visibility: 'shared'` marks it as intentionally recallable from shared/team lanes
+- `visibility: 'all'` on queries searches both private + shared entries in that namespace
+- `includeDescendants: true` lets a namespace query match nested paths such as `team/ops/release`
 
 ### Core Operations
 
@@ -843,6 +901,24 @@ curl -H "Authorization: Bearer $REMEM_TOKEN" \
 curl -H "Authorization: Bearer $REMEM_TOKEN" \
   "http://localhost:8787/memory/recent?n=10"
 
+# Shared memory
+curl -X POST http://localhost:8787/memory/shared \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -d '{"content":"Launch checklist lives here","topics":["ops"],"namespace":["team","ops"],"visibility":"shared","metadata":{"source":"runbook"}}'
+
+# Namespace query
+curl -X POST http://localhost:8787/memory/namespace/query \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -d '{"namespace":["team","ops"],"query":"launch checklist","options":{"limit":5},"scope":{"visibility":"shared"}}'
+
+# Namespace recent
+curl -X POST http://localhost:8787/memory/namespace/recent \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -d '{"namespace":["team","ops"],"n":10,"scope":{"visibility":"shared"}}'
+
 # Snapshots
 curl -H "Authorization: Bearer $REMEM_TOKEN" \
   "http://localhost:8787/snapshots"
@@ -910,12 +986,12 @@ const memory = new ReMEM({ llm: { type: 'ollama', baseUrl: 'http://localhost:114
 
 ---
 
-## Limitations (v0.8.0)
+## Current boundaries
 
-- **PostgreSQL vector search is brute-force for now** - embeddings are stored in Postgres, but semantic search currently computes cosine similarity in application memory. pgvector indexing is a future optimization.
-- **Procedural layer uses keyword triggers** - `fireProcedural()` is simple `ctx.includes(trigger)`. Not a full rule engine.
-- **Drift detection pattern-matching is fragile** - Only fires on specific negation patterns (`prefer not`, `no longer`, `changed to`, etc.). LLM fallback requires a separate eval model.
-- **Episodic layer TTL is short (1h)** - May need tuning for long-running automation agents.
+- **ReMEM is external memory, not a bigger model context window** - it improves recall by storing and retrieving relevant memories on demand, not by changing the model's native token limit.
+- **Best semantic performance depends on your embedding/runtime setup** - SQLite uses application-level vector scoring, while PostgreSQL can use native pgvector acceleration when available and configured.
+- **Procedural recall is lightweight by design** - trigger matching is practical and useful, but it is not meant to replace a full policy engine or workflow orchestrator.
+- **Layer defaults are opinionated, not universal** - TTLs, promotion, and compression behavior should be tuned for your agent's workload.
 
 ---
 

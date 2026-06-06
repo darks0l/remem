@@ -36,10 +36,28 @@ export type StoreMemoryInput = z.infer<typeof storeMemoryInputSchema>;
 export const metadataFilterValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 export type MetadataFilterValue = z.infer<typeof metadataFilterValueSchema>;
 
+export const metadataFilterOperatorSchema = z.object({
+  eq: metadataFilterValueSchema.optional(),
+  in: z.array(metadataFilterValueSchema).min(1).optional(),
+  contains: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  gt: z.number().optional(),
+  gte: z.number().optional(),
+  lt: z.number().optional(),
+  lte: z.number().optional(),
+  exists: z.boolean().optional(),
+}).refine((value) => Object.keys(value).length > 0, {
+  message: 'Metadata operator filter must include at least one operator',
+});
+
+export type MetadataFilterOperator = z.infer<typeof metadataFilterOperatorSchema>;
+
+export const metadataFilterSchema = z.union([metadataFilterValueSchema, metadataFilterOperatorSchema]);
+export type MetadataFilter = z.infer<typeof metadataFilterSchema>;
+
 export const queryOptionsSchema = z.object({
   limit: z.number().min(1).max(100).default(10),
   topics: z.array(z.string()).optional(),
-  metadata: z.record(metadataFilterValueSchema).optional(),
+  metadata: z.record(metadataFilterSchema).optional(),
   minAccessCount: z.number().optional(),
   since: z.number().optional(), // unix timestamp ms
   until: z.number().optional(),
@@ -134,6 +152,57 @@ export const neighborPathSchema = z.object({
 });
 
 export type NeighborPath = z.infer<typeof neighborPathSchema>;
+
+export const smartRecallProfileSchema = z.enum(['fast', 'deep', 'agent-safe', 'ops-debug']);
+export type SmartRecallProfile = z.infer<typeof smartRecallProfileSchema>;
+
+export const smartRecallOptionsSchema = queryWithNeighborsOptionsSchema.extend({
+  profile: smartRecallProfileSchema.default('fast'),
+  includeProcedural: z.boolean().default(true),
+  proceduralLimit: z.number().min(1).max(50).default(5),
+  includeRecent: z.boolean().default(false),
+  recentLimit: z.number().min(1).max(50).default(5),
+});
+
+export type SmartRecallOptions = z.infer<typeof smartRecallOptionsSchema>;
+
+export const smartRecallResultSchema = queryResultSchema.extend({
+  sourceLane: z.enum(['semantic', 'graph', 'procedural', 'recent']),
+  reasons: z.array(z.string()).default([]),
+  combinedScore: z.number(),
+});
+
+export type SmartRecallResult = z.infer<typeof smartRecallResultSchema>;
+
+export const smartRecallResponseSchema = z.object({
+  results: z.array(smartRecallResultSchema),
+  totalAvailable: z.number(),
+  query: z.string(),
+  tookMs: z.number(),
+  profile: smartRecallProfileSchema,
+  lanes: z.object({
+    semantic: z.number(),
+    graph: z.number(),
+    procedural: z.number(),
+    recent: z.number(),
+  }),
+});
+
+export type SmartRecallResponse = z.infer<typeof smartRecallResponseSchema>;
+
+export const namespaceInputSchema = z.union([
+  z.string().min(1),
+  z.array(z.string().min(1)).min(1),
+]);
+
+export type NamespaceInput = z.infer<typeof namespaceInputSchema>;
+
+export const namespaceQueryScopeSchema = z.object({
+  visibility: z.enum(['private', 'shared', 'all']).default('all'),
+  includeDescendants: z.boolean().default(false),
+});
+
+export type NamespaceQueryScope = z.infer<typeof namespaceQueryScopeSchema>;
 
 // ============================================================================
 // Model Abstraction Types

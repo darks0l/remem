@@ -4,7 +4,7 @@
  */
 
 import type { ReMEM } from './index.js';
-import { storeMemoryInputSchema, type QueryOptions, type QueryResponse, type StoreMemoryInput } from './types.js';
+import { namespaceQueryScopeSchema, storeMemoryInputSchema, type NamespaceInput, type NamespaceQueryScope, type QueryOptions, type QueryResponse, type StoreMemoryInput } from './types.js';
 
 export interface ReMEMAdapterOptions {
   /** Default topic attached to memories stored through the adapter. */
@@ -48,6 +48,10 @@ function contentFromMessages(messages: unknown): string {
     })
     .filter(Boolean)
     .join('\n');
+}
+
+function normalizeNamespace(namespace: NamespaceInput): string {
+  return Array.isArray(namespace) ? namespace.join('/') : namespace;
 }
 
 /**
@@ -101,23 +105,30 @@ export function createLangGraphStoreAdapter(memory: ReMEM, options: ReMEMAdapter
   return {
     name: 'langgraph-store',
 
-    async put(namespace: string | string[], key: string, value: unknown): Promise<void> {
-      const ns = Array.isArray(namespace) ? namespace.join('/') : namespace;
+    async put(namespace: string | string[], key: string, value: unknown, putOptions?: { visibility?: 'private' | 'shared' }): Promise<void> {
+      const ns = normalizeNamespace(namespace);
       const content = typeof value === 'string' ? value : JSON.stringify(value);
-      await memory.store(withDefaultTopic({
+      const base = withDefaultTopic({
         content,
         topics: [ns],
         metadata: { key, namespace: ns, source: 'langgraph.store' },
-      }, options.defaultTopic));
+      }, options.defaultTopic);
+      await memory.storeShared({
+        ...base,
+        namespace: ns,
+        visibility: putOptions?.visibility ?? 'shared',
+      });
     },
 
-    async search(namespace: string | string[], query: string, queryOptions: QueryOptions = { limit: options.defaultLimit ?? 10 }) {
-      const ns = Array.isArray(namespace) ? namespace.join('/') : namespace;
-      const response = await memory.query(query, {
-        ...queryOptions,
-        topics: Array.from(new Set([...(queryOptions.topics ?? []), ns])),
-        metadata: { ...(queryOptions.metadata ?? {}), namespace: ns },
-      });
+    async search(
+      namespace: string | string[],
+      query: string,
+      queryOptions: QueryOptions = { limit: options.defaultLimit ?? 10 },
+      scopeOptions?: NamespaceQueryScope
+    ) {
+      const ns = normalizeNamespace(namespace);
+      const scope = namespaceQueryScopeSchema.parse(scopeOptions ?? {});
+      const response = await memory.queryNamespace(ns, query, queryOptions, scope);
       return response.results.map((result) => ({
         namespace: [ns],
         key: result.id,
@@ -128,9 +139,10 @@ export function createLangGraphStoreAdapter(memory: ReMEM, options: ReMEMAdapter
       }));
     },
 
-    async get(namespace: string | string[], key: string) {
-      const ns = Array.isArray(namespace) ? namespace.join('/') : namespace;
-      const response = await memory.query(key, { limit: 20, topics: [ns], metadata: { namespace: ns } });
+    async get(namespace: string | string[], key: string, scopeOptions?: NamespaceQueryScope) {
+      const ns = normalizeNamespace(namespace);
+      const scope = namespaceQueryScopeSchema.parse(scopeOptions ?? {});
+      const response = await memory.queryNamespace(ns, key, { limit: 20 }, scope);
       const found = response.results.find((result) => result.id === key || result.content.includes(key));
       return found
         ? {
@@ -143,11 +155,15 @@ export function createLangGraphStoreAdapter(memory: ReMEM, options: ReMEMAdapter
         : null;
     },
 
-    async listNamespaces(): Promise<string[][]> {
+    async listNamespaces(scopeOptions?: NamespaceQueryScope): Promise<string[][]> {
+      const scope = namespaceQueryScopeSchema.parse(scopeOptions ?? {});
       const recent = await memory.getRecent(100);
       const namespaces = new Set<string>();
       for (const entry of recent) {
-        for (const topic of entry.topics) namespaces.add(topic);
+        const visibility = typeof entry.metadata?.visibility === 'string' ? entry.metadata.visibility : 'private';
+        if (scope.visibility !== 'all' && visibility !== scope.visibility) continue;
+        const namespace = typeof entry.metadata?.namespace === 'string' ? entry.metadata.namespace : null;
+        if (namespace) namespaces.add(namespace);
       }
       return [...namespaces].map((ns) => [ns]);
     },
@@ -249,6 +265,149 @@ export function createOpenClawAdapter(memory: ReMEM, options: ReMEMAdapterOption
         includePathDetails: false,
       });
       return response.results.map((result) => `- ${result.content}`).join('\n');
+    },
+
+    async query(query: string, queryOptions?: QueryOptions): Promise<QueryResponse> {
+      return memory.query(query, queryOptions);
+    },
+  };
+}
+
+/**
+ * Hermes harness adapter.
+ * Mirrors the polished harness-facing shape from OpenClaw, but keeps the
+ * surface generic to common harness concepts: turns, artifacts, decisions,
+ * procedures, and scoped recall.
+ */
+export function createHermesAdapter(memory: ReMEM, options: ReMEMAdapterOptions = {}) {
+  return {
+    name: 'hermes',
+
+    async rememberTurn(turn: {
+      role: 'user' | 'assistant' | 'system' | string;
+      content: string;
+      threadId?: string;
+      runId?: string;
+      messageId?: string;
+      metadata?: Record<string, unknown>;
+    }): Promise<void> {
+      await memory.store(withDefaultTopic({
+        content: `${turn.role}: ${turn.content}`,
+        topics: [
+          turn.threadId ? `thread:${turn.threadId}` : 'thread',
+          ...(turn.runId ? [`run:${turn.runId}`] : []),
+        ],
+        metadata: {
+          ...turn.metadata,
+          role: turn.role,
+          threadId: turn.threadId,
+          runId: turn.runId,
+          messageId: turn.messageId,
+          source: 'hermes.turn',
+        },
+      }, options.defaultTopic ?? 'hermes'));
+    },
+
+    async rememberArtifact(artifact: {
+      kind: string;
+      content: string;
+      threadId?: string;
+      runId?: string;
+      topics?: string[];
+      metadata?: Record<string, unknown>;
+    }): Promise<void> {
+      const topics = [
+        ...(artifact.topics ?? []),
+        `artifact:${artifact.kind}`,
+        ...(artifact.threadId ? [`thread:${artifact.threadId}`] : []),
+      ];
+
+      await memory.store({
+        content: artifact.content,
+        topics,
+        metadata: {
+          ...(artifact.metadata ?? {}),
+          kind: artifact.kind,
+          threadId: artifact.threadId,
+          runId: artifact.runId,
+          source: 'hermes.artifact',
+        },
+      });
+    },
+
+    async rememberDecision(decision: {
+      content: string;
+      threadId?: string;
+      runId?: string;
+      topics?: string[];
+      metadata?: Record<string, unknown>;
+    }): Promise<void> {
+      const topics = [
+        ...(decision.topics ?? []),
+        ...(decision.threadId ? [`thread:${decision.threadId}`] : []),
+        'decision',
+      ];
+
+      const metadata = {
+        ...(decision.metadata ?? {}),
+        runId: decision.runId,
+        source: 'hermes.decision',
+      };
+
+      await memory.store({ content: decision.content, topics, metadata });
+      await memory.storeInLayer({ content: decision.content, topics, metadata }, 'semantic');
+    },
+
+    async rememberProcedure(rule: {
+      content: string;
+      trigger: string | Record<string, unknown>;
+      topics?: string[];
+      metadata?: Record<string, unknown>;
+    }): Promise<void> {
+      await memory.storeProcedural({
+        content: rule.content,
+        topics: [...(rule.topics ?? []), 'procedure'],
+        metadata: {
+          ...(rule.metadata ?? {}),
+          source: 'hermes.procedure',
+        },
+      }, rule.trigger as string | Record<string, unknown>);
+    },
+
+    async rememberShared(input: {
+      namespace: string | string[];
+      content: string;
+      visibility?: 'private' | 'shared';
+      topics?: string[];
+      metadata?: Record<string, unknown>;
+    }): Promise<void> {
+      await memory.storeShared({
+        content: input.content,
+        namespace: input.namespace,
+        visibility: input.visibility ?? 'shared',
+        topics: input.topics ?? [],
+        metadata: {
+          ...(input.metadata ?? {}),
+          source: 'hermes.shared',
+        },
+      });
+    },
+
+    async recallContext(query: string, queryOptions: QueryOptions = { limit: options.defaultLimit ?? 8 }): Promise<string> {
+      const response = await memory.query(query, queryOptions);
+      return response.results.map((result) => {
+        const source = typeof result.metadata?.source === 'string' ? ` [${result.metadata.source}]` : '';
+        return `- ${result.content}${source}`;
+      }).join('\n');
+    },
+
+    async recallShared(namespace: string | string[], query: string, queryOptions: QueryOptions = { limit: options.defaultLimit ?? 8 }, scopeOptions?: NamespaceQueryScope): Promise<string> {
+      const scope = namespaceQueryScopeSchema.parse(scopeOptions ?? { visibility: 'shared' });
+      const response = await memory.queryNamespace(namespace, query, queryOptions, scope);
+      return response.results.map((result) => {
+        const visibility = typeof result.metadata?.visibility === 'string' ? ` (${result.metadata.visibility})` : '';
+        return `- ${result.content}${visibility}`;
+      }).join('\n');
     },
 
     async query(query: string, queryOptions?: QueryOptions): Promise<QueryResponse> {

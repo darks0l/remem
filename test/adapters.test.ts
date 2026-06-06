@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ReMEM,
+  createHermesAdapter,
   createLangGraphStoreAdapter,
   createOpenClawAdapter,
   createVercelAIAdapter,
@@ -49,6 +50,27 @@ describe('framework adapters', () => {
     memory.close();
   });
 
+  it('LangGraph store adapter respects shared/private namespace visibility', async () => {
+    const memory = await createMemory();
+    const adapter = createLangGraphStoreAdapter(memory);
+
+    await adapter.put(['team', 'shared'], 'public-note', { text: 'shared launch note' }, { visibility: 'shared' });
+    await adapter.put(['team', 'private'], 'private-note', { text: 'private launch note' }, { visibility: 'private' });
+
+    const sharedResults = await adapter.search(['team', 'shared'], 'launch', { limit: 5 }, { visibility: 'shared' });
+    expect(sharedResults.length).toBeGreaterThan(0);
+    expect(String(sharedResults[0].value)).toContain('shared launch note');
+
+    const hiddenPrivate = await adapter.search(['team', 'private'], 'launch', { limit: 5 }, { visibility: 'shared' });
+    expect(hiddenPrivate).toHaveLength(0);
+
+    const sharedNamespaces = await adapter.listNamespaces({ visibility: 'shared' });
+    expect(sharedNamespaces.some((ns) => ns.join('/') === 'team/shared')).toBe(true);
+    expect(sharedNamespaces.some((ns) => ns.join('/') === 'team/private')).toBe(false);
+
+    memory.close();
+  });
+
   it('OpenClaw adapter remembers turns and recalls context', async () => {
     const memory = await createMemory();
     const adapter = createOpenClawAdapter(memory);
@@ -88,6 +110,59 @@ describe('framework adapters', () => {
     const procedural = memory.matchProcedural('please publish remem after checks');
     expect(procedural.length).toBeGreaterThan(0);
     expect(procedural[0].entry.content).toContain('release gates');
+    memory.close();
+  });
+
+  it('Hermes adapter remembers turns, artifacts, decisions, procedures, and shared namespace context', async () => {
+    const memory = await createMemory();
+    await memory.enableLayers();
+    const adapter = createHermesAdapter(memory);
+
+    await adapter.rememberTurn({
+      role: 'user',
+      content: 'Ship the harness adapter after tests pass',
+      threadId: 'hermes-general',
+      runId: 'run-1',
+    });
+
+    await adapter.rememberArtifact({
+      kind: 'plan',
+      content: 'Hermes adapter rollout plan',
+      threadId: 'hermes-general',
+      topics: ['release'],
+    });
+
+    await adapter.rememberDecision({
+      content: 'Hermes needs first-class harness parity with OpenClaw.',
+      threadId: 'hermes-general',
+      runId: 'run-1',
+      topics: ['release'],
+    });
+
+    await adapter.rememberProcedure({
+      content: 'Before shipping Hermes integrations, verify harness-facing memory flows.',
+      trigger: { phrases: ['ship hermes'], terms: ['hermes', 'ship'], minScore: 0.2 },
+      topics: ['release'],
+    });
+
+    await adapter.rememberShared({
+      namespace: ['team', 'hermes'],
+      content: 'Shared Hermes rollout note',
+      visibility: 'shared',
+      topics: ['release'],
+    });
+
+    const context = await adapter.recallContext('harness adapter');
+    expect(context).toContain('Ship the harness adapter');
+    expect(context).toContain('[hermes.turn]');
+
+    const sharedContext = await adapter.recallShared(['team', 'hermes'], 'rollout', { limit: 5 }, { visibility: 'shared' });
+    expect(sharedContext).toContain('Shared Hermes rollout note');
+
+    const procedural = memory.matchProcedural('please ship hermes after checks');
+    expect(procedural.length).toBeGreaterThan(0);
+    expect(procedural[0].entry.content).toContain('verify harness-facing memory flows');
+
     memory.close();
   });
 });
