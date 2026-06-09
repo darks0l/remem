@@ -4365,6 +4365,553 @@ Embeddings: ${this.store ? "available (semantic search enabled)" : "not configur
   }
 };
 
+// src/consolidate.ts
+var DEFAULT_OPTIONS = {
+  similarityThreshold: 0.85,
+  promotionAccessThreshold: 5,
+  autoOnStore: false,
+  mergeStrategy: "newer_wins"
+};
+var MemoryConsolidator = class {
+  remem;
+  embeddingService;
+  options;
+  constructor(remem, embeddingService = null, options = {}) {
+    this.remem = remem;
+    this.embeddingService = embeddingService ?? remem.getEmbeddingService?.() ?? null;
+    this.options = { ...DEFAULT_OPTIONS, ...options };
+  }
+  async storeLayerEntry(input, layer) {
+    if (this.remem.storeInLayer) {
+      const storedResult = await this.remem.storeInLayer(input, layer);
+      if (storedResult?.id) {
+        return this.remem.getLayerManager?.()?.get(storedResult.id) ?? null;
+      }
+      return null;
+    }
+    const directResult = await this.remem.store(input, layer);
+    if (directResult && typeof directResult === "object" && "id" in directResult) {
+      return directResult;
+    }
+    return null;
+  }
+  // =========================================================================
+  // Similarity-Based Deduplication
+  // =========================================================================
+  /**
+   * Find all near-duplicate pairs in a layer.
+   * Uses embedding cosine similarity when available, keyword fallback otherwise.
+   */
+  async findSimilarPairs(layer) {
+    const layerManager = this.remem.getLayerManager?.();
+    if (!layerManager) return [];
+    const entries = layerManager.getAllEntries().filter((e) => e.layer === layer);
+    const pairs = [];
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const similarity = await this.computeSimilarity(entries[i], entries[j]);
+        if (similarity >= this.options.similarityThreshold) {
+          pairs.push({ entryA: entries[i], entryB: entries[j], similarity });
+        }
+      }
+    }
+    return pairs;
+  }
+  /**
+   * Compute similarity between two entries.
+   * Uses embeddings when available, keyword Jaccard fallback.
+   */
+  async computeSimilarity(a, b) {
+    if (this.embeddingService) {
+      try {
+        const embA = await this.getEntryEmbedding(a.id);
+        const embB = await this.getEntryEmbedding(b.id);
+        if (embA && embB) {
+          return this.cosineSimilarity(embA, embB);
+        }
+      } catch {
+      }
+    }
+    return this.keywordSimilarity(a.content, b.content);
+  }
+  async getEntryEmbedding(entryId) {
+    const layerManager = this.remem.getLayerManager?.();
+    if (layerManager && "entryEmbeddings" in layerManager) {
+      const embeddings = layerManager.entryEmbeddings;
+      return embeddings.get(entryId) ?? null;
+    }
+    return null;
+  }
+  cosineSimilarity(a, b) {
+    if (a.length !== b.length) return 0;
+    let dot = 0, normA = 0, normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-8);
+  }
+  keywordSimilarity(textA, textB) {
+    const tokensA = new Set(textA.toLowerCase().split(/\W+/).filter(Boolean));
+    const tokensB = new Set(textB.toLowerCase().split(/\W+/).filter(Boolean));
+    const intersection = [...tokensA].filter((t) => tokensB.has(t)).length;
+    const union = (/* @__PURE__ */ new Set([...tokensA, ...tokensB])).size;
+    return union > 0 ? intersection / union : 0;
+  }
+  // =========================================================================
+  // Merge Strategies
+  // =========================================================================
+  /**
+   * Merge two entries according to the configured merge strategy.
+   * Returns the merged entry content + metadata.
+   */
+  merge(a, b) {
+    const strategy = this.options.mergeStrategy;
+    const older = a.createdAt <= b.createdAt ? a : b;
+    const newer = a.createdAt <= b.createdAt ? b : a;
+    const winner = strategy === "older_wins" ? older : newer;
+    let content;
+    let topics;
+    let metadata;
+    switch (strategy) {
+      case "newer_wins":
+      case "older_wins": {
+        content = winner.content;
+        topics = [.../* @__PURE__ */ new Set([...a.topics, ...b.topics])];
+        metadata = { ...a.metadata, ...b.metadata, mergedFrom: [a.id, b.id], winner: winner.id, consolidatedAt: Date.now() };
+        break;
+      }
+      case "concatenate": {
+        content = `${older.content}
+---
+${newer.content}`;
+        topics = [.../* @__PURE__ */ new Set([...a.topics, ...b.topics])];
+        metadata = { ...a.metadata, ...b.metadata, mergedFrom: [a.id, b.id], consolidatedAt: Date.now() };
+        break;
+      }
+      case "supersede": {
+        content = winner.content;
+        topics = winner.topics;
+        metadata = { ...winner.metadata, consolidatedAt: Date.now() };
+        break;
+      }
+      default:
+        content = winner.content;
+        topics = winner.topics;
+        metadata = { ...winner.metadata };
+    }
+    return { content, topics, metadata };
+  }
+  // =========================================================================
+  // Deduplicate a Layer
+  // =========================================================================
+  /**
+   * Run deduplication over a specific layer.
+   * Finds similar pairs, merges them, and deletes the merged entries.
+   * @returns Number of entries deduplicated
+   */
+  async deduplicateLayer(layer) {
+    const result = { deduplicated: 0, promoted: 0, superseded: 0, errors: [] };
+    const layerManager = this.remem.getLayerManager?.();
+    if (!layerManager) {
+      result.errors.push("No layer manager available");
+      return result;
+    }
+    const pairs = await this.findSimilarPairs(layer);
+    const processedIds = /* @__PURE__ */ new Set();
+    for (const pair of pairs) {
+      if (processedIds.has(pair.entryA.id) || processedIds.has(pair.entryB.id)) continue;
+      const merged = this.merge(pair.entryA, pair.entryB);
+      try {
+        const mergedInput = {
+          content: merged.content,
+          topics: merged.topics,
+          metadata: {
+            ...merged.metadata,
+            consolidatedFrom: [pair.entryA.id, pair.entryB.id],
+            similarity: pair.similarity
+          }
+        };
+        const newEntry = await this.storeLayerEntry(mergedInput, layer);
+        if (!newEntry) {
+          result.errors.push(`Merged entry storage failed for ${pair.entryA.id}+${pair.entryB.id}`);
+          continue;
+        }
+        layerManager.forget(pair.entryA.id);
+        layerManager.forget(pair.entryB.id);
+        processedIds.add(pair.entryA.id);
+        processedIds.add(pair.entryB.id);
+        result.deduplicated++;
+        if (this.options.mergeStrategy === "supersede") {
+          result.superseded++;
+        }
+        if (this.embeddingService) {
+          try {
+            const vec = await this.embeddingService.embed(merged.content);
+            await this.remem.persistLayerEntry?.({ ...newEntry, content: merged.content });
+            await this.remem.persistLayerEmbedding?.(newEntry.id, vec, this.embeddingService.model);
+            if (layerManager && "setEntryEmbedding" in layerManager) {
+              layerManager.setEntryEmbedding(newEntry.id, vec);
+            }
+          } catch (err) {
+            result.errors.push(`Embedding generation failed for ${newEntry.id}: ${err}`);
+          }
+        }
+      } catch (err) {
+        result.errors.push(`Merge failed for ${pair.entryA.id}+${pair.entryB.id}: ${err}`);
+      }
+    }
+    return result;
+  }
+  // =========================================================================
+  // Cross-Layer Conflict Resolution
+  // =========================================================================
+  /**
+   * Detect contradictions between entries in the same layer.
+   * Uses negation pattern matching to find conflicting statements.
+   *
+   * e.g., "User prefers dark mode" vs "User prefers light mode"
+   */
+  async detectConflicts(layer) {
+    const layerManager = this.remem.getLayerManager?.();
+    if (!layerManager) return [];
+    const entries = layerManager.getAllEntries().filter((e) => e.layer === layer);
+    const conflicts = [];
+    const NEGATION_PATTERNS = [
+      /prefer(s|ring|red)?\s+not\s+/i,
+      /prefer(s|ring|red)?\s+instead\s+/i,
+      /no\s+longer\s+/i,
+      /changed\s+to\s+/i,
+      /now\s+(use|pref|like)\s+/i,
+      /switched\s+to\s+/i,
+      /from\s+\w+\s+to\s+\w+\s+transition/i
+    ];
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const a = entries[i];
+        const b = entries[j];
+        const aHasNegation = NEGATION_PATTERNS.some((p) => p.test(a.content));
+        const bHasNegation = NEGATION_PATTERNS.some((p) => p.test(b.content));
+        if (aHasNegation !== bHasNegation) {
+          const sharedTopics = a.topics.filter((t) => b.topics.includes(t));
+          if (sharedTopics.length > 0) {
+            const older = aHasNegation ? b : a;
+            const newer = aHasNegation ? a : b;
+            conflicts.push({ older, newer });
+          }
+        }
+      }
+    }
+    return conflicts;
+  }
+  /**
+   * Resolve conflicts by marking older entries as superseded.
+   * Keeps the newest (most recent) entry as authoritative.
+   */
+  async resolveConflicts(layer) {
+    const result = { deduplicated: 0, promoted: 0, superseded: 0, errors: [] };
+    const layerManager = this.remem.getLayerManager?.();
+    if (!layerManager) {
+      result.errors.push("No layer manager available");
+      return result;
+    }
+    const conflicts = await this.detectConflicts(layer);
+    for (const { older, newer } of conflicts) {
+      try {
+        older.supersededBy = newer.id;
+        older.validUntil = newer.createdAt;
+        await this.remem.persistLayerEntry?.(older);
+        result.superseded++;
+      } catch (err) {
+        result.errors.push(`Conflict resolution failed for ${older.id}: ${err}`);
+      }
+    }
+    return result;
+  }
+  // =========================================================================
+  // Cross-Layer Promotion
+  // =========================================================================
+  /**
+   * Promote frequently-accessed episodic entries to semantic layer.
+   * Entries with accessCount >= promotionAccessThreshold that are still in episodic
+   * after 10 minutes get promoted to semantic layer (they're important enough to keep longer).
+   */
+  async promoteFrequentEpisodic() {
+    const result = { deduplicated: 0, promoted: 0, superseded: 0, errors: [] };
+    const layerManager = this.remem.getLayerManager?.();
+    if (!layerManager) {
+      result.errors.push("No layer manager available");
+      return result;
+    }
+    const entries = layerManager.getAllEntries().filter((e) => e.layer === "episodic");
+    const now = Date.now();
+    const EPISODIC_KEEP_MS = 10 * 60 * 1e3;
+    for (const entry of entries) {
+      if (entry.accessCount >= this.options.promotionAccessThreshold && now - entry.createdAt >= EPISODIC_KEEP_MS) {
+        try {
+          const promotedEntry = await this.storeLayerEntry(
+            {
+              content: entry.content,
+              topics: [...entry.topics, "promoted-from-episodic"],
+              metadata: {
+                ...entry.metadata,
+                promotedFrom: entry.id,
+                originalLayer: "episodic",
+                originalCreatedAt: entry.createdAt,
+                promotedAt: now,
+                accessCount: entry.accessCount
+              }
+            },
+            "semantic"
+          );
+          if (!promotedEntry?.id) {
+            result.errors.push(`Promotion storage failed for ${entry.id}`);
+            continue;
+          }
+          entry.supersededBy = promotedEntry.id;
+          entry.validUntil = now;
+          await this.remem.persistLayerEntry?.(entry);
+          layerManager.forget(entry.id);
+          result.promoted++;
+        } catch (err) {
+          result.errors.push(`Promotion failed for ${entry.id}: ${err}`);
+        }
+      }
+    }
+    return result;
+  }
+  // =========================================================================
+  // Full Periodic Consolidation
+  // =========================================================================
+  /**
+   * Run full consolidation over all layers.
+   * 1. Deduplicate each layer
+   * 2. Resolve conflicts in semantic and identity layers
+   * 3. Promote frequent episodic entries
+   *
+   * @param layers Layers to consolidate. Defaults to all.
+   */
+  async consolidateAll(layers = ["episodic", "semantic", "identity", "procedural"]) {
+    const result = { deduplicated: 0, promoted: 0, superseded: 0, errors: [] };
+    for (const layer of layers) {
+      const dedupResult = await this.deduplicateLayer(layer);
+      result.deduplicated += dedupResult.deduplicated;
+      result.superseded += dedupResult.superseded;
+      result.errors.push(...dedupResult.errors);
+      if (layer === "semantic" || layer === "identity") {
+        const conflictResult = await this.resolveConflicts(layer);
+        result.superseded += conflictResult.superseded;
+        result.errors.push(...conflictResult.errors);
+      }
+    }
+    const promotionResult = await this.promoteFrequentEpisodic();
+    result.promoted += promotionResult.promoted;
+    result.errors.push(...promotionResult.errors);
+    return result;
+  }
+  async runWorkflow(options = {}) {
+    const layers = options.layers ?? ["episodic", "semantic", "identity", "procedural"];
+    const base = await this.consolidateAll(layers);
+    const result = {
+      ...base,
+      summariesCreated: 0,
+      proceduresCreated: 0,
+      summaries: [],
+      procedures: [],
+      affectedIds: []
+    };
+    const summaryEnabled = options.summary?.enabled ?? true;
+    if (summaryEnabled) {
+      const summaryRecords = await this.generateTopicSummaries(options.summary);
+      result.summaries = summaryRecords;
+      result.summariesCreated = summaryRecords.length;
+      result.affectedIds.push(...summaryRecords.flatMap((record) => record.entryId ? [record.entryId, ...record.sourceIds] : record.sourceIds));
+    }
+    const proceduresEnabled = options.proceduralPromotion?.enabled ?? false;
+    if (proceduresEnabled && result.summaries.length > 0) {
+      const procedureRecords = await this.promoteSummariesToProcedures(
+        result.summaries,
+        options.proceduralPromotion?.maxProcedures ?? 3
+      );
+      result.procedures = procedureRecords;
+      result.proceduresCreated = procedureRecords.length;
+      result.affectedIds.push(...procedureRecords.flatMap((record) => record.entryId ? [record.entryId] : []));
+    }
+    result.affectedIds = Array.from(new Set(result.affectedIds));
+    return result;
+  }
+  async generateTopicSummaries(options = {}) {
+    const clusters = this.buildSummaryClusters(options);
+    const records = [];
+    for (const cluster of clusters) {
+      const content = await this.summarizeCluster(cluster);
+      const stored = await this.storeSummary(cluster, content, options?.metadata ?? {});
+      records.push({
+        entryId: stored?.id,
+        topic: cluster.topic,
+        sourceIds: cluster.entries.map((entry) => entry.id),
+        sourceLayers: Array.from(new Set(cluster.entries.map((entry) => entry.layer))),
+        content
+      });
+    }
+    return records;
+  }
+  buildSummaryClusters(options = {}) {
+    const layerManager = this.remem.getLayerManager?.();
+    if (!layerManager) return [];
+    const sourceLayers = options.sourceLayers ?? ["episodic", "semantic", "identity"];
+    const minClusterSize = options.minClusterSize ?? 3;
+    const maxClusters = options.maxClusters ?? 3;
+    const allowlist = options.topicAllowlist ? new Set(options.topicAllowlist) : null;
+    const entries = layerManager.getAllEntries().filter((entry) => sourceLayers.includes(entry.layer));
+    const clusters = /* @__PURE__ */ new Map();
+    for (const entry of entries) {
+      for (const topic of entry.topics) {
+        if (!topic || topic === "promoted-from-episodic") continue;
+        if (allowlist && !allowlist.has(topic)) continue;
+        const bucket = clusters.get(topic) ?? [];
+        bucket.push(entry);
+        clusters.set(topic, bucket);
+      }
+    }
+    const usedIds = /* @__PURE__ */ new Set();
+    return [...clusters.entries()].filter(([, topicEntries]) => topicEntries.length >= minClusterSize).sort((a, b) => b[1].length - a[1].length).map(([topic, topicEntries]) => ({
+      topic,
+      entries: topicEntries.sort((a, b) => a.createdAt - b.createdAt).filter((entry) => !usedIds.has(entry.id))
+    })).filter((cluster) => cluster.entries.length >= minClusterSize).slice(0, maxClusters).map((cluster) => {
+      cluster.entries.forEach((entry) => usedIds.add(entry.id));
+      return cluster;
+    });
+  }
+  async summarizeCluster(cluster) {
+    const model = this.remem.getModel?.();
+    const lines = cluster.entries.map((entry, index) => `${index + 1}. [${entry.layer}] ${entry.content}`);
+    if (model) {
+      try {
+        const response = await model.chat([
+          {
+            role: "system",
+            content: "You are consolidating agent memory into durable semantic memory. Write a compact summary that preserves facts, decisions, and changes without filler."
+          },
+          {
+            role: "user",
+            content: `Topic: ${cluster.topic}
+Entries:
+${lines.join("\n")}
+
+Return a 2-4 sentence durable summary for future recall. Mention changes or contradictions if present. No bullets.`
+          }
+        ], { temperature: 0.2, maxTokens: 220 });
+        const text = response.content.trim();
+        if (text) return text;
+      } catch {
+      }
+    }
+    const preview = cluster.entries.slice(0, 4).map((entry) => entry.content.trim()).filter(Boolean).join(" ");
+    return `Consolidated ${cluster.entries.length} memories about ${cluster.topic}. ${preview}`.trim();
+  }
+  async storeSummary(cluster, content, metadata) {
+    const summaryInput = {
+      content,
+      topics: Array.from(/* @__PURE__ */ new Set([cluster.topic, "consolidated-summary"])),
+      metadata: {
+        ...metadata,
+        source: "memory.consolidation.summary",
+        summaryOf: cluster.entries.map((entry) => entry.id),
+        summaryTopic: cluster.topic,
+        sourceLayers: Array.from(new Set(cluster.entries.map((entry) => entry.layer))),
+        consolidatedAt: Date.now()
+      }
+    };
+    if (this.remem.storeInLayer) {
+      return this.remem.storeInLayer(summaryInput, "semantic");
+    }
+    await Promise.resolve(this.remem.store(summaryInput));
+    return null;
+  }
+  async promoteSummariesToProcedures(summaries, maxProcedures) {
+    if (!this.remem.storeProcedural) return [];
+    const model = this.remem.getModel?.();
+    const records = [];
+    for (const summary of summaries.slice(0, maxProcedures)) {
+      const candidate = await this.deriveProcedureFromSummary(summary, model);
+      if (!candidate) continue;
+      const stored = await this.remem.storeProcedural(
+        {
+          content: candidate.content,
+          topics: [summary.topic, "consolidated-procedure"],
+          metadata: {
+            source: "memory.consolidation.procedure",
+            sourceSummaryEntryId: summary.entryId,
+            sourceIds: summary.sourceIds,
+            generatedAt: Date.now()
+          }
+        },
+        candidate.trigger
+      );
+      records.push({
+        entryId: stored?.id,
+        sourceSummaryEntryId: summary.entryId,
+        content: candidate.content,
+        trigger: candidate.trigger
+      });
+    }
+    return records;
+  }
+  async deriveProcedureFromSummary(summary, model) {
+    if (!model) return null;
+    try {
+      const response = await model.chat([
+        {
+          role: "system",
+          content: "Turn durable memory summaries into operational procedures only when a clear repeatable rule exists. Return strict JSON."
+        },
+        {
+          role: "user",
+          content: `Topic: ${summary.topic}
+Summary: ${summary.content}
+
+Return JSON with shape {"content":"...","triggerTerms":["..."],"triggerPhrases":["..."],"minScore":0.25}. If there is no clear procedure, return {"content":"","triggerTerms":[],"triggerPhrases":[],"minScore":0.25}.`
+        }
+      ], { temperature: 0.1, maxTokens: 180 });
+      const parsed = this.extractJsonObject(response.content);
+      const content = typeof parsed?.content === "string" ? parsed.content.trim() : "";
+      if (!content) return null;
+      const triggerTerms = Array.isArray(parsed?.triggerTerms) ? parsed.triggerTerms.filter((value) => typeof value === "string" && value.trim().length > 0) : [summary.topic];
+      const triggerPhrases = Array.isArray(parsed?.triggerPhrases) ? parsed.triggerPhrases.filter((value) => typeof value === "string" && value.trim().length > 0) : [];
+      const minScore = typeof parsed?.minScore === "number" ? parsed.minScore : 0.25;
+      return {
+        sourceSummaryEntryId: summary.entryId,
+        content,
+        trigger: {
+          terms: triggerTerms.length > 0 ? triggerTerms : [summary.topic],
+          phrases: triggerPhrases,
+          minScore,
+          priority: 0.7
+        }
+      };
+    } catch {
+      return null;
+    }
+  }
+  extractJsonObject(raw) {
+    const trimmed = raw.trim();
+    const direct = this.tryParseJson(trimmed);
+    if (direct) return direct;
+    const match = trimmed.match(/\{[\s\S]*\}/);
+    return match ? this.tryParseJson(match[0]) : null;
+  }
+  tryParseJson(raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+};
+
 // src/http.ts
 var HttpAdapter = class {
   server;
@@ -4640,333 +5187,6 @@ var HttpAdapter = class {
       req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
       req.on("error", reject);
     });
-  }
-};
-
-// src/consolidate.ts
-var DEFAULT_OPTIONS = {
-  similarityThreshold: 0.85,
-  promotionAccessThreshold: 5,
-  autoOnStore: false,
-  mergeStrategy: "newer_wins"
-};
-var MemoryConsolidator = class {
-  remem;
-  embeddingService;
-  options;
-  constructor(remem, embeddingService = null, options = {}) {
-    this.remem = remem;
-    this.embeddingService = embeddingService ?? remem.getEmbeddingService?.() ?? null;
-    this.options = { ...DEFAULT_OPTIONS, ...options };
-  }
-  // =========================================================================
-  // Similarity-Based Deduplication
-  // =========================================================================
-  /**
-   * Find all near-duplicate pairs in a layer.
-   * Uses embedding cosine similarity when available, keyword fallback otherwise.
-   */
-  async findSimilarPairs(layer) {
-    const layerManager = this.remem.getLayerManager?.();
-    if (!layerManager) return [];
-    const entries = layerManager.getAllEntries().filter((e) => e.layer === layer);
-    const pairs = [];
-    for (let i = 0; i < entries.length; i++) {
-      for (let j = i + 1; j < entries.length; j++) {
-        const similarity = await this.computeSimilarity(entries[i], entries[j]);
-        if (similarity >= this.options.similarityThreshold) {
-          pairs.push({ entryA: entries[i], entryB: entries[j], similarity });
-        }
-      }
-    }
-    return pairs;
-  }
-  /**
-   * Compute similarity between two entries.
-   * Uses embeddings when available, keyword Jaccard fallback.
-   */
-  async computeSimilarity(a, b) {
-    if (this.embeddingService) {
-      try {
-        const embA = await this.getEntryEmbedding(a.id);
-        const embB = await this.getEntryEmbedding(b.id);
-        if (embA && embB) {
-          return this.cosineSimilarity(embA, embB);
-        }
-      } catch {
-      }
-    }
-    return this.keywordSimilarity(a.content, b.content);
-  }
-  async getEntryEmbedding(entryId) {
-    const layerManager = this.remem.getLayerManager?.();
-    if (layerManager && "entryEmbeddings" in layerManager) {
-      const embeddings = layerManager.entryEmbeddings;
-      return embeddings.get(entryId) ?? null;
-    }
-    return null;
-  }
-  cosineSimilarity(a, b) {
-    if (a.length !== b.length) return 0;
-    let dot = 0, normA = 0, normB = 0;
-    for (let i = 0; i < a.length; i++) {
-      dot += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
-    }
-    return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-8);
-  }
-  keywordSimilarity(textA, textB) {
-    const tokensA = new Set(textA.toLowerCase().split(/\W+/).filter(Boolean));
-    const tokensB = new Set(textB.toLowerCase().split(/\W+/).filter(Boolean));
-    const intersection = [...tokensA].filter((t) => tokensB.has(t)).length;
-    const union = (/* @__PURE__ */ new Set([...tokensA, ...tokensB])).size;
-    return union > 0 ? intersection / union : 0;
-  }
-  // =========================================================================
-  // Merge Strategies
-  // =========================================================================
-  /**
-   * Merge two entries according to the configured merge strategy.
-   * Returns the merged entry content + metadata.
-   */
-  merge(a, b) {
-    const strategy = this.options.mergeStrategy;
-    const older = a.createdAt <= b.createdAt ? a : b;
-    const newer = a.createdAt <= b.createdAt ? b : a;
-    const winner = strategy === "older_wins" ? older : newer;
-    let content;
-    let topics;
-    let metadata;
-    switch (strategy) {
-      case "newer_wins":
-      case "older_wins": {
-        content = winner.content;
-        topics = [.../* @__PURE__ */ new Set([...a.topics, ...b.topics])];
-        metadata = { ...a.metadata, ...b.metadata, mergedFrom: [a.id, b.id], winner: winner.id, consolidatedAt: Date.now() };
-        break;
-      }
-      case "concatenate": {
-        content = `${older.content}
----
-${newer.content}`;
-        topics = [.../* @__PURE__ */ new Set([...a.topics, ...b.topics])];
-        metadata = { ...a.metadata, ...b.metadata, mergedFrom: [a.id, b.id], consolidatedAt: Date.now() };
-        break;
-      }
-      case "supersede": {
-        content = winner.content;
-        topics = winner.topics;
-        metadata = { ...winner.metadata, consolidatedAt: Date.now() };
-        break;
-      }
-      default:
-        content = winner.content;
-        topics = winner.topics;
-        metadata = { ...winner.metadata };
-    }
-    return { content, topics, metadata };
-  }
-  // =========================================================================
-  // Deduplicate a Layer
-  // =========================================================================
-  /**
-   * Run deduplication over a specific layer.
-   * Finds similar pairs, merges them, and deletes the merged entries.
-   * @returns Number of entries deduplicated
-   */
-  async deduplicateLayer(layer) {
-    const result = { deduplicated: 0, promoted: 0, superseded: 0, errors: [] };
-    const layerManager = this.remem.getLayerManager?.();
-    if (!layerManager) {
-      result.errors.push("No layer manager available");
-      return result;
-    }
-    const pairs = await this.findSimilarPairs(layer);
-    const processedIds = /* @__PURE__ */ new Set();
-    for (const pair of pairs) {
-      if (processedIds.has(pair.entryA.id) || processedIds.has(pair.entryB.id)) continue;
-      const merged = this.merge(pair.entryA, pair.entryB);
-      try {
-        const newEntry = this.remem.store(
-          {
-            content: merged.content,
-            topics: merged.topics,
-            metadata: {
-              ...merged.metadata,
-              consolidatedFrom: [pair.entryA.id, pair.entryB.id],
-              similarity: pair.similarity
-            }
-          },
-          layer
-        );
-        layerManager.forget(pair.entryA.id);
-        layerManager.forget(pair.entryB.id);
-        processedIds.add(pair.entryA.id);
-        processedIds.add(pair.entryB.id);
-        result.deduplicated++;
-        if (this.options.mergeStrategy === "supersede") {
-          result.superseded++;
-        }
-        if (this.embeddingService && newEntry.id) {
-          try {
-            const vec = await this.embeddingService.embed(merged.content);
-            await this.remem.persistLayerEntry?.({ ...newEntry, content: merged.content });
-            await this.remem.persistLayerEmbedding?.(newEntry.id, vec, this.embeddingService.model);
-            if (layerManager && "setEntryEmbedding" in layerManager) {
-              layerManager.setEntryEmbedding(newEntry.id, vec);
-            }
-          } catch (err) {
-            result.errors.push(`Embedding generation failed for ${newEntry.id}: ${err}`);
-          }
-        }
-      } catch (err) {
-        result.errors.push(`Merge failed for ${pair.entryA.id}+${pair.entryB.id}: ${err}`);
-      }
-    }
-    return result;
-  }
-  // =========================================================================
-  // Cross-Layer Conflict Resolution
-  // =========================================================================
-  /**
-   * Detect contradictions between entries in the same layer.
-   * Uses negation pattern matching to find conflicting statements.
-   *
-   * e.g., "User prefers dark mode" vs "User prefers light mode"
-   */
-  async detectConflicts(layer) {
-    const layerManager = this.remem.getLayerManager?.();
-    if (!layerManager) return [];
-    const entries = layerManager.getAllEntries().filter((e) => e.layer === layer);
-    const conflicts = [];
-    const NEGATION_PATTERNS = [
-      /prefer(s|ring|red)?\s+not\s+/i,
-      /prefer(s|ring|red)?\s+instead\s+/i,
-      /no\s+longer\s+/i,
-      /changed\s+to\s+/i,
-      /now\s+(use|pref|like)\s+/i,
-      /switched\s+to\s+/i,
-      /from\s+\w+\s+to\s+\w+\s+transition/i
-    ];
-    for (let i = 0; i < entries.length; i++) {
-      for (let j = i + 1; j < entries.length; j++) {
-        const a = entries[i];
-        const b = entries[j];
-        const aHasNegation = NEGATION_PATTERNS.some((p) => p.test(a.content));
-        const bHasNegation = NEGATION_PATTERNS.some((p) => p.test(b.content));
-        if (aHasNegation !== bHasNegation) {
-          const sharedTopics = a.topics.filter((t) => b.topics.includes(t));
-          if (sharedTopics.length > 0) {
-            const older = aHasNegation ? b : a;
-            const newer = aHasNegation ? a : b;
-            conflicts.push({ older, newer });
-          }
-        }
-      }
-    }
-    return conflicts;
-  }
-  /**
-   * Resolve conflicts by marking older entries as superseded.
-   * Keeps the newest (most recent) entry as authoritative.
-   */
-  async resolveConflicts(layer) {
-    const result = { deduplicated: 0, promoted: 0, superseded: 0, errors: [] };
-    const layerManager = this.remem.getLayerManager?.();
-    if (!layerManager) {
-      result.errors.push("No layer manager available");
-      return result;
-    }
-    const conflicts = await this.detectConflicts(layer);
-    for (const { older, newer } of conflicts) {
-      try {
-        older.supersededBy = newer.id;
-        older.validUntil = newer.createdAt;
-        await this.remem.persistLayerEntry?.(older);
-        result.superseded++;
-      } catch (err) {
-        result.errors.push(`Conflict resolution failed for ${older.id}: ${err}`);
-      }
-    }
-    return result;
-  }
-  // =========================================================================
-  // Cross-Layer Promotion
-  // =========================================================================
-  /**
-   * Promote frequently-accessed episodic entries to semantic layer.
-   * Entries with accessCount >= promotionAccessThreshold that are still in episodic
-   * after 10 minutes get promoted to semantic layer (they're important enough to keep longer).
-   */
-  async promoteFrequentEpisodic() {
-    const result = { deduplicated: 0, promoted: 0, superseded: 0, errors: [] };
-    const layerManager = this.remem.getLayerManager?.();
-    if (!layerManager) {
-      result.errors.push("No layer manager available");
-      return result;
-    }
-    const entries = layerManager.getAllEntries().filter((e) => e.layer === "episodic");
-    const now = Date.now();
-    const EPISODIC_KEEP_MS = 10 * 60 * 1e3;
-    for (const entry of entries) {
-      if (entry.accessCount >= this.options.promotionAccessThreshold && now - entry.createdAt >= EPISODIC_KEEP_MS) {
-        try {
-          const promoted = this.remem.store(
-            {
-              content: entry.content,
-              topics: [...entry.topics, "promoted-from-episodic"],
-              metadata: {
-                ...entry.metadata,
-                promotedFrom: entry.id,
-                originalLayer: "episodic",
-                originalCreatedAt: entry.createdAt,
-                promotedAt: now,
-                accessCount: entry.accessCount
-              }
-            },
-            "semantic"
-          );
-          entry.supersededBy = promoted.id;
-          entry.validUntil = now;
-          await this.remem.persistLayerEntry?.(entry);
-          layerManager.forget(entry.id);
-          result.promoted++;
-        } catch (err) {
-          result.errors.push(`Promotion failed for ${entry.id}: ${err}`);
-        }
-      }
-    }
-    return result;
-  }
-  // =========================================================================
-  // Full Periodic Consolidation
-  // =========================================================================
-  /**
-   * Run full consolidation over all layers.
-   * 1. Deduplicate each layer
-   * 2. Resolve conflicts in semantic and identity layers
-   * 3. Promote frequent episodic entries
-   *
-   * @param layers Layers to consolidate. Defaults to all.
-   */
-  async consolidateAll(layers = ["episodic", "semantic", "identity", "procedural"]) {
-    const result = { deduplicated: 0, promoted: 0, superseded: 0, errors: [] };
-    for (const layer of layers) {
-      const dedupResult = await this.deduplicateLayer(layer);
-      result.deduplicated += dedupResult.deduplicated;
-      result.superseded += dedupResult.superseded;
-      result.errors.push(...dedupResult.errors);
-      if (layer === "semantic" || layer === "identity") {
-        const conflictResult = await this.resolveConflicts(layer);
-        result.superseded += conflictResult.superseded;
-        result.errors.push(...conflictResult.errors);
-      }
-    }
-    const promotionResult = await this.promoteFrequentEpisodic();
-    result.promoted += promotionResult.promoted;
-    result.errors.push(...promotionResult.errors);
-    return result;
   }
 };
 
@@ -6456,6 +6676,23 @@ var ReMEM = class {
    */
   getModelName() {
     return this.model?.name();
+  }
+  /**
+   * Get the configured model client for advanced workflows.
+   */
+  getModel() {
+    return this.model;
+  }
+  /**
+   * Run a first-class consolidation workflow: dedupe, conflict resolution,
+   * promotion, optional summary generation, and optional procedural promotion.
+   */
+  async runConsolidation(options = {}) {
+    if (!this.layers) {
+      await this.enableLayers();
+    }
+    const consolidator = new MemoryConsolidator(this, this.embeddingService ?? null, options);
+    return consolidator.runWorkflow(options);
   }
   /**
    * Close the memory store and release resources.

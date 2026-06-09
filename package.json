@@ -1,6 +1,6 @@
 {
   "name": "@darksol/remem",
-  "version": "0.12.0",
+  "version": "0.12.5",
   "description": "Persistent, queryable memory for AI agents with graph recall, procedural rules, identity audits, snapshots, and multi-agent scoping",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

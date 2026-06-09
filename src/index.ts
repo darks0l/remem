@@ -21,6 +21,7 @@ import {
 } from './duplicate.js';
 import { EmbeddingService, type EmbeddingConfig as EmbedServiceConfig } from './embeddings.js';
 import { MemoryREPL } from './repl.js';
+import { MemoryConsolidator, type ConsolidationWorkflowOptions, type ConsolidationWorkflowResult } from './consolidate.js';
 import {
   linkedMemoryQueryOptionsSchema,
   queryWithNeighborsOptionsSchema,
@@ -1223,6 +1224,25 @@ export class ReMEM {
    */
   getModelName(): string | undefined {
     return this.model?.name();
+  }
+
+  /**
+   * Get the configured model client for advanced workflows.
+   */
+  getModel(): ModelAbstraction | undefined {
+    return this.model;
+  }
+
+  /**
+   * Run a first-class consolidation workflow: dedupe, conflict resolution,
+   * promotion, optional summary generation, and optional procedural promotion.
+   */
+  async runConsolidation(options: ConsolidationWorkflowOptions = {}): Promise<ConsolidationWorkflowResult> {
+    if (!this.layers) {
+      await this.enableLayers();
+    }
+    const consolidator = new MemoryConsolidator(this, this.embeddingService ?? null, options);
+    return consolidator.runWorkflow(options);
   }
 
   /**

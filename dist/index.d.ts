@@ -2441,6 +2441,162 @@ declare class LayerManager {
 }
 
 /**
+ * ReMEM — Memory Consolidation
+ * Deduplication, merging, and conflict resolution across memory layers.
+ *
+ * v0.6.0: Memory consolidation
+ * - Similarity-based deduplication: merge near-duplicate entries on store
+ * - Cross-layer conflict resolution: contradiction detection + supersession
+ * - Cross-layer promotion: frequently-accessed episodic entries promoted to semantic
+ * - Periodic consolidation: full deduplication pass over all layers
+ *
+ * Usage:
+ *   const consolidator = new MemoryConsolidator(remem, embeddingService);
+ *   await consolidator.deduplicateLayer('semantic');
+ *   await consolidator.promoteFrequentEpisodic();
+ */
+
+interface ConsolidationOptions {
+    /** Cosine similarity threshold for deduplication (0-1). Default: 0.85 */
+    similarityThreshold?: number;
+    /** Minimum access count to trigger episodic promotion. Default: 5 */
+    promotionAccessThreshold?: number;
+    /** Run consolidation on every store() call. Default: false (manual only) */
+    autoOnStore?: boolean;
+    /** Merge strategy for near-duplicates */
+    mergeStrategy?: 'newer_wins' | 'older_wins' | 'concatenate' | 'supersede';
+}
+interface ConsolidationResult {
+    deduplicated: number;
+    promoted: number;
+    superseded: number;
+    errors: string[];
+}
+interface ConsolidationSummaryRecord {
+    entryId?: string;
+    topic: string;
+    sourceIds: string[];
+    sourceLayers: MemoryLayer[];
+    content: string;
+}
+interface ConsolidationProcedureRecord {
+    entryId?: string;
+    sourceSummaryEntryId?: string;
+    content: string;
+    trigger: Partial<ProceduralTrigger>;
+}
+interface ConsolidationWorkflowOptions extends ConsolidationOptions {
+    layers?: MemoryLayer[];
+    summary?: {
+        enabled?: boolean;
+        sourceLayers?: MemoryLayer[];
+        minClusterSize?: number;
+        maxClusters?: number;
+        topicAllowlist?: string[];
+        metadata?: Record<string, unknown>;
+    };
+    proceduralPromotion?: {
+        enabled?: boolean;
+        maxProcedures?: number;
+    };
+}
+interface ConsolidationWorkflowResult extends ConsolidationResult {
+    summariesCreated: number;
+    proceduresCreated: number;
+    summaries: ConsolidationSummaryRecord[];
+    procedures: ConsolidationProcedureRecord[];
+    affectedIds: string[];
+}
+interface SimilarityPair {
+    entryA: LayeredMemoryEntry;
+    entryB: LayeredMemoryEntry;
+    similarity: number;
+}
+/**
+ * MemoryConsolidator
+ *
+ * Handles:
+ * 1. Deduplication — find and merge near-duplicate entries using embeddings
+ * 2. Conflict resolution — detect contradictions, mark one as superseded
+ * 3. Cross-layer promotion — promote frequently-accessed episodic entries to semantic
+ * 4. Periodic full consolidation — run over all layers to clean up
+ */
+declare class MemoryConsolidator {
+    private remem;
+    private embeddingService;
+    private options;
+    constructor(remem: MemoryConsolidator['remem'], embeddingService?: EmbeddingService | null, options?: ConsolidationOptions);
+    private storeLayerEntry;
+    /**
+     * Find all near-duplicate pairs in a layer.
+     * Uses embedding cosine similarity when available, keyword fallback otherwise.
+     */
+    findSimilarPairs(layer: MemoryLayer): Promise<SimilarityPair[]>;
+    /**
+     * Compute similarity between two entries.
+     * Uses embeddings when available, keyword Jaccard fallback.
+     */
+    computeSimilarity(a: LayeredMemoryEntry, b: LayeredMemoryEntry): Promise<number>;
+    private getEntryEmbedding;
+    private cosineSimilarity;
+    private keywordSimilarity;
+    /**
+     * Merge two entries according to the configured merge strategy.
+     * Returns the merged entry content + metadata.
+     */
+    merge(a: LayeredMemoryEntry, b: LayeredMemoryEntry): {
+        content: string;
+        topics: string[];
+        metadata: Record<string, unknown>;
+    };
+    /**
+     * Run deduplication over a specific layer.
+     * Finds similar pairs, merges them, and deletes the merged entries.
+     * @returns Number of entries deduplicated
+     */
+    deduplicateLayer(layer: MemoryLayer): Promise<ConsolidationResult>;
+    /**
+     * Detect contradictions between entries in the same layer.
+     * Uses negation pattern matching to find conflicting statements.
+     *
+     * e.g., "User prefers dark mode" vs "User prefers light mode"
+     */
+    detectConflicts(layer: MemoryLayer): Promise<Array<{
+        older: LayeredMemoryEntry;
+        newer: LayeredMemoryEntry;
+    }>>;
+    /**
+     * Resolve conflicts by marking older entries as superseded.
+     * Keeps the newest (most recent) entry as authoritative.
+     */
+    resolveConflicts(layer: MemoryLayer): Promise<ConsolidationResult>;
+    /**
+     * Promote frequently-accessed episodic entries to semantic layer.
+     * Entries with accessCount >= promotionAccessThreshold that are still in episodic
+     * after 10 minutes get promoted to semantic layer (they're important enough to keep longer).
+     */
+    promoteFrequentEpisodic(): Promise<ConsolidationResult>;
+    /**
+     * Run full consolidation over all layers.
+     * 1. Deduplicate each layer
+     * 2. Resolve conflicts in semantic and identity layers
+     * 3. Promote frequent episodic entries
+     *
+     * @param layers Layers to consolidate. Defaults to all.
+     */
+    consolidateAll(layers?: MemoryLayer[]): Promise<ConsolidationResult>;
+    runWorkflow(options?: ConsolidationWorkflowOptions): Promise<ConsolidationWorkflowResult>;
+    generateTopicSummaries(options?: ConsolidationWorkflowOptions['summary']): Promise<ConsolidationSummaryRecord[]>;
+    private buildSummaryClusters;
+    private summarizeCluster;
+    private storeSummary;
+    private promoteSummariesToProcedures;
+    private deriveProcedureFromSummary;
+    private extractJsonObject;
+    private tryParseJson;
+}
+
+/**
  * ReMEM — MemoryStore
  * SQLite-backed persistent memory store with event sourcing
  * Uses sql.js (WebAssembly) for cross-platform SQLite without native compilation
@@ -2883,117 +3039,6 @@ declare class HttpAdapter {
     private handleRequest;
     private isAuthorized;
     private readBody;
-}
-
-/**
- * ReMEM — Memory Consolidation
- * Deduplication, merging, and conflict resolution across memory layers.
- *
- * v0.6.0: Memory consolidation
- * - Similarity-based deduplication: merge near-duplicate entries on store
- * - Cross-layer conflict resolution: contradiction detection + supersession
- * - Cross-layer promotion: frequently-accessed episodic entries promoted to semantic
- * - Periodic consolidation: full deduplication pass over all layers
- *
- * Usage:
- *   const consolidator = new MemoryConsolidator(remem, embeddingService);
- *   await consolidator.deduplicateLayer('semantic');
- *   await consolidator.promoteFrequentEpisodic();
- */
-
-interface ConsolidationOptions {
-    /** Cosine similarity threshold for deduplication (0-1). Default: 0.85 */
-    similarityThreshold?: number;
-    /** Minimum access count to trigger episodic promotion. Default: 5 */
-    promotionAccessThreshold?: number;
-    /** Run consolidation on every store() call. Default: false (manual only) */
-    autoOnStore?: boolean;
-    /** Merge strategy for near-duplicates */
-    mergeStrategy?: 'newer_wins' | 'older_wins' | 'concatenate' | 'supersede';
-}
-interface ConsolidationResult {
-    deduplicated: number;
-    promoted: number;
-    superseded: number;
-    errors: string[];
-}
-interface SimilarityPair {
-    entryA: LayeredMemoryEntry;
-    entryB: LayeredMemoryEntry;
-    similarity: number;
-}
-/**
- * MemoryConsolidator
- *
- * Handles:
- * 1. Deduplication — find and merge near-duplicate entries using embeddings
- * 2. Conflict resolution — detect contradictions, mark one as superseded
- * 3. Cross-layer promotion — promote frequently-accessed episodic entries to semantic
- * 4. Periodic full consolidation — run over all layers to clean up
- */
-declare class MemoryConsolidator {
-    private remem;
-    private embeddingService;
-    private options;
-    constructor(remem: MemoryConsolidator['remem'], embeddingService?: EmbeddingService | null, options?: ConsolidationOptions);
-    /**
-     * Find all near-duplicate pairs in a layer.
-     * Uses embedding cosine similarity when available, keyword fallback otherwise.
-     */
-    findSimilarPairs(layer: MemoryLayer): Promise<SimilarityPair[]>;
-    /**
-     * Compute similarity between two entries.
-     * Uses embeddings when available, keyword Jaccard fallback.
-     */
-    computeSimilarity(a: LayeredMemoryEntry, b: LayeredMemoryEntry): Promise<number>;
-    private getEntryEmbedding;
-    private cosineSimilarity;
-    private keywordSimilarity;
-    /**
-     * Merge two entries according to the configured merge strategy.
-     * Returns the merged entry content + metadata.
-     */
-    merge(a: LayeredMemoryEntry, b: LayeredMemoryEntry): {
-        content: string;
-        topics: string[];
-        metadata: Record<string, unknown>;
-    };
-    /**
-     * Run deduplication over a specific layer.
-     * Finds similar pairs, merges them, and deletes the merged entries.
-     * @returns Number of entries deduplicated
-     */
-    deduplicateLayer(layer: MemoryLayer): Promise<ConsolidationResult>;
-    /**
-     * Detect contradictions between entries in the same layer.
-     * Uses negation pattern matching to find conflicting statements.
-     *
-     * e.g., "User prefers dark mode" vs "User prefers light mode"
-     */
-    detectConflicts(layer: MemoryLayer): Promise<Array<{
-        older: LayeredMemoryEntry;
-        newer: LayeredMemoryEntry;
-    }>>;
-    /**
-     * Resolve conflicts by marking older entries as superseded.
-     * Keeps the newest (most recent) entry as authoritative.
-     */
-    resolveConflicts(layer: MemoryLayer): Promise<ConsolidationResult>;
-    /**
-     * Promote frequently-accessed episodic entries to semantic layer.
-     * Entries with accessCount >= promotionAccessThreshold that are still in episodic
-     * after 10 minutes get promoted to semantic layer (they're important enough to keep longer).
-     */
-    promoteFrequentEpisodic(): Promise<ConsolidationResult>;
-    /**
-     * Run full consolidation over all layers.
-     * 1. Deduplicate each layer
-     * 2. Resolve conflicts in semantic and identity layers
-     * 3. Promote frequent episodic entries
-     *
-     * @param layers Layers to consolidate. Defaults to all.
-     */
-    consolidateAll(layers?: MemoryLayer[]): Promise<ConsolidationResult>;
 }
 
 /**
@@ -3724,6 +3769,15 @@ declare class ReMEM {
      * Get the model name if configured.
      */
     getModelName(): string | undefined;
+    /**
+     * Get the configured model client for advanced workflows.
+     */
+    getModel(): ModelAbstraction | undefined;
+    /**
+     * Run a first-class consolidation workflow: dedupe, conflict resolution,
+     * promotion, optional summary generation, and optional procedural promotion.
+     */
+    runConsolidation(options?: ConsolidationWorkflowOptions): Promise<ConsolidationWorkflowResult>;
     /**
      * Close the memory store and release resources.
      */

@@ -4,6 +4,20 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.12.5] - 2026-06-09
+
+### Added
+
+- Added first-class consolidation workflows via `runConsolidation()` so ReMEM can run dedupe, conflict resolution, episodic promotion, summary generation, and optional procedural promotion through one API.
+- Added LLM-backed topic-cluster summary generation that stores durable semantic memories with provenance metadata (`summaryOf`, `summaryTopic`, `sourceLayers`, `consolidatedAt`).
+- Added optional procedural promotion from generated summaries so repeated operational patterns can be converted into procedural memory automatically.
+- Added regression coverage for full consolidation workflows, including generated summary storage and procedural promotion.
+
+### Changed
+
+- Promoted the consolidation subsystem from a lower-level helper to a product-level workflow surface suitable for long-running agent memory maintenance.
+- Updated README docs to present ReMEM as a self-curating memory system, not just a retrieval layer.
+
 ## [0.12.0] - 2026-06-06
 
 ### Added

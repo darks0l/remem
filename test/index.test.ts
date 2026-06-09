@@ -241,6 +241,61 @@ describe('ReMEM', () => {
     expect(recalled.profile).toBe('deep');
   });
 
+  it('runs consolidation workflows with summaries and procedural promotion', async () => {
+    memory = new ReMEM({
+      storage: 'memory',
+      dbPath: ':memory:',
+      llm: { type: 'ollama', baseUrl: 'http://localhost:11434', model: 'test-model' },
+    });
+    await memory.init();
+    await memory.enableLayers();
+
+    const fakeModel = {
+      config: { type: 'ollama', baseUrl: 'http://localhost:11434', model: 'test-model' } as const,
+      name: () => 'ollama:test-model',
+      chat: async (messages: Array<{ role: string; content: string }>) => {
+        const prompt = messages[messages.length - 1]?.content ?? '';
+        if (prompt.includes('Return JSON with shape')) {
+          return {
+            content: JSON.stringify({
+              content: 'When working the launch lane, always verify the release checklist before publish.',
+              triggerTerms: ['launch', 'publish'],
+              triggerPhrases: ['release checklist'],
+              minScore: 0.25,
+            }),
+            raw: null,
+          };
+        }
+        return {
+          content: 'Launch work repeatedly references a shared checklist and publish gate. Keep the release checklist central before shipping.',
+          raw: null,
+        };
+      },
+    };
+
+    (memory as unknown as { model: typeof fakeModel }).model = fakeModel;
+
+    await memory.storeInLayer({ content: 'Launch checklist step 1: run lint before publish', topics: ['launch', 'release'] }, 'semantic');
+    await memory.storeInLayer({ content: 'Launch checklist step 2: run tests before publish', topics: ['launch', 'release'] }, 'semantic');
+    await memory.storeInLayer({ content: 'Launch checklist step 3: run pack dry-run before publish', topics: ['launch', 'release'] }, 'semantic');
+
+    const workflow = await memory.runConsolidation({
+      summary: { enabled: true, minClusterSize: 3, maxClusters: 1, topicAllowlist: ['launch'] },
+      proceduralPromotion: { enabled: true, maxProcedures: 1 },
+    });
+
+    expect(workflow.summariesCreated).toBe(1);
+    expect(workflow.proceduresCreated).toBe(1);
+    expect(workflow.summaries[0].topic).toBe('launch');
+
+    const summaryResults = await memory.queryLayers('shared checklist central', { layers: ['semantic'] });
+    expect(summaryResults?.results.some((entry) => entry.content.includes('shared checklist'))).toBe(true);
+
+    const matches = memory.matchProcedural('please publish after the release checklist');
+    expect(matches.length).toBeGreaterThan(0);
+    expect(matches[0].entry.content).toContain('always verify the release checklist');
+  });
+
   it('returns neighbor paths and weighted graph recall details', async () => {
     await memory.store({ content: 'Base project memory', topics: ['project'] });
     await memory.store({ content: 'Supporting project memory', topics: ['project', 'support'] });

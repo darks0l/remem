@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.12.0](https://img.shields.io/badge/v0.12.0-shared--memory--and--harness--release-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.12.5](https://img.shields.io/badge/v0.12.5-consolidation--workflow--release-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -77,6 +77,7 @@ ReMEM does something different:
 - **Harness adapters** (v0.12.0) - Includes polished OpenClaw and Hermes harness-facing adapters for turns, decisions, procedures, artifacts, and shared namespace recall
 - **Shared memory namespaces** (v0.12.0) - Store reusable memory inside explicit team/project lanes with private/shared visibility controls and scoped recall
 - **Smart recall** (v0.12.0) - Fuse semantic, graph, procedural, and recent-context lanes into one higher-signal retrieval pass
+- **Consolidation workflows** (v0.12.5) - Run full memory curation passes that deduplicate, resolve conflicts, promote durable summaries, and optionally turn repeated patterns into procedures
 - **Memory links + neighbor-aware retrieval** (v0.8.0, expanded in v0.8.5) - Explicit typed links between memories (`about`, `supports`, `contradicts`, etc.), weighted graph-adjacent recall, and optional traversal path details
 - **Identity alignment audits** (v0.8.5) - Drift scoring plus corrective injection text for agents that need to keep behavior anchored to a constitution
 - **Production-aware Postgres vector lane** (v0.8.5) - Native pgvector detection, ivfflat index bootstrap, and runtime introspection for deployments that want in-database vector search
@@ -785,6 +786,39 @@ const recentScoped = await memory.getRecentInNamespace(
 - `visibility: 'shared'` marks it as intentionally recallable from shared/team lanes
 - `visibility: 'all'` on queries searches both private + shared entries in that namespace
 - `includeDescendants: true` lets a namespace query match nested paths such as `team/ops/release`
+
+### Consolidation workflows
+
+When your memory store starts accumulating repeated facts, noisy episodic traces, or recurring operational patterns, run a consolidation workflow to curate it into more durable memory.
+
+```typescript
+const workflow = await memory.runConsolidation({
+  summary: {
+    enabled: true,
+    topicAllowlist: ['launch'],
+    minClusterSize: 3,
+    maxClusters: 1,
+  },
+  proceduralPromotion: {
+    enabled: true,
+    maxProcedures: 1,
+  },
+});
+
+console.log(workflow.summariesCreated);
+console.log(workflow.proceduresCreated);
+console.log(workflow.summaries[0]?.content);
+```
+
+What the workflow can do:
+
+- deduplicate near-identical layered memories
+- mark older conflicting entries as superseded
+- promote high-signal episodic entries into semantic memory
+- generate semantic summaries from repeated topic clusters
+- optionally promote those summaries into procedural memory when a repeatable rule is present
+
+Workflow results include summary/procedure counts, affected ids, and the generated records so callers can audit what changed.
 
 ### Core Operations
 
