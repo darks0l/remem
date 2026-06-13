@@ -1,0 +1,490 @@
+#!/usr/bin/env node
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { ReMEM } from './index.js';
+import { runSmokeChecks } from './smoke.js';
+import { generateInitArtifacts, type RuntimeFocus } from './setup.js';
+import { launchTerminalUi } from './ui.js';
+import type { MemoryLayer, ReMEMConfig } from './types.js';
+
+type ParsedArgs = {
+  command: string;
+  rest: string[];
+  options: Record<string, string | boolean>;
+};
+
+function parseArgs(argv: string[]): ParsedArgs {
+  const args = argv.slice(2);
+  const command = args[0] || 'help';
+  const rest: string[] = [];
+  const options: Record<string, string | boolean> = {};
+
+  for (let i = 1; i < args.length; i += 1) {
+    const token = args[i];
+    if (!token.startsWith('--')) {
+      rest.push(token);
+      continue;
+    }
+    const key = token.slice(2);
+    const next = args[i + 1];
+    if (!next || next.startsWith('--')) {
+      options[key] = true;
+      continue;
+    }
+    options[key] = next;
+    i += 1;
+  }
+
+  return { command, rest, options };
+}
+
+function asString(value: string | boolean | undefined, fallback = '') {
+  if (typeof value === 'string') return value;
+  return fallback;
+}
+
+function asCsv(value: string | boolean | undefined) {
+  if (typeof value !== 'string') return [];
+  return value.split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function asNamespace(value: string | boolean | undefined) {
+  if (typeof value !== 'string') return [] as string[];
+  return value.replace(/\//g, ',').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function parseMaybeJson(value: string | boolean | undefined) {
+  if (typeof value !== 'string' || !value.trim()) return {};
+  return JSON.parse(value) as Record<string, unknown>;
+}
+
+function buildConfig(options: Record<string, string | boolean>): { config: ReMEMConfig; storageLabel: string; dbLabel: string; scopeLabel: string } {
+  const storage = asString(options.storage, 'sqlite') as 'sqlite' | 'memory' | 'postgres';
+  const dbPath = asString(options.db, storage === 'memory' ? ':memory:' : './remem.db');
+  const agentId = asString(options['agent-id']) || undefined;
+  const userId = asString(options['user-id']) || undefined;
+  const config: ReMEMConfig = {
+    storage,
+    dbPath,
+    storageConfig: {
+      agentId,
+      userId,
+    },
+  };
+
+  const postgresUrl = asString(options['postgres-url']);
+  if (storage === 'postgres' && postgresUrl) {
+    config.postgres = { connectionString: postgresUrl };
+  }
+
+  if (options.embeddings) {
+    config.embeddings = {
+      enabled: true,
+      baseUrl: asString(options['embeddings-url'], 'http://localhost:11434'),
+      model: asString(options['embeddings-model'], 'nomic-embed-text'),
+      asyncEmbed: true,
+    };
+  }
+
+  const llmType = asString(options['llm-type']);
+  if (llmType) {
+    const apiKey = asString(options['llm-api-key']);
+    const model = asString(options['llm-model']);
+    const baseUrl = asString(options['llm-base-url']);
+    if (llmType === 'ollama') {
+      config.llm = {
+        type: 'ollama',
+        baseUrl: baseUrl || 'http://localhost:11434',
+        model: model || 'llama3',
+      };
+    } else if (llmType === 'openai' && apiKey) {
+      config.llm = { type: 'openai', apiKey, model: model || 'gpt-4o', ...(baseUrl ? { baseUrl } : {}) };
+    } else if (llmType === 'anthropic' && apiKey) {
+      config.llm = { type: 'anthropic', apiKey, model: model || 'claude-sonnet-4-6', ...(baseUrl ? { baseUrl } : {}) };
+    } else if (llmType === 'bankr' && apiKey) {
+      config.llm = { type: 'bankr', apiKey, ...(baseUrl ? { baseUrl } : {}) };
+    }
+  }
+
+  return {
+    config,
+    storageLabel: storage,
+    dbLabel: storage === 'postgres' ? (postgresUrl || 'postgres') : dbPath,
+    scopeLabel: [agentId ? `agent:${agentId}` : null, userId ? `user:${userId}` : null].filter(Boolean).join(' | ') || 'global',
+  };
+}
+
+function helpText() {
+  return `ReMEM CLI
+
+Usage:
+  remem ui [--db <path>] [--storage sqlite|memory|postgres] [--agent-id <id>] [--user-id <id>]
+  remem init [same flags as ui] [--runtime openclaw|hermes|generic] [--out-dir <path>] [--json]
+  remem status [--db <path>]
+  remem store --content <text> [--topics a,b] [--metadata '{"kind":"note"}']
+  remem query --query <text> [--limit 8]
+  remem recent [--limit 10]
+  remem topic --topic <name> [--limit 10]
+  remem layer-store --layer semantic --content <text> [--topics a,b]
+  remem procedural-store --content <text> --trigger <phrase> [--topics a,b]
+  remem procedural-match --context <text>
+  remem shared-store --namespace team/ops --content <text> [--visibility shared|private]
+  remem namespace-query --namespace team/ops --query <text> [--visibility all|shared|private]
+  remem snapshots --action list|create|restore|delete [--label <name>] [--snapshot-id <id>]
+  remem consolidate [--summaries] [--procedural]
+  remem smoke-check [--db <path>] [--json]
+
+Human-facing setup:
+  remem ui / remem init      Setup console for runtime focus selection, storage,
+                             embeddings, model config, adapter onboarding,
+                             starter snippets/config, and smoke checks.
+
+Agent-facing ops:
+  Use the direct CLI commands above for memory writes, recall, snapshots, and consolidation.
+
+Common config flags:
+  --db <path>                SQLite path (default ./remem.db)
+  --storage <mode>           sqlite | memory | postgres
+  --postgres-url <url>       Postgres connection string
+  --agent-id <id>            Agent scope
+  --user-id <id>             User scope
+  --embeddings               Enable embedding search
+  --embeddings-url <url>     Ollama embeddings URL
+  --embeddings-model <name>  Embedding model (default nomic-embed-text)
+  --llm-type <provider>      bankr | openai | anthropic | ollama
+  --llm-api-key <key>        API key for bankr/openai/anthropic
+  --llm-model <name>         Model override
+  --llm-base-url <url>       Custom provider base URL
+  --runtime <name>           openclaw | hermes | generic (for init artifacts)
+  --out-dir <path>           Output directory for generated init artifacts
+  --json                     Emit machine-readable JSON output
+`;
+}
+
+type CliRuntime = {
+  writeStdout?: (chunk: string) => void;
+  writeStderr?: (chunk: string) => void;
+  launchUi?: typeof launchTerminalUi;
+};
+
+function isJsonMode(options: Record<string, string | boolean>) {
+  return Boolean(options.json);
+}
+
+function writeStdout(runtime: CliRuntime, chunk: string) {
+  (runtime.writeStdout ?? ((value) => process.stdout.write(value)))(chunk);
+}
+
+function writeStderr(runtime: CliRuntime, chunk: string) {
+  (runtime.writeStderr ?? ((value) => process.stderr.write(value)))(chunk);
+}
+
+function emitJson(runtime: CliRuntime, value: unknown) {
+  writeStdout(runtime, `${JSON.stringify(value)}\n`);
+}
+
+function emitText(runtime: CliRuntime, value = '') {
+  writeStdout(runtime, value);
+}
+
+function formatQueryResults(results: Array<{ content: string; relevanceScore?: number }>) {
+  if (!results.length) return 'No results.';
+  return results.map((result, index) => `${index + 1}. ${result.content}${typeof result.relevanceScore === 'number' ? ` (score ${result.relevanceScore.toFixed(3)})` : ''}`).join('\n');
+}
+
+function formatChecks(checks: Array<{ name: string; status: string; detail: string }>) {
+  return checks.map((check) => `- [${check.status}] ${check.name}: ${check.detail}`).join('\n');
+}
+
+function parseRuntimeFocus(value: string | boolean | undefined): RuntimeFocus {
+  const normalized = asString(value, 'openclaw').toLowerCase();
+  if (normalized === 'hermes') return 'Hermes';
+  if (normalized === 'generic') return 'Generic';
+  return 'OpenClaw';
+}
+
+async function writeInitArtifacts(outDir: string, artifacts: ReturnType<typeof generateInitArtifacts>) {
+  await fs.mkdir(outDir, { recursive: true });
+
+  const files = [
+    { path: path.join(outDir, 'remem.config.json'), content: artifacts.configJson },
+    { path: path.join(outDir, 'remem-snippet.ts'), content: artifacts.snippetTs },
+    { path: path.join(outDir, '.env.example'), content: artifacts.envExample },
+  ];
+
+  await Promise.all(files.map((file) => fs.writeFile(file.path, file.content, 'utf8')));
+  return files.map((file) => file.path);
+}
+
+async function withMemory<T>(options: Record<string, string | boolean>, fn: (memory: ReMEM, context: ReturnType<typeof buildConfig>) => Promise<T>) {
+  const context = buildConfig(options);
+  const memory = new ReMEM(context.config);
+  await memory.init();
+  await memory.enableLayers();
+  try {
+    return await fn(memory, context);
+  } finally {
+    memory.close();
+  }
+}
+
+export async function runCli(argv: string[] = process.argv, runtime: CliRuntime = {}): Promise<number> {
+  const { command, options } = parseArgs(argv);
+  const jsonMode = isJsonMode(options);
+  const uiLauncher = runtime.launchUi ?? launchTerminalUi;
+
+  if (command === 'help' || command === '--help' || command === '-h') {
+    emitText(runtime, helpText());
+    return 0;
+  }
+
+  if (command === 'ui' || command === 'console') {
+    await withMemory(options, async (memory, context) => {
+      await uiLauncher(memory, {
+        storageLabel: context.storageLabel,
+        dbLabel: context.dbLabel,
+        scopeLabel: context.scopeLabel,
+        config: context.config,
+      });
+    });
+    return 0;
+  }
+
+  if (command === 'init') {
+    await withMemory(options, async (memory, context) => {
+      const runtimeFocus = parseRuntimeFocus(options.runtime);
+      const artifacts = generateInitArtifacts({ config: context.config, runtimeFocus });
+      const outDir = path.resolve(asString(options['out-dir'], path.join(process.cwd(), '.remem')));
+      const written = await writeInitArtifacts(outDir, artifacts);
+      const payload = {
+        ok: true,
+        command,
+        runtimeFocus,
+        outDir,
+        files: written,
+        smokeChecks: await runSmokeChecks(memory, context.config),
+      };
+
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `Generated init artifacts in ${outDir}\n${written.map((file) => `- ${file}`).join('\n')}\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'status') {
+    await withMemory(options, async (memory, context) => {
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        layersEnabled: memory.isLayersEnabled(),
+        nativeVectorSearch: memory.usesNativeVectorSearch(),
+        layerStats: memory.getLayerStats(),
+        snapshots: await memory.listSnapshots(),
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `status: ok\nstorage: ${payload.storage}\ndb: ${payload.db}\nscope: ${payload.scope}\nlayers: ${payload.layersEnabled ? 'enabled' : 'disabled'}\nsnapshots: ${payload.snapshots.length}\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'store') {
+    await withMemory(options, async (memory) => {
+      await memory.store({
+        content: asString(options.content),
+        topics: asCsv(options.topics),
+        metadata: parseMaybeJson(options.metadata),
+      });
+      if (jsonMode) emitJson(runtime, { ok: true, command, stored: true });
+      else emitText(runtime, 'Stored memory entry.\n');
+    });
+    return 0;
+  }
+
+  if (command === 'query') {
+    await withMemory(options, async (memory) => {
+      const payload = { ok: true, command, ...(await memory.query(asString(options.query), { limit: Number(asString(options.limit, '8')) || 8 })) };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatQueryResults(payload.results)}\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'recent') {
+    await withMemory(options, async (memory) => {
+      const payload = { ok: true, command, results: await memory.getRecent(Number(asString(options.limit, '10')) || 10) };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatQueryResults(payload.results)}\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'topic') {
+    await withMemory(options, async (memory) => {
+      const payload = { ok: true, command, results: await memory.getByTopic(asString(options.topic), Number(asString(options.limit, '10')) || 10) };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatQueryResults(payload.results)}\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'layer-store') {
+    await withMemory(options, async (memory) => {
+      const layer = asString(options.layer, 'semantic') as MemoryLayer;
+      const payload = {
+        ok: true,
+        command,
+        layer,
+        result: await memory.storeInLayer({
+          content: asString(options.content),
+          topics: asCsv(options.topics),
+          metadata: parseMaybeJson(options.metadata),
+        }, layer),
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `Stored layered memory in ${layer}.\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'procedural-store') {
+    await withMemory(options, async (memory) => {
+      const payload = {
+        ok: true,
+        command,
+        result: await memory.storeProcedural({
+          content: asString(options.content),
+          topics: asCsv(options.topics),
+          metadata: parseMaybeJson(options.metadata),
+        }, asString(options.trigger)),
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, 'Stored procedural memory.\n');
+    });
+    return 0;
+  }
+
+  if (command === 'procedural-match') {
+    await withMemory(options, async (memory) => {
+      const payload = { ok: true, command, matches: memory.matchProcedural(asString(options.context)) };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${payload.matches.length} procedural matches found.\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'shared-store') {
+    await withMemory(options, async (memory) => {
+      await memory.storeShared({
+        namespace: asNamespace(options.namespace),
+        visibility: asString(options.visibility, 'shared') === 'private' ? 'private' : 'shared',
+        content: asString(options.content),
+        topics: asCsv(options.topics),
+        metadata: parseMaybeJson(options.metadata),
+      });
+      if (jsonMode) emitJson(runtime, { ok: true, command, stored: true });
+      else emitText(runtime, 'Stored shared memory entry.\n');
+    });
+    return 0;
+  }
+
+  if (command === 'namespace-query') {
+    await withMemory(options, async (memory) => {
+      const visibility = asString(options.visibility, 'all');
+      const payload = {
+        ok: true,
+        command,
+        ...(await memory.queryNamespace(
+          asNamespace(options.namespace),
+          asString(options.query),
+          { limit: Number(asString(options.limit, '8')) || 8 },
+          {
+            visibility: visibility === 'shared' ? 'shared' : visibility === 'private' ? 'private' : 'all',
+            includeDescendants: Boolean(options.descendants),
+          }
+        )),
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatQueryResults(payload.results)}\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'snapshots') {
+    await withMemory(options, async (memory) => {
+      const action = asString(options.action, 'list');
+      if (action === 'create') {
+        const payload = { ok: true, command, action, snapshot: await memory.createSnapshot(asString(options.label, `snapshot-${Date.now()}`)) };
+        if (jsonMode) emitJson(runtime, payload);
+        else emitText(runtime, `Created snapshot ${payload.snapshot.id}.\n`);
+        return;
+      }
+      if (action === 'restore') {
+        const payload = { ok: true, command, action, restored: await memory.restoreSnapshot(asString(options['snapshot-id'])) };
+        if (jsonMode) emitJson(runtime, payload);
+        else emitText(runtime, `Restored ${payload.restored} entries from snapshot.\n`);
+        return;
+      }
+      if (action === 'delete') {
+        const payload = { ok: true, command, action, deleted: await memory.deleteSnapshot(asString(options['snapshot-id'])) };
+        if (jsonMode) emitJson(runtime, payload);
+        else emitText(runtime, payload.deleted ? 'Deleted snapshot.\n' : 'Snapshot not found.\n');
+        return;
+      }
+      const payload = { ok: true, command, action: 'list', snapshots: await memory.listSnapshots() };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, payload.snapshots.length ? `${payload.snapshots.map((snapshot) => `- ${snapshot.id} ${snapshot.label}`).join('\n')}\n` : 'No snapshots.\n');
+    });
+    return 0;
+  }
+
+  if (command === 'consolidate') {
+    await withMemory(options, async (memory) => {
+      const payload = {
+        ok: true,
+        command,
+        result: await memory.runConsolidation({
+          summary: {
+            enabled: Boolean(options.summaries),
+          },
+          proceduralPromotion: {
+            enabled: Boolean(options.procedural),
+          },
+        }),
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, 'Consolidation run completed.\n');
+    });
+    return 0;
+  }
+
+  if (command === 'smoke-check') {
+    await withMemory(options, async (memory, context) => {
+      const checks = await runSmokeChecks(memory, context.config);
+      const payload = {
+        ok: checks.every((check) => check.status !== 'fail'),
+        command,
+        checks,
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatChecks(checks)}\n`);
+    });
+    return 0;
+  }
+
+  emitText(runtime, helpText());
+  return 1;
+}
+
+async function main() {
+  try {
+    process.exitCode = await runCli(process.argv);
+  } catch (error) {
+    writeStderr({}, `${JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) })}\n`);
+    process.exitCode = 1;
+  }
+}
+
+void main();

@@ -4,6 +4,33 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added
+
+- Added a machine-readable `--json` mode across the new `remem` CLI surface so agent/runtime integrations can consume stable command output.
+- Added a first-class `remem smoke-check` command with real runtime verification, including snapshot roundtrip checks plus optional embedding and LLM endpoint probes.
+- Added non-interactive `remem init` artifact generation for starter config, runtime-specific adapter snippets, and `.env.example` scaffolding.
+- Added regression coverage for CLI help/status/query flows, smoke-check output, and generated init artifacts.
+
+### Changed
+
+- Extracted setup/onboarding generation into shared helpers so the terminal UI and CLI init lane use the same config, snippet, and guidance surface.
+- Tightened the terminal setup flow so smoke checks now run real verification instead of only reporting static capability summaries.
+
+## [0.12.7] - 2026-06-10
+
+### Added
+
+- Added a first-class `remem` CLI with direct commands for memory writes, layered/procedural workflows, namespace recall, snapshots, and consolidation runs.
+- Added a terminal-native `remem ui` / `remem init` setup console focused on human onboarding instead of day-to-day agent memory operations.
+- Added runtime-specific setup guidance and starter snippets for OpenClaw and Hermes integrations.
+
+### Changed
+
+- Refocused the terminal UI around runtime selection, storage/embedding/model setup, adapter onboarding, starter config generation, smoke checks, and execution planning.
+- Clarified README and CLI help text so the UI is positioned as a setup/integration surface while agents keep using the direct CLI/API.
+
 ## [0.12.5] - 2026-06-09
 
 ### Added

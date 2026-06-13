@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.12.5](https://img.shields.io/badge/v0.12.5-consolidation--workflow--release-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.12.7](https://img.shields.io/badge/v0.12.7-setup--console--release-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -51,6 +51,46 @@ console.log(results[0].content, results[0].metadata);
 ```
 
 **Works well for:** chat agents, coding agents, operator copilots, long-running automations, and multi-agent systems that need durable memory instead of stuffing everything into context.
+
+## Terminal UI / CLI
+
+ReMEM now has a terminal-native setup surface too:
+
+```bash
+remem ui --db ./remem.db
+remem init --db ./remem.db --runtime openclaw --out-dir ./.remem
+```
+
+The terminal UI is intentionally scoped for humans doing setup and integration work:
+- choose runtime focus first (OpenClaw, Hermes, or generic)
+- storage selection + runtime summary
+- embeddings / Ollama configuration review
+- LLM configuration review
+- adapter onboarding guidance with runtime-specific checklists
+- starter code snippet generation
+- starter config generation
+- smoke-check / verification lane
+- recommended execution plan for getting ReMEM live
+
+There is also a direct CLI surface for agent-facing operations:
+
+```bash
+remem status --db ./remem.db
+remem store --content "Meta likes dark mode" --topics preferences,ui
+remem query --query "What does Meta like?"
+remem smoke-check --db ./remem.db --json
+remem snapshots --action create --label before-upgrade
+```
+
+`remem init` can now generate starter artifacts non-interactively:
+
+- `remem.config.json`
+- `remem-snippet.ts`
+- `.env.example`
+
+That makes it usable in setup scripts, harness bootstraps, and CI-prep lanes instead of only as a human console.
+
+The split is deliberate: the UI helps a human wire ReMEM into OpenClaw/Hermes cleanly, while actual memory operations stay scriptable for agents.
 
 ---
 

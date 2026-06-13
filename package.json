@@ -1,7 +1,10 @@
 {
   "name": "@darksol/remem",
-  "version": "0.12.5",
+  "version": "0.12.7",
   "description": "Persistent, queryable memory for AI agents with graph recall, procedural rules, identity audits, snapshots, and multi-agent scoping",
+  "bin": {
+    "remem": "dist/cli.js"
+  },
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -32,8 +35,8 @@
     "./benchmarks/PUBLIC-RESULTS-2026-05-03.md": "./benchmarks/PUBLIC-RESULTS-2026-05-03.md"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
-    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "build": "tsup src/index.ts src/cli.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts src/cli.ts --format cjs,esm --dts --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
