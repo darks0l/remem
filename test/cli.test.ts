@@ -79,4 +79,44 @@ describe('ReMEM CLI', () => {
     expect(snippet).toContain('createHermesAdapter');
     expect(env).toContain('REMEM_EMBEDDINGS_URL');
   });
+
+  it('returns recent entries scoped to a namespace', async () => {
+    const db = './.tmp-cli-namespace.db';
+    const storeResult = await invoke([
+      'shared-store',
+      '--db', db,
+      '--namespace', 'team/ops',
+      '--content', 'Meta approved the new rollout lane',
+      '--topics', 'ops,release',
+      '--visibility', 'shared',
+      '--json',
+    ]);
+    expect(storeResult.exitCode).toBe(0);
+    expect(JSON.parse(storeResult.stdout).stored).toBe(true);
+
+    const recentResult = await invoke([
+      'namespace-recent',
+      '--db', db,
+      '--namespace', 'team/ops',
+      '--limit', '5',
+      '--json',
+    ]);
+    expect(recentResult.exitCode).toBe(0);
+    const payload = JSON.parse(recentResult.stdout);
+    expect(payload.results.length).toBeGreaterThan(0);
+    expect(payload.results[0].content).toContain('rollout lane');
+  });
+
+  it('returns smart recall JSON', async () => {
+    const db = './.tmp-cli-smart-recall.db';
+    await invoke(['store', '--db', db, '--content', 'Meta prefers short direct replies', '--topics', 'prefs,tone', '--json']);
+    const result = await invoke(['smart-recall', '--db', db, '--query', 'How should I reply to Meta?', '--profile', 'fast', '--json']);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.command).toBe('smart-recall');
+    expect(payload.profile).toBe('fast');
+    expect(Array.isArray(payload.results)).toBe(true);
+    expect(payload.lanes).toBeTruthy();
+  });
 });

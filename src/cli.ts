@@ -5,7 +5,7 @@ import { ReMEM } from './index.js';
 import { runSmokeChecks } from './smoke.js';
 import { generateInitArtifacts, type RuntimeFocus } from './setup.js';
 import { launchTerminalUi } from './ui.js';
-import type { MemoryLayer, ReMEMConfig } from './types.js';
+import type { MemoryLayer, QueryOptions, ReMEMConfig, SmartRecallOptions } from './types.js';
 
 type ParsedArgs = {
   command: string;
@@ -130,6 +130,8 @@ Usage:
   remem procedural-match --context <text>
   remem shared-store --namespace team/ops --content <text> [--visibility shared|private]
   remem namespace-query --namespace team/ops --query <text> [--visibility all|shared|private]
+  remem namespace-recent --namespace team/ops [--limit 10] [--visibility all|shared|private]
+  remem smart-recall --query <text> [--profile fast|deep|agent-safe|ops-debug] [--limit 8]
   remem snapshots --action list|create|restore|delete [--label <name>] [--snapshot-id <id>]
   remem consolidate [--summaries] [--procedural]
   remem smoke-check [--db <path>] [--json]
@@ -405,6 +407,57 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
             includeDescendants: Boolean(options.descendants),
           }
         )),
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatQueryResults(payload.results)}\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'namespace-recent') {
+    await withMemory(options, async (memory) => {
+      const visibility = asString(options.visibility, 'all');
+      const payload = {
+        ok: true,
+        command,
+        results: await memory.getRecentInNamespace(
+          asNamespace(options.namespace),
+          Number(asString(options.limit, '10')) || 10,
+          {
+            visibility: visibility === 'shared' ? 'shared' : visibility === 'private' ? 'private' : 'all',
+            includeDescendants: Boolean(options.descendants),
+          }
+        ),
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatQueryResults(payload.results)}\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'smart-recall') {
+    await withMemory(options, async (memory) => {
+      const metadataFilters = parseMaybeJson(options.metadata) as QueryOptions['metadata'];
+      const smartRecallOptions: SmartRecallOptions = {
+        profile: asString(options.profile, 'fast') as 'fast' | 'deep' | 'agent-safe' | 'ops-debug',
+        limit: Number(asString(options.limit, '8')) || 8,
+        includeRecent: Boolean(options.recent),
+        recentLimit: Number(asString(options['recent-limit'], '5')) || 5,
+        includeProcedural: options.procedural === false ? false : true,
+        proceduralLimit: Number(asString(options['procedural-limit'], '5')) || 5,
+        hops: (Number(asString(options.hops, '1')) === 2 ? 2 : 1) as 1 | 2,
+        minNeighborScore: Number(asString(options['min-neighbor-score'], '0.2')) || 0.2,
+        neighborLimit: Number(asString(options['neighbor-limit'], '25')) || 25,
+        includeBaseResults: true,
+        includePathDetails: false,
+        topics: asCsv(options.topics).length ? asCsv(options.topics) : undefined,
+        minAccessCount: options['min-access-count'] ? Number(asString(options['min-access-count'])) : undefined,
+        metadata: metadataFilters && Object.keys(metadataFilters).length ? metadataFilters : undefined,
+      };
+      const payload = {
+        ok: true,
+        command,
+        ...(await memory.smartRecall(asString(options.query), smartRecallOptions)),
       };
       if (jsonMode) emitJson(runtime, payload);
       else emitText(runtime, `${formatQueryResults(payload.results)}\n`);
