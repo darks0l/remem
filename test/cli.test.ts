@@ -119,4 +119,20 @@ describe('ReMEM CLI', () => {
     expect(Array.isArray(payload.results)).toBe(true);
     expect(payload.lanes).toBeTruthy();
   });
+
+  it('returns dream synthesis JSON from long memory layers', async () => {
+    const db = './.tmp-cli-dream.db';
+    await invoke(['layer-store', '--db', db, '--layer', 'identity', '--content', 'Darksol values durable agent memory and direct execution', '--topics', 'identity,values', '--json']);
+    await invoke(['layer-store', '--db', db, '--layer', 'semantic', '--content', 'Repeated operator interest is forming around long-memory synthesis', '--topics', 'memory,roadmap', '--json']);
+    await invoke(['procedural-store', '--db', db, '--content', 'When patterns repeat across long memory, synthesize them into durable next actions', '--trigger', 'patterns repeat', '--topics', 'procedure,memory', '--json']);
+
+    const result = await invoke(['dream', '--db', db, '--query', 'What should long memory tell us next?', '--json']);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.command).toBe('dream');
+    expect(typeof payload.content).toBe('string');
+    expect(payload.sourceCount).toBeGreaterThan(0);
+    expect(Array.isArray(payload.sourceLayers)).toBe(true);
+  });
 });

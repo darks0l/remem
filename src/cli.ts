@@ -132,6 +132,7 @@ Usage:
   remem namespace-query --namespace team/ops --query <text> [--visibility all|shared|private]
   remem namespace-recent --namespace team/ops [--limit 10] [--visibility all|shared|private]
   remem smart-recall --query <text> [--profile fast|deep|agent-safe|ops-debug] [--limit 8]
+  remem dream [--query <text>] [--layers identity,semantic,procedural] [--limit 12]
   remem snapshots --action list|create|restore|delete [--label <name>] [--snapshot-id <id>]
   remem consolidate [--summaries] [--procedural]
   remem smoke-check [--db <path>] [--json]
@@ -461,6 +462,27 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
       };
       if (jsonMode) emitJson(runtime, payload);
       else emitText(runtime, `${formatQueryResults(payload.results)}\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'dream') {
+    await withMemory(options, async (memory) => {
+      const metadataFilters = parseMaybeJson(options.metadata) as QueryOptions['metadata'];
+      const parsedLayers = asCsv(options.layers).filter(Boolean) as Array<'identity' | 'semantic' | 'procedural'>;
+      const payload = {
+        ok: true,
+        command,
+        ...(await memory.dream({
+          query: asString(options.query, 'What long-memory patterns matter most right now?'),
+          layers: parsedLayers.length ? parsedLayers : ['identity', 'semantic', 'procedural'],
+          limit: Number(asString(options.limit, '12')) || 12,
+          metadata: metadataFilters && Object.keys(metadataFilters).length ? metadataFilters : undefined,
+          topicAllowlist: asCsv(options.topics).length ? asCsv(options.topics) : undefined,
+        })),
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${payload.title}\n${payload.content}\n`);
     });
     return 0;
   }

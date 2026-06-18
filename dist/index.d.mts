@@ -779,6 +779,126 @@ declare const smartRecallResponseSchema: z.ZodObject<{
     };
 }>;
 type SmartRecallResponse = z.infer<typeof smartRecallResponseSchema>;
+declare const dreamMemoryLayerSchema: z.ZodEnum<["identity", "semantic", "procedural"]>;
+type DreamMemoryLayer = z.infer<typeof dreamMemoryLayerSchema>;
+declare const dreamOptionsSchema: z.ZodObject<{
+    query: z.ZodDefault<z.ZodString>;
+    layers: z.ZodDefault<z.ZodArray<z.ZodEnum<["identity", "semantic", "procedural"]>, "many">>;
+    limit: z.ZodDefault<z.ZodNumber>;
+    metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnion<[z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>, z.ZodEffects<z.ZodObject<{
+        eq: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>>;
+        in: z.ZodOptional<z.ZodArray<z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>, "many">>;
+        contains: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean]>>;
+        gt: z.ZodOptional<z.ZodNumber>;
+        gte: z.ZodOptional<z.ZodNumber>;
+        lt: z.ZodOptional<z.ZodNumber>;
+        lte: z.ZodOptional<z.ZodNumber>;
+        exists: z.ZodOptional<z.ZodBoolean>;
+    }, "strip", z.ZodTypeAny, {
+        eq?: string | number | boolean | null | undefined;
+        in?: (string | number | boolean | null)[] | undefined;
+        contains?: string | number | boolean | undefined;
+        gt?: number | undefined;
+        gte?: number | undefined;
+        lt?: number | undefined;
+        lte?: number | undefined;
+        exists?: boolean | undefined;
+    }, {
+        eq?: string | number | boolean | null | undefined;
+        in?: (string | number | boolean | null)[] | undefined;
+        contains?: string | number | boolean | undefined;
+        gt?: number | undefined;
+        gte?: number | undefined;
+        lt?: number | undefined;
+        lte?: number | undefined;
+        exists?: boolean | undefined;
+    }>, {
+        eq?: string | number | boolean | null | undefined;
+        in?: (string | number | boolean | null)[] | undefined;
+        contains?: string | number | boolean | undefined;
+        gt?: number | undefined;
+        gte?: number | undefined;
+        lt?: number | undefined;
+        lte?: number | undefined;
+        exists?: boolean | undefined;
+    }, {
+        eq?: string | number | boolean | null | undefined;
+        in?: (string | number | boolean | null)[] | undefined;
+        contains?: string | number | boolean | undefined;
+        gt?: number | undefined;
+        gte?: number | undefined;
+        lt?: number | undefined;
+        lte?: number | undefined;
+        exists?: boolean | undefined;
+    }>]>>>;
+    topicAllowlist: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+}, "strip", z.ZodTypeAny, {
+    query: string;
+    limit: number;
+    layers: ("semantic" | "identity" | "procedural")[];
+    metadata?: Record<string, string | number | boolean | {
+        eq?: string | number | boolean | null | undefined;
+        in?: (string | number | boolean | null)[] | undefined;
+        contains?: string | number | boolean | undefined;
+        gt?: number | undefined;
+        gte?: number | undefined;
+        lt?: number | undefined;
+        lte?: number | undefined;
+        exists?: boolean | undefined;
+    } | null> | undefined;
+    topicAllowlist?: string[] | undefined;
+}, {
+    query?: string | undefined;
+    metadata?: Record<string, string | number | boolean | {
+        eq?: string | number | boolean | null | undefined;
+        in?: (string | number | boolean | null)[] | undefined;
+        contains?: string | number | boolean | undefined;
+        gt?: number | undefined;
+        gte?: number | undefined;
+        lt?: number | undefined;
+        lte?: number | undefined;
+        exists?: boolean | undefined;
+    } | null> | undefined;
+    limit?: number | undefined;
+    layers?: ("semantic" | "identity" | "procedural")[] | undefined;
+    topicAllowlist?: string[] | undefined;
+}>;
+type DreamOptions = z.infer<typeof dreamOptionsSchema>;
+declare const dreamResponseSchema: z.ZodObject<{
+    query: z.ZodString;
+    title: z.ZodString;
+    content: z.ZodString;
+    themes: z.ZodArray<z.ZodString, "many">;
+    actions: z.ZodArray<z.ZodString, "many">;
+    sourceIds: z.ZodArray<z.ZodString, "many">;
+    sourceLayers: z.ZodArray<z.ZodEnum<["identity", "semantic", "procedural"]>, "many">;
+    sourceCount: z.ZodNumber;
+    modelUsed: z.ZodOptional<z.ZodString>;
+    tookMs: z.ZodNumber;
+}, "strip", z.ZodTypeAny, {
+    query: string;
+    content: string;
+    tookMs: number;
+    title: string;
+    themes: string[];
+    actions: string[];
+    sourceIds: string[];
+    sourceLayers: ("semantic" | "identity" | "procedural")[];
+    sourceCount: number;
+    modelUsed?: string | undefined;
+}, {
+    query: string;
+    content: string;
+    tookMs: number;
+    title: string;
+    themes: string[];
+    actions: string[];
+    sourceIds: string[];
+    sourceLayers: ("semantic" | "identity" | "procedural")[];
+    sourceCount: number;
+    modelUsed?: string | undefined;
+}>;
+type DreamResponse = z.infer<typeof dreamResponseSchema>;
 declare const namespaceInputSchema: z.ZodUnion<[z.ZodString, z.ZodArray<z.ZodString, "many">]>;
 type NamespaceInput = z.infer<typeof namespaceInputSchema>;
 declare const namespaceQueryScopeSchema: z.ZodObject<{
@@ -2096,10 +2216,10 @@ declare const duplicationConfigSchema: z.ZodObject<{
     serverUrl: string;
     agentId?: string | undefined;
     userId?: string | undefined;
+    layers?: ("episodic" | "semantic" | "identity" | "procedural")[] | undefined;
     includeSoul?: boolean | undefined;
     includeIdentity?: boolean | undefined;
     includeAllLayers?: boolean | undefined;
-    layers?: ("episodic" | "semantic" | "identity" | "procedural")[] | undefined;
 }>;
 type DuplicationConfig = z.infer<typeof duplicationConfigSchema>;
 declare const infectionConfigSchema: z.ZodObject<{
@@ -2117,16 +2237,16 @@ declare const infectionConfigSchema: z.ZodObject<{
     layers: z.ZodDefault<z.ZodArray<z.ZodEnum<["identity", "semantic", "procedural"]>, "many">>;
 }, "strip", z.ZodTypeAny, {
     apiKey: string;
-    serverUrl: string;
     layers: ("semantic" | "identity" | "procedural")[];
+    serverUrl: string;
     refreshIntervalMs: number;
     version?: string | undefined;
     sourceAgentId?: string | undefined;
 }, {
     apiKey: string;
     serverUrl: string;
-    version?: string | undefined;
     layers?: ("semantic" | "identity" | "procedural")[] | undefined;
+    version?: string | undefined;
     sourceAgentId?: string | undefined;
     refreshIntervalMs?: number | undefined;
 }>;
@@ -3486,6 +3606,7 @@ declare class ReMEM {
         paths?: NeighborPath[];
     }>;
     smartRecall(query: string, options?: SmartRecallOptions): Promise<SmartRecallResponse>;
+    dream(options?: DreamOptions): Promise<DreamResponse>;
     /**
      * Returns true if semantic embeddings are enabled and configured.
      */
@@ -3784,4 +3905,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, type MetadataFilter, type MetadataFilterOperator, type MetadataFilterValue, ModelAbstraction, type ModelConfig, type NamespaceInput, type NamespaceQueryScope, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SmartRecallOptions, type SmartRecallProfile, type SmartRecallResponse, type SmartRecallResult, type SnapshotExport, type SnapshotMeta, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createHermesAdapter, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, metadataFilterOperatorSchema, metadataFilterSchema, metadataFilterValueSchema, modelConfigSchema, namespaceInputSchema, namespaceQueryScopeSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, smartRecallOptionsSchema, smartRecallProfileSchema, smartRecallResponseSchema, smartRecallResultSchema, storeMemoryInputSchema, uploadPackage };
+export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, DEFAULT_LAYER_CONFIG, type DreamMemoryLayer, type DreamOptions, type DreamResponse, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, type MetadataFilter, type MetadataFilterOperator, type MetadataFilterValue, ModelAbstraction, type ModelConfig, type NamespaceInput, type NamespaceQueryScope, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SmartRecallOptions, type SmartRecallProfile, type SmartRecallResponse, type SmartRecallResult, type SnapshotExport, type SnapshotMeta, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, createHermesAdapter, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, dreamMemoryLayerSchema, dreamOptionsSchema, dreamResponseSchema, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, metadataFilterOperatorSchema, metadataFilterSchema, metadataFilterValueSchema, modelConfigSchema, namespaceInputSchema, namespaceQueryScopeSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, smartRecallOptionsSchema, smartRecallProfileSchema, smartRecallResponseSchema, smartRecallResultSchema, storeMemoryInputSchema, uploadPackage };

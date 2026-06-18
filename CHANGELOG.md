@@ -12,11 +12,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Added a first-class `remem smoke-check` command with real runtime verification, including snapshot roundtrip checks plus optional embedding and LLM endpoint probes.
 - Added non-interactive `remem init` artifact generation for starter config, runtime-specific adapter snippets, and `.env.example` scaffolding.
 - Added regression coverage for CLI help/status/query flows, smoke-check output, and generated init artifacts.
+- Added a first-class long-memory `dream` workflow on the core ReMEM API and CLI (`remem dream`) that synthesizes durable themes, actions, and source provenance from `identity`, `semantic`, and `procedural` memory.
 
 ### Changed
 
 - Extracted setup/onboarding generation into shared helpers so the terminal UI and CLI init lane use the same config, snippet, and guidance surface.
 - Tightened the terminal setup flow so smoke checks now run real verification instead of only reporting static capability summaries.
+- Positioned ReMEM more explicitly as a memory system that can synthesize from long-term memory, not only store, query, and consolidate it.
 
 ## [0.12.7] - 2026-06-10
 

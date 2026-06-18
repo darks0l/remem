@@ -190,6 +190,34 @@ export const smartRecallResponseSchema = z.object({
 
 export type SmartRecallResponse = z.infer<typeof smartRecallResponseSchema>;
 
+export const dreamMemoryLayerSchema = z.enum(['identity', 'semantic', 'procedural']);
+export type DreamMemoryLayer = z.infer<typeof dreamMemoryLayerSchema>;
+
+export const dreamOptionsSchema = z.object({
+  query: z.string().default('What long-memory patterns matter most right now?'),
+  layers: z.array(dreamMemoryLayerSchema).default(['identity', 'semantic', 'procedural']),
+  limit: z.number().min(1).max(50).default(12),
+  metadata: z.record(metadataFilterSchema).optional(),
+  topicAllowlist: z.array(z.string()).optional(),
+});
+
+export type DreamOptions = z.infer<typeof dreamOptionsSchema>;
+
+export const dreamResponseSchema = z.object({
+  query: z.string(),
+  title: z.string(),
+  content: z.string(),
+  themes: z.array(z.string()),
+  actions: z.array(z.string()),
+  sourceIds: z.array(z.string()),
+  sourceLayers: z.array(dreamMemoryLayerSchema),
+  sourceCount: z.number(),
+  modelUsed: z.string().optional(),
+  tookMs: z.number(),
+});
+
+export type DreamResponse = z.infer<typeof dreamResponseSchema>;
+
 export const namespaceInputSchema = z.union([
   z.string().min(1),
   z.array(z.string().min(1)).min(1),

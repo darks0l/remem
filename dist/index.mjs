@@ -23,6 +23,9 @@ import {
   createVercelAIAdapter,
   defaultMemoryLinkTypes,
   downloadPackage,
+  dreamMemoryLayerSchema,
+  dreamOptionsSchema,
+  dreamResponseSchema,
   driftEventSchema,
   driftResultSchema,
   duplicate,
@@ -64,7 +67,7 @@ import {
   smartRecallResultSchema,
   storeMemoryInputSchema,
   uploadPackage
-} from "./chunk-VYEISISB.mjs";
+} from "./chunk-CHKRLVCR.mjs";
 export {
   ConstitutionInjector,
   ConstitutionManager,
@@ -90,6 +93,9 @@ export {
   createVercelAIAdapter,
   defaultMemoryLinkTypes,
   downloadPackage,
+  dreamMemoryLayerSchema,
+  dreamOptionsSchema,
+  dreamResponseSchema,
   driftEventSchema,
   driftResultSchema,
   duplicate,

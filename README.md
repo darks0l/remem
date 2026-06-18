@@ -78,6 +78,7 @@ There is also a direct CLI surface for agent-facing operations:
 remem status --db ./remem.db
 remem store --content "Meta likes dark mode" --topics preferences,ui
 remem query --query "What does Meta like?"
+remem dream --query "What is long memory trying to tell us?" --json
 remem smoke-check --db ./remem.db --json
 remem snapshots --action create --label before-upgrade
 ```
@@ -91,6 +92,21 @@ remem snapshots --action create --label before-upgrade
 That makes it usable in setup scripts, harness bootstraps, and CI-prep lanes instead of only as a human console.
 
 The split is deliberate: the UI helps a human wire ReMEM into OpenClaw/Hermes cleanly, while actual memory operations stay scriptable for agents.
+
+### Dreaming from long memory
+
+ReMEM can run a first-class **dream pass** over durable layers (`identity`, `semantic`, `procedural`) to synthesize what the system keeps circling back to.
+
+```bash
+remem dream --query "What long-memory patterns matter most right now?" --json
+```
+
+This is different from plain recall:
+- **recall** answers a query from stored memory
+- **consolidation** deduplicates and promotes durable memory
+- **dreaming** synthesizes long-memory themes, tensions, and next moves from the memories most worth carrying forward
+
+If an LLM is configured, the dream pass produces a compact model-written artifact. Without an LLM, ReMEM still returns a deterministic synthesis from the strongest long-memory entries.
 
 ---
 

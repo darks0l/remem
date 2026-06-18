@@ -27,7 +27,11 @@ import {
   queryWithNeighborsOptionsSchema,
   rememConfigSchema,
   smartRecallOptionsSchema,
+  dreamOptionsSchema,
   type LinkedMemoryQueryOptions,
+  type DreamMemoryLayer,
+  type DreamOptions,
+  type DreamResponse,
   type MemoryLink,
   type NeighborPath,
   type ProceduralMatch,
@@ -459,6 +463,149 @@ export class ReMEM {
         procedural: proceduralMatches.length,
         recent: recentResults.length,
       },
+    };
+  }
+
+  async dream(options?: DreamOptions): Promise<DreamResponse> {
+    const start = Date.now();
+    const opts = dreamOptionsSchema.parse(options ?? {});
+
+    if (!this.layers) {
+      await this.enableLayers();
+    }
+
+    const layerManager = this.layers;
+    if (!layerManager) {
+      return {
+        query: opts.query,
+        title: 'Dream from long memory',
+        content: 'Long-memory dreaming is unavailable because layers are not enabled.',
+        themes: [],
+        actions: [],
+        sourceIds: [],
+        sourceLayers: opts.layers,
+        sourceCount: 0,
+        tookMs: Date.now() - start,
+      };
+    }
+
+    const queryTerms = new Set(
+      opts.query
+        .toLowerCase()
+        .split(/\W+/)
+        .filter((term) => term.length >= 3)
+    );
+
+    const scopedEntries = layerManager
+      .getAllEntries()
+      .filter((entry) => opts.layers.includes(entry.layer as DreamMemoryLayer))
+      .filter((entry) => {
+        if (opts.topicAllowlist?.length && !opts.topicAllowlist.some((topic) => entry.topics.includes(topic))) return false;
+        if (opts.metadata && this._store.matchMetadata && !this._store.matchMetadata(entry.metadata ?? {}, opts.metadata)) return false;
+        return true;
+      });
+
+    const scoredEntries = scopedEntries
+      .map((entry) => {
+        const text = `${entry.content} ${entry.topics.join(' ')}`.toLowerCase();
+        const termHits = [...queryTerms].filter((term) => text.includes(term)).length;
+        const score = termHits * 5 + entry.accessCount * 1.5 + entry.importance * 10 + (entry.layer === 'identity' ? 4 : entry.layer === 'procedural' ? 3 : 2);
+        return { entry, score };
+      })
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return b.entry.createdAt - a.entry.createdAt;
+      })
+      .slice(0, opts.limit);
+
+    const entries = scoredEntries.map((item) => item.entry);
+    const sourceIds = entries.map((entry) => entry.id);
+    const sourceLayers = Array.from(new Set(entries.map((entry) => entry.layer as DreamMemoryLayer)));
+
+    const topicCounts = new Map<string, number>();
+    for (const entry of entries) {
+      for (const topic of entry.topics) {
+        topicCounts.set(topic, (topicCounts.get(topic) ?? 0) + 1);
+      }
+    }
+
+    const themes = [...topicCounts.entries()]
+      .filter(([topic]) => !topic.startsWith('session:'))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([topic]) => topic);
+
+    const actions = entries
+      .filter((entry) => entry.layer === 'procedural' || entry.topics.includes('decision') || entry.topics.includes('procedure'))
+      .slice(0, 4)
+      .map((entry) => entry.content);
+
+    if (!entries.length) {
+      return {
+        query: opts.query,
+        title: 'Dream from long memory',
+        content: 'No long-memory entries matched this dream pass yet.',
+        themes: [],
+        actions: [],
+        sourceIds: [],
+        sourceLayers: opts.layers,
+        sourceCount: 0,
+        tookMs: Date.now() - start,
+      };
+    }
+
+    const model = this.getModel();
+    if (model) {
+      const sourceBlock = entries.map((entry, index) => {
+        const layer = entry.layer.toUpperCase();
+        const topics = entry.topics.join(', ');
+        return `${index + 1}. [${layer}] ${entry.content}\nTopics: ${topics}`;
+      }).join('\n\n');
+
+      const response = await model.chat([
+        {
+          role: 'system',
+          content: 'You are synthesizing an agent dream from long-term memory. Be compact, concrete, and forward-looking. Return strict JSON with keys title, content, themes, actions.',
+        },
+        {
+          role: 'user',
+          content: `Dream query: ${opts.query}\n\nUse only these long-memory sources:\n\n${sourceBlock}\n\nReturn JSON shaped like {"title":"...","content":"...","themes":["..."],"actions":["..."]}. Themes/actions should each have 2-4 short items.`,
+        },
+      ], { temperature: 0.4, maxTokens: 700 });
+
+      try {
+        const parsed = JSON.parse(response.content) as { title?: string; content?: string; themes?: string[]; actions?: string[] };
+        return {
+          query: opts.query,
+          title: parsed.title?.trim() || 'Dream from long memory',
+          content: parsed.content?.trim() || entries.map((entry) => entry.content).join('\n'),
+          themes: Array.isArray(parsed.themes) ? parsed.themes.slice(0, 4) : themes,
+          actions: Array.isArray(parsed.actions) ? parsed.actions.slice(0, 4) : actions,
+          sourceIds,
+          sourceLayers,
+          sourceCount: entries.length,
+          modelUsed: this.getModelName(),
+          tookMs: Date.now() - start,
+        };
+      } catch {
+        // fall through to deterministic synthesis
+      }
+    }
+
+    return {
+      query: opts.query,
+      title: 'Dream from long memory',
+      content: [
+        `Long memory keeps circling back to ${themes.length ? themes.join(', ') : 'a few durable themes'}.`,
+        `Most salient signals: ${entries.slice(0, 3).map((entry) => entry.content).join(' | ')}`,
+        actions.length ? `Operational pull: ${actions.join(' | ')}` : 'Operational pull: consolidate durable rules and turn repeated patterns into procedures.',
+      ].join('\n\n'),
+      themes,
+      actions,
+      sourceIds,
+      sourceLayers,
+      sourceCount: entries.length,
+      tookMs: Date.now() - start,
     };
   }
 
