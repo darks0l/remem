@@ -209,11 +209,116 @@ Use this when multiple workers, sessions, or agents need scoped memory with isol
 
 ---
 
+## Production Recipes
+
+Use these deployment profiles as starting points. They keep the memory layer explicit, scoped, and recoverable instead of treating recall as an invisible prompt side effect.
+
+### SQLite local agent
+
+Best for desktop agents, single-user copilots, local automations, and development harnesses.
+
+```typescript
+const memory = new ReMEM({
+  dbPath: './data/remem.db',
+  embeddings: {
+    enabled: true,
+    baseUrl: 'http://127.0.0.1:11434',
+    model: 'nomic-embed-text',
+    asyncEmbed: true,
+  },
+});
+
+await memory.init();
+await memory.enableLayers();
+```
+
+Operational notes:
+
+- keep the database path outside temporary working directories
+- create snapshots before upgrades or agent migrations
+- run `remem smoke-check --db ./data/remem.db --json` in setup and deployment scripts
+- use `remem init --runtime openclaw --out-dir ./.remem` to generate starter config and adapter snippets
+
+### Postgres shared memory
+
+Best for hosted agents, teams, background workers, and systems where multiple runtimes need the same durable memory substrate.
+
+```typescript
+const memory = new ReMEM({
+  storage: 'postgres',
+  postgres: {
+    connectionString: process.env.DATABASE_URL,
+    tablePrefix: 'remem_',
+    ssl: true,
+  },
+  storageConfig: {
+    agentId: 'research-agent',
+    userId: 'team-darksol',
+  },
+});
+
+await memory.init();
+await memory.enableLayers();
+```
+
+Operational notes:
+
+- set `agentId` and `userId` deliberately so shared deployments do not bleed context across tenants
+- use namespaces for project/team memory that should be intentionally reusable
+- keep snapshots enabled for migration safety and rollback drills
+- expose the HTTP adapter only behind explicit bearer auth if another service needs remote access
+
+### pgvector accelerated recall
+
+Best for larger shared stores that need database-native vector search instead of application-level vector scoring.
+
+```typescript
+const memory = new ReMEM({
+  storage: 'postgres',
+  postgres: {
+    connectionString: process.env.DATABASE_URL,
+    pgvector: {
+      enabled: true,
+      embeddingType: 'both',
+      ivfflatLists: 100,
+    },
+  },
+  embeddings: {
+    enabled: true,
+    baseUrl: process.env.OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',
+    model: 'nomic-embed-text',
+  },
+});
+
+await memory.init();
+console.log(memory.usesNativeVectorSearch());
+```
+
+Operational notes:
+
+- verify `usesNativeVectorSearch()` in health checks so acceleration is not assumed silently
+- backfill embeddings before depending on semantic recall quality
+- tune `ivfflatLists` against actual corpus size and query latency instead of copying benchmark numbers blindly
+
+### Agent-safe recall profiles
+
+Use recall modes intentionally:
+
+- **recent context** for the last few turns or active task state
+- **semantic recall** for facts, preferences, decisions, and project memory
+- **procedural recall** for rules that should fire when a trigger appears
+- **graph recall** when linked memories need neighborhood expansion
+- **smart recall** when an agent needs a fused answer across semantic, graph, procedural, and recent-context lanes
+
+For long-running agents, pair recall with a maintenance loop: consolidate repeated memories, snapshot before migrations, audit identity alignment after risky sessions, and keep public claims tied to benchmark artifacts.
+
+---
+
 ## Benchmark: External Memory Beyond Active Context
 
 ReMEM does **not** change a model's native context length. It gives agents an external memory layer they can query, so the prompt can stay small while the agent retrieves relevant older facts on demand.
 
-A reproducible synthetic benchmark is included in [`benchmarks/`](./benchmarks). It stores deterministic memories, simulates a fixed recent-context window, then asks for facts that are deliberately outside that active window.
+A reproducible synthetic benchmark is included in [`benchmarks/`](./benchmarks). It stores deterministic memories, simulates a fixed recent-context window, then asks for facts that are deliberately outside that active window. The point is simple: prove the difference between "only what still fits in the prompt" and "a durable store the agent can query on demand."
 
 Latest validated benchmark pass on current source:
 
@@ -241,6 +346,8 @@ import schema from '@darksol/remem/benchmarks/public-results.schema';
 That gives downstream docs/tests/tooling a clean import path for audited benchmark claims instead of requiring repo-relative file access.
 
 Safe wording: ReMEM lets agents retrieve relevant memories from a stored corpus much larger than the active context window. Do **not** claim infinite context or universal semantic recall.
+
+Next benchmark target: scale the semantic runs with cached/precomputed embeddings so public semantic-recall claims can move beyond the small Ollama-backed validation without hiding ingestion cost.
 
 ---
 

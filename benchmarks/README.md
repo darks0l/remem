@@ -77,6 +77,8 @@ That keeps benchmark validation consumers off brittle repo-relative paths.
 
 Safe public wording should cite the exact harness, config, and seed.
 
+The benchmark is designed for credibility, not hype. It measures what happens when the answer is outside a simulated active context window and the agent must retrieve from durable memory. That is the product claim: external memory gives agents a queryable substrate beyond the prompt. It is not a claim that ReMEM changes a model's native context size.
+
 Do not claim:
 
 - ReMEM universally extends every model's context window.
@@ -96,3 +98,13 @@ Do claim, if supported by the included result files:
 - Topic filtering was previously undercounted by serialized-JSON substring matching (`fact-85` colliding with `fact-8588`). That exact-match bug is now fixed in source, and May 31 reruns at 2k / 10k / 50k all returned 100% topic-filtered exact-ID recall in this harness.
 - The next credibility upgrade is not more exact-ID runs - it is larger semantic runs with precomputed/cached embeddings so semantic claims can scale without being dominated by ingestion time.
 - If you cite benchmark numbers publicly, cite the raw JSON artifact path too, not just the rendered markdown summary.
+
+## Next benchmark refresh
+
+The next public benchmark pass should focus on semantic recall at a size that feels closer to real agent memory:
+
+- add a cached embedding lane so repeated benchmark runs do not re-pay ingestion cost
+- run semantic retrieval across at least 2k and 10k memory corpora
+- report ingestion time separately from query latency
+- keep exact-ID, topic-filtered, and fixed-window baselines so the old claims remain comparable
+- regenerate `PUBLIC-RESULTS-2026-05-03.md` and JSON only from checked-in raw artifacts

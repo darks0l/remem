@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+- Added production deployment recipes for SQLite local agents, Postgres shared memory, pgvector acceleration, and agent-safe recall profiles.
+- Added a v0.13.0 roadmap focused on release hygiene, adoption, `remem doctor`, and stronger setup validation.
+- Expanded benchmark documentation with clearer public claim boundaries and the next semantic benchmark refresh plan.
 
 ## [0.12.9] - 2026-06-18
 
