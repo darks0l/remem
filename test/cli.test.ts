@@ -24,6 +24,7 @@ describe('ReMEM CLI', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain('ReMEM CLI');
     expect(result.stdout).toContain('remem smoke-check');
+    expect(result.stdout).toContain('remem doctor');
   });
 
   it('returns JSON status when --json is set', async () => {
@@ -63,6 +64,47 @@ describe('ReMEM CLI', () => {
     expect(payload.checks.some((check: { name: string }) => check.name === 'snapshot-roundtrip')).toBe(true);
   });
 
+  it('runs doctor diagnostics and emits JSON', async () => {
+    const result = await invoke(['doctor', '--storage', 'memory', '--db', ':memory:', '--json']);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.command).toBe('doctor');
+    expect(payload.checks.some((check: { name: string }) => check.name === 'package-version')).toBe(true);
+    expect(payload.checks.some((check: { name: string }) => check.name === 'snapshot-roundtrip')).toBe(true);
+  });
+
+  it('validates generated config files without echoing config secrets', async () => {
+    const outDir = path.resolve('.temp-remem-validate');
+    await fs.mkdir(outDir, { recursive: true });
+    const configPath = path.join(outDir, 'remem.config.json');
+    await fs.writeFile(configPath, JSON.stringify({
+      storage: 'memory',
+      llm: { type: 'openai', apiKey: 'SECRET_SHOULD_NOT_ECHO' },
+    }), 'utf8');
+
+    const result = await invoke(['validate-config', '--config', configPath, '--json']);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.command).toBe('validate-config');
+    expect(payload.config).toBeUndefined();
+    expect(result.stdout).not.toContain('SECRET_SHOULD_NOT_ECHO');
+  });
+
+  it('rejects unrelated JSON files as config', async () => {
+    const outDir = path.resolve('.temp-remem-invalid-config');
+    await fs.mkdir(outDir, { recursive: true });
+    const configPath = path.join(outDir, 'package-like.json');
+    await fs.writeFile(configPath, JSON.stringify({ name: 'not-remem-config', version: '1.0.0' }), 'utf8');
+
+    const result = await invoke(['validate-config', '--config', configPath, '--json']);
+    expect(result.exitCode).toBe(1);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.ok).toBe(false);
+    expect(payload.checks.some((check: { detail: string }) => check.detail.includes('No ReMEM config fields found'))).toBe(true);
+  });
+
   it('generates init artifacts non-interactively', async () => {
     const outDir = path.resolve('.temp-remem-init');
     const result = await invoke(['init', '--storage', 'memory', '--db', ':memory:', '--runtime', 'hermes', '--out-dir', outDir, '--json']);
@@ -78,6 +120,16 @@ describe('ReMEM CLI', () => {
     expect(JSON.parse(config).storage).toBe('memory');
     expect(snippet).toContain('createHermesAdapter');
     expect(env).toContain('REMEM_EMBEDDINGS_URL');
+  });
+
+  it('can run doctor checks after init artifact generation', async () => {
+    const outDir = path.resolve('.temp-remem-init-check');
+    const result = await invoke(['init', '--storage', 'memory', '--db', ':memory:', '--runtime', 'openclaw', '--out-dir', outDir, '--check', '--json']);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.configValidation.ok).toBe(true);
+    expect(payload.doctorChecks.some((check: { name: string }) => check.name === 'config-schema')).toBe(true);
   });
 
   it('returns recent entries scoped to a namespace', async () => {

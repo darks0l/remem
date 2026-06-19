@@ -38,6 +38,14 @@ Small semantic embedding run with local Ollama:
 node ./benchmarks/context-window-suite.mjs --memories 80 --queries 30 --contextEntries 10 --limit 5 --seed 1337 --embeddings --embeddingBaseUrl http://127.0.0.1:11434 --progress
 ```
 
+Cached semantic run for larger repeatable passes:
+
+```bash
+node ./benchmarks/context-window-suite.mjs --memories 2000 --queries 120 --contextEntries 100 --limit 5 --seed 1337 --embeddings --embeddingBaseUrl http://127.0.0.1:11434 --embeddingCache ./.cache/remem-bench-embeddings.json --progress
+```
+
+The cache is keyed by model + input text. Semantic scenario metrics include cache hit/miss/write counts so query latency and ingestion cost remain separate instead of being hidden in a single number.
+
 If Ollama is running on another host in your network, pass that explicitly with `--embeddingBaseUrl`. Avoid publishing private LAN addresses in examples or benchmark claims.
 
 Outputs are written to `benchmarks/results/*.json` and `benchmarks/results/*.md`.
@@ -103,7 +111,7 @@ Do claim, if supported by the included result files:
 
 The next public benchmark pass should focus on semantic recall at a size that feels closer to real agent memory:
 
-- add a cached embedding lane so repeated benchmark runs do not re-pay ingestion cost
+- use the cached embedding lane so repeated benchmark runs do not re-pay ingestion cost
 - run semantic retrieval across at least 2k and 10k memory corpora
 - report ingestion time separately from query latency
 - keep exact-ID, topic-filtered, and fixed-window baselines so the old claims remain comparable

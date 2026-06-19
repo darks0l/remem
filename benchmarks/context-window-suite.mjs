@@ -8,6 +8,8 @@
  * retrieval instead of blending them into one marketing number.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { ReMEM } from '../dist/index.mjs';
@@ -42,6 +44,9 @@ function percentile(values, p) {
 function mean(values) { return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0; }
 function round(n, d = 4) { return Number(n.toFixed(d)); }
 function nowSlug() { return new Date().toISOString().replace(/[:.]/g, '-'); }
+function cacheKey(model, text) {
+  return createHash('sha256').update(`${model}\0${text}`).digest('hex');
+}
 
 function benchmarkEnvironment() {
   return {
@@ -116,8 +121,53 @@ async function createMemory({ embeddings, embeddingBaseUrl, embeddingModel }) {
   return memory;
 }
 
-async function runScenario({ name, corpus, queryItems, recentWindow, queryStyle, limit, embeddings, embeddingBaseUrl, embeddingModel, queryTopics }) {
+function attachEmbeddingCache(memory, cachePath) {
+  const service = memory.getEmbeddingService?.();
+  const stats = {
+    enabled: Boolean(cachePath && service),
+    path: cachePath || null,
+    hits: 0,
+    misses: 0,
+    writes: 0,
+  };
+
+  if (!cachePath || !service) {
+    return { stats, flush: () => {} };
+  }
+
+  let cache = {};
+  if (existsSync(cachePath)) {
+    cache = JSON.parse(readFileSync(cachePath, 'utf8'));
+  }
+
+  const originalEmbed = service.embed.bind(service);
+  service.embed = async (text) => {
+    const key = cacheKey(service.model, text);
+    const cached = cache[key];
+    if (Array.isArray(cached)) {
+      stats.hits++;
+      return cached;
+    }
+
+    stats.misses++;
+    const vector = await originalEmbed(text);
+    cache[key] = vector;
+    stats.writes++;
+    return vector;
+  };
+
+  return {
+    stats,
+    flush: () => {
+      mkdirSync(path.dirname(cachePath), { recursive: true });
+      writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+    },
+  };
+}
+
+async function runScenario({ name, corpus, queryItems, recentWindow, queryStyle, limit, embeddings, embeddingBaseUrl, embeddingModel, queryTopics, embeddingCachePath }) {
   const memory = await createMemory({ embeddings, embeddingBaseUrl, embeddingModel });
+  const embeddingCache = attachEmbeddingCache(memory, embeddings ? embeddingCachePath : '');
   const storeStart = performance.now();
   let storeFailures = 0;
   for (let i = 0; i < corpus.length; i++) {
@@ -158,6 +208,7 @@ async function runScenario({ name, corpus, queryItems, recentWindow, queryStyle,
     }
   }
   await memory.close?.();
+  embeddingCache.flush();
 
   const qn = Math.max(1, queryItems.length);
   return {
@@ -177,6 +228,7 @@ async function runScenario({ name, corpus, queryItems, recentWindow, queryStyle,
       avgQueryMs: round(mean(latencies), 2),
       p50QueryMs: round(percentile(latencies, 0.5), 2),
       p95QueryMs: round(percentile(latencies, 0.95), 2),
+      ...(embeddingCache.stats.enabled ? { embeddingCache: embeddingCache.stats } : {}),
     },
     misses,
   };
@@ -196,7 +248,8 @@ function markdown(result) {
   lines.push(`- Approx corpus tokens: ${result.contextPressure.corpusApproxTokens.toLocaleString()}`);
   lines.push(`- Approx fixed-window tokens: ${result.contextPressure.fixedWindowApproxTokens.toLocaleString()}`);
   lines.push(`- Corpus/window pressure: ${result.contextPressure.effectiveCorpusToWindowMultiple}x`);
-  lines.push(`- Seed: ${result.config.seed}`);
+lines.push(`- Seed: ${result.config.seed}`);
+  if (result.config.embeddingCachePath) lines.push(`- Embedding cache: ${result.config.embeddingCachePath}`);
   lines.push('');
   lines.push('## Results');
   lines.push('');
@@ -227,6 +280,7 @@ const seed = num('seed', 1337);
 const outDir = String(get('outDir', 'benchmarks/results'));
 const embeddingBaseUrl = String(get('embeddingBaseUrl', process.env.OLLAMA_URL || 'http://192.168.68.69:11434'));
 const embeddingModel = String(get('embeddingModel', 'nomic-embed-text'));
+const embeddingCachePath = get('embeddingCache', process.env.REMEM_BENCHMARK_EMBEDDING_CACHE || '');
 const includeEmbeddings = flag('embeddings');
 
 const corpus = makeCorpus(total, seed);
@@ -247,7 +301,14 @@ if (includeEmbeddings) {
 const result = {
   benchmark: 'remem-context-window-suite-v1',
   timestamp: new Date().toISOString(),
-  config: { totalMemories: total, queryCount: queryItems.length, contextEntries, limit, seed },
+  config: {
+    totalMemories: total,
+    queryCount: queryItems.length,
+    contextEntries,
+    limit,
+    seed,
+    ...(embeddingCachePath ? { embeddingCachePath: String(embeddingCachePath) } : {}),
+  },
   environment: benchmarkEnvironment(),
   contextPressure: {
     corpusApproxTokens: approxTokens(corpusText),
@@ -267,6 +328,7 @@ for (const scenario of scenarios) {
     limit,
     embeddingBaseUrl,
     embeddingModel,
+    embeddingCachePath: String(embeddingCachePath),
   }));
 }
 

@@ -31,6 +31,8 @@ describe('package files allowlist', () => {
         'benchmarks/PUBLIC-RESULTS-2026-05-03.json',
         'benchmarks/results/*.json',
         'benchmarks/results/*.md',
+        'ROADMAP.md',
+        'docs/*.md',
       ])
     );
   });

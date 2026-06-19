@@ -5,7 +5,7 @@ import { ReMEM } from './index.js';
 import { runSmokeChecks } from './smoke.js';
 import { generateInitArtifacts, type RuntimeFocus } from './setup.js';
 import { launchTerminalUi } from './ui.js';
-import type { MemoryLayer, QueryOptions, ReMEMConfig, SmartRecallOptions } from './types.js';
+import { rememConfigSchema, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions } from './types.js';
 
 type ParsedArgs = {
   command: string;
@@ -136,6 +136,8 @@ Usage:
   remem snapshots --action list|create|restore|delete [--label <name>] [--snapshot-id <id>]
   remem consolidate [--summaries] [--procedural]
   remem smoke-check [--db <path>] [--json]
+  remem doctor [--config <path>] [--json]
+  remem validate-config --config <path> [--json]
 
 Human-facing setup:
   remem ui / remem init      Setup console for runtime focus selection, storage,
@@ -199,6 +201,10 @@ function formatChecks(checks: Array<{ name: string; status: string; detail: stri
   return checks.map((check) => `- [${check.status}] ${check.name}: ${check.detail}`).join('\n');
 }
 
+function hasFailingChecks(checks: Array<{ status: string }>) {
+  return checks.some((check) => check.status === 'fail');
+}
+
 function parseRuntimeFocus(value: string | boolean | undefined): RuntimeFocus {
   const normalized = asString(value, 'openclaw').toLowerCase();
   if (normalized === 'hermes') return 'Hermes';
@@ -217,6 +223,183 @@ async function writeInitArtifacts(outDir: string, artifacts: ReturnType<typeof g
 
   await Promise.all(files.map((file) => fs.writeFile(file.path, file.content, 'utf8')));
   return files.map((file) => file.path);
+}
+
+async function readJsonFile(filePath: string) {
+  const raw = await fs.readFile(filePath, 'utf8');
+  return JSON.parse(raw) as unknown;
+}
+
+async function validateConfigFile(filePath: string) {
+  const resolved = path.resolve(filePath);
+  const checks: Array<{ name: string; status: 'pass' | 'fail' | 'warn'; detail: string }> = [];
+  let config: ReMEMConfig | null = null;
+
+  try {
+    const parsed = await readJsonFile(resolved);
+    checks.push({
+      name: 'config-json',
+      status: 'pass',
+      detail: `Read valid JSON from ${resolved}.`,
+    });
+
+    const knownConfigKeys = ['storage', 'storageConfig', 'postgres', 'llm', 'adapter', 'dbPath', 'embeddings'];
+    const hasKnownConfigKey =
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      !Array.isArray(parsed) &&
+      knownConfigKeys.some((key) => Object.prototype.hasOwnProperty.call(parsed, key));
+
+    const validation = hasKnownConfigKey
+      ? rememConfigSchema.safeParse(parsed)
+      : {
+          success: false as const,
+          error: {
+            issues: [{ path: [], message: 'No ReMEM config fields found.' }],
+          },
+        };
+    if (validation.success) {
+      config = validation.data;
+      checks.push({
+        name: 'config-schema',
+        status: 'pass',
+        detail: 'Configuration matches ReMEM schema.',
+      });
+    } else {
+      checks.push({
+        name: 'config-schema',
+        status: 'fail',
+        detail: validation.error.issues.map((issue) => `${issue.path.join('.') || 'root'}: ${issue.message}`).join('; '),
+      });
+    }
+  } catch (error) {
+    checks.push({
+      name: 'config-json',
+      status: 'fail',
+      detail: `Could not read/parse config: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+
+  if (config) {
+    if (config.storage === 'postgres' && !config.postgres?.connectionString) {
+      checks.push({
+        name: 'postgres-url',
+        status: 'warn',
+        detail: 'Postgres storage is selected but no connectionString is set.',
+      });
+    }
+
+    if ((config.storage ?? 'sqlite') === 'sqlite' && !config.dbPath) {
+      checks.push({
+        name: 'sqlite-db-path',
+        status: 'warn',
+        detail: 'SQLite storage will use the default ./remem.db path.',
+      });
+    }
+  }
+
+  return {
+    ok: !hasFailingChecks(checks),
+    configPath: resolved,
+    config,
+    checks,
+  };
+}
+
+function publicConfigValidation(validation: Awaited<ReturnType<typeof validateConfigFile>>) {
+  return {
+    ok: validation.ok,
+    configPath: validation.configPath,
+    checks: validation.checks,
+  };
+}
+
+async function packageVersion() {
+  const binaryDir = process.argv[1] ? path.dirname(process.argv[1]) : process.cwd();
+  const candidates = [
+    path.resolve(process.cwd(), 'package.json'),
+    path.resolve(binaryDir, '..', 'package.json'),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = await readJsonFile(candidate) as { name?: string; version?: string };
+      if (parsed.name === '@darksol/remem' && parsed.version) return parsed.version;
+    } catch {
+      // Best-effort package version discovery for installed and repo-local CLI runs.
+    }
+  }
+
+  return 'unknown';
+}
+
+async function runDoctor(memory: ReMEM, context: ReturnType<typeof buildConfig>, options: Record<string, string | boolean>) {
+  const checks: Array<{ name: string; status: 'pass' | 'fail' | 'warn' | 'skip'; detail: string }> = [];
+  const version = await packageVersion();
+
+  checks.push({
+    name: 'package-version',
+    status: version === 'unknown' ? 'warn' : 'pass',
+    detail: `@darksol/remem ${version}`,
+  });
+
+  checks.push({
+    name: 'node-version',
+    status: 'pass',
+    detail: process.version,
+  });
+
+  checks.push({
+    name: 'binary-path',
+    status: 'pass',
+    detail: process.argv[1] ?? 'unknown',
+  });
+
+  const configPath = asString(options.config);
+  let configValidation: Awaited<ReturnType<typeof validateConfigFile>> | null = null;
+  if (configPath) {
+    configValidation = await validateConfigFile(configPath);
+    checks.push(...configValidation.checks);
+  } else {
+    checks.push({
+      name: 'config-file',
+      status: 'skip',
+      detail: 'No --config path provided.',
+    });
+  }
+
+  checks.push({
+    name: 'storage',
+    status: 'pass',
+    detail: `${context.storageLabel} (${context.dbLabel})`,
+  });
+
+  checks.push({
+    name: 'scope',
+    status: 'pass',
+    detail: context.scopeLabel,
+  });
+
+  checks.push({
+    name: 'native-vector-search',
+    status: memory.usesNativeVectorSearch() ? 'pass' : 'skip',
+    detail: memory.usesNativeVectorSearch()
+      ? 'Native vector search is active.'
+      : 'Native vector search is not active for this storage/config.',
+  });
+
+  checks.push(...await runSmokeChecks(memory, configValidation?.config ?? context.config));
+
+  return {
+    ok: !hasFailingChecks(checks),
+    command: 'doctor',
+    version,
+    storage: context.storageLabel,
+    db: context.dbLabel,
+    scope: context.scopeLabel,
+    configPath: configValidation?.configPath ?? null,
+    checks,
+  };
 }
 
 async function withMemory<T>(options: Record<string, string | boolean>, fn: (memory: ReMEM, context: ReturnType<typeof buildConfig>) => Promise<T>) {
@@ -259,17 +442,29 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
       const artifacts = generateInitArtifacts({ config: context.config, runtimeFocus });
       const outDir = path.resolve(asString(options['out-dir'], path.join(process.cwd(), '.remem')));
       const written = await writeInitArtifacts(outDir, artifacts);
+      const configValidation = await validateConfigFile(path.join(outDir, 'remem.config.json'));
+      const smokeChecks = await runSmokeChecks(memory, context.config);
+      const doctorChecks = options.check || options.doctor
+        ? (await runDoctor(memory, context, { ...options, config: path.join(outDir, 'remem.config.json') })).checks
+        : undefined;
       const payload = {
-        ok: true,
+        ok: configValidation.ok && !hasFailingChecks(smokeChecks) && (!doctorChecks || !hasFailingChecks(doctorChecks)),
         command,
         runtimeFocus,
         outDir,
         files: written,
-        smokeChecks: await runSmokeChecks(memory, context.config),
+        configValidation: publicConfigValidation(configValidation),
+        smokeChecks,
+        ...(doctorChecks ? { doctorChecks } : {}),
       };
 
       if (jsonMode) emitJson(runtime, payload);
-      else emitText(runtime, `Generated init artifacts in ${outDir}\n${written.map((file) => `- ${file}`).join('\n')}\n`);
+      else {
+        const checkOutput = options.check || options.doctor
+          ? `\nDoctor checks:\n${formatChecks(doctorChecks ?? [])}\n`
+          : '';
+        emitText(runtime, `Generated init artifacts in ${outDir}\n${written.map((file) => `- ${file}`).join('\n')}\n${checkOutput}`);
+      }
     });
     return 0;
   }
@@ -539,7 +734,7 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
     await withMemory(options, async (memory, context) => {
       const checks = await runSmokeChecks(memory, context.config);
       const payload = {
-        ok: checks.every((check) => check.status !== 'fail'),
+        ok: !hasFailingChecks(checks),
         command,
         checks,
       };
@@ -547,6 +742,31 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
       else emitText(runtime, `${formatChecks(checks)}\n`);
     });
     return 0;
+  }
+
+  if (command === 'doctor') {
+    await withMemory(options, async (memory, context) => {
+      const payload = await runDoctor(memory, context, options);
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatChecks(payload.checks)}\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'validate-config') {
+    const configPath = asString(options.config);
+    const payload = configPath
+      ? { command, ...publicConfigValidation(await validateConfigFile(configPath)) }
+      : {
+          ok: false,
+          command,
+          configPath: null,
+          checks: [{ name: 'config-path', status: 'fail' as const, detail: 'Pass --config <path>.' }],
+        };
+
+    if (jsonMode) emitJson(runtime, payload);
+    else emitText(runtime, `${formatChecks(payload.checks)}\n`);
+    return payload.ok ? 0 : 1;
   }
 
   emitText(runtime, helpText());

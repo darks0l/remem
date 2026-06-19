@@ -2,6 +2,8 @@
 
 ## v0.13.0 - Release Hygiene and Adoption
 
+Status: shipped in `v0.13.0`.
+
 Goal: make ReMEM easier to install, verify, and trust in real agent deployments without expanding the API surface faster than the docs and smoke checks can support.
 
 ### 1. `remem doctor`

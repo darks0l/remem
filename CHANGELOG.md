@@ -6,11 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.13.0] - 2026-06-19
+
 ### Added
 
+- Added `remem doctor` for package/runtime/config/storage/snapshot diagnostics with machine-readable JSON output.
+- Added `remem validate-config` for schema validation of generated or hand-written `remem.config.json` files without echoing secret-bearing config values.
+- Added `remem init --check` / `--doctor` support so generated starter artifacts can be validated immediately after creation.
 - Added production deployment recipes for SQLite local agents, Postgres shared memory, pgvector acceleration, and agent-safe recall profiles.
-- Added a v0.13.0 roadmap focused on release hygiene, adoption, `remem doctor`, and stronger setup validation.
+- Added task-oriented OpenClaw and Hermes quickstarts under `docs/`.
+- Added cached embedding support to the context-window benchmark harness via `--embeddingCache`, with cache hit/miss/write counts included in semantic scenario metrics.
+- Added a v0.13.0 roadmap focused on release hygiene, adoption, diagnostics, setup validation, and stronger benchmark credibility.
+
+### Changed
+
 - Expanded benchmark documentation with clearer public claim boundaries and the next semantic benchmark refresh plan.
+- Updated the npm package allowlist so `ROADMAP.md` and quickstart docs ship with the package.
 
 ## [0.12.9] - 2026-06-18
 

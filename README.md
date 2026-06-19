@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.12.9](https://img.shields.io/badge/v0.12.9-dream--workflow--release-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.13.0](https://img.shields.io/badge/v0.13.0-doctor--adoption--release-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -92,6 +92,16 @@ remem snapshots --action create --label before-upgrade
 That makes it usable in setup scripts, harness bootstraps, and CI-prep lanes instead of only as a human console.
 
 The split is deliberate: the UI helps a human wire ReMEM into OpenClaw/Hermes cleanly, while actual memory operations stay scriptable for agents.
+
+For release/setup hygiene, ReMEM also ships diagnostics:
+
+```bash
+remem doctor --db ./remem.db --json
+remem validate-config --config ./.remem/remem.config.json --json
+remem init --runtime openclaw --out-dir ./.remem --check --json
+```
+
+Use `doctor` when you want package/runtime/config/storage/snapshot checks in one command. Use `smoke-check` when you only need the lighter snapshot + optional endpoint verification pass.
 
 ### Dreaming from long memory
 
@@ -182,6 +192,8 @@ const recall = await memory.query('What are the release gates for this project?'
 
 Use this when an agent needs to preserve architecture decisions, release rules, debugging history, and project-specific procedures across sessions.
 
+See the task-oriented OpenClaw quickstart in [`docs/openclaw-quickstart.md`](./docs/openclaw-quickstart.md).
+
 ### 3) Multi-agent or server deployments with shared memory
 
 ```typescript
@@ -206,6 +218,8 @@ await memory.storeInLayer(
 ```
 
 Use this when multiple workers, sessions, or agents need scoped memory with isolation by `agent_id` and `user_id`.
+
+See the Hermes harness quickstart in [`docs/hermes-quickstart.md`](./docs/hermes-quickstart.md).
 
 ---
 
@@ -348,6 +362,14 @@ That gives downstream docs/tests/tooling a clean import path for audited benchma
 Safe wording: ReMEM lets agents retrieve relevant memories from a stored corpus much larger than the active context window. Do **not** claim infinite context or universal semantic recall.
 
 Next benchmark target: scale the semantic runs with cached/precomputed embeddings so public semantic-recall claims can move beyond the small Ollama-backed validation without hiding ingestion cost.
+
+The benchmark harness now supports cached embedding runs:
+
+```bash
+node ./benchmarks/context-window-suite.mjs --memories 2000 --queries 120 --contextEntries 100 --limit 5 --seed 1337 --embeddings --embeddingCache ./.cache/remem-bench-embeddings.json
+```
+
+Cache hit/miss/write counts are included in the semantic scenario metrics so ingestion cost stays visible.
 
 ---
 
