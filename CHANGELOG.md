@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.12.9] - 2026-06-18
+
 ### Added
 
 - Added a machine-readable `--json` mode across the new `remem` CLI surface so agent/runtime integrations can consume stable command output.
