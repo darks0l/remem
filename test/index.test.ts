@@ -241,6 +241,30 @@ describe('ReMEM', () => {
     expect(recalled.profile).toBe('deep');
   });
 
+  it('builds bounded prompt-ready context packs', async () => {
+    await memory.enableLayers();
+    await memory.store({ content: 'Meta wants serious ReMEM updates with agent-ready context', topics: ['remem', 'priority'], metadata: { project: 'remem' } });
+    await memory.storeInLayer({ content: 'Context packs should combine recall, recent context, and procedural signals', topics: ['remem', 'context'] }, 'semantic');
+    await memory.storeProcedural(
+      { content: 'When preparing agent context, include source ids and keep within budget', topics: ['remem', 'procedure'] },
+      { terms: ['context', 'agent'], phrases: ['agent context'], minScore: 0.2 }
+    );
+
+    const pack = await memory.contextPack('agent context for ReMEM update', {
+      profile: 'deep',
+      includeDream: true,
+      maxChars: 1400,
+      limit: 8,
+    });
+
+    expect(pack.content).toContain('ReMEM Context Pack');
+    expect(pack.content).toContain('High-signal memories');
+    expect(pack.content.length).toBeLessThanOrEqual(1400);
+    expect(pack.sections.some((section) => section.kind === 'recall')).toBe(true);
+    expect(pack.sourceIds.length).toBeGreaterThan(0);
+    expect(pack.profile).toBe('deep');
+  });
+
   it('runs consolidation workflows with summaries and procedural promotion', async () => {
     memory = new ReMEM({
       storage: 'memory',

@@ -6,7 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+- Added first-class Context Pack generation via `memory.contextPack()`, `remem context-pack`, and `POST /memory/context-pack` for bounded prompt-ready recall packets.
+- Added Context Pack regression coverage across the core API, CLI, and HTTP adapter.
+
+### Fixed
+
+- Layered memory schemas now tolerate persisted `null` supersession fields from existing stores when matching procedural memories.
 
 ## [0.13.0] - 2026-06-19
 

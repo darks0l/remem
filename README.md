@@ -78,6 +78,7 @@ There is also a direct CLI surface for agent-facing operations:
 remem status --db ./remem.db
 remem store --content "Meta likes dark mode" --topics preferences,ui
 remem query --query "What does Meta like?"
+remem context-pack --query "What context should the next agent carry?" --max-chars 6000 --json
 remem dream --query "What is long memory trying to tell us?" --json
 remem smoke-check --db ./remem.db --json
 remem snapshots --action create --label before-upgrade
@@ -118,6 +119,31 @@ This is different from plain recall:
 
 If an LLM is configured, the dream pass produces a compact model-written artifact. Without an LLM, ReMEM still returns a deterministic synthesis from the strongest long-memory entries.
 
+### Context packs for agent handoff
+
+Use `contextPack()` when an agent needs a bounded memory brief it can paste directly into the next prompt, task handoff, or remote worker request.
+
+```typescript
+const pack = await memory.contextPack('What should the next coding agent know about ReMEM?', {
+  profile: 'agent-safe',
+  maxChars: 6000,
+  includeDream: true,
+});
+
+console.log(pack.content);
+console.log(pack.sourceIds);
+```
+
+Context packs combine smart recall, graph/procedural signals, recent context, and optional dream synthesis while staying under the requested character budget.
+
+```bash
+remem context-pack \
+  --query "What should the next agent know before touching release code?" \
+  --profile agent-safe \
+  --max-chars 6000 \
+  --dream
+```
+
 ---
 
 ## Why ReMEM?
@@ -143,6 +169,7 @@ ReMEM does something different:
 - **Harness adapters** (v0.12.0) - Includes polished OpenClaw and Hermes harness-facing adapters for turns, decisions, procedures, artifacts, and shared namespace recall
 - **Shared memory namespaces** (v0.12.0) - Store reusable memory inside explicit team/project lanes with private/shared visibility controls and scoped recall
 - **Smart recall** (v0.12.0) - Fuse semantic, graph, procedural, and recent-context lanes into one higher-signal retrieval pass
+- **Context packs** (unreleased) - Generate bounded, prompt-ready recall packets from smart recall, recent context, procedural signals, and optional dream synthesis
 - **Consolidation workflows** (v0.12.5) - Run full memory curation passes that deduplicate, resolve conflicts, promote durable summaries, and optionally turn repeated patterns into procedures
 - **Memory links + neighbor-aware retrieval** (v0.8.0, expanded in v0.8.5) - Explicit typed links between memories (`about`, `supports`, `contradicts`, etc.), weighted graph-adjacent recall, and optional traversal path details
 - **Identity alignment audits** (v0.8.5) - Drift scoring plus corrective injection text for agents that need to keep behavior anchored to a constitution

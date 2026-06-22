@@ -172,6 +172,21 @@ describe('ReMEM CLI', () => {
     expect(payload.lanes).toBeTruthy();
   });
 
+  it('returns context pack JSON and bounded text', async () => {
+    const db = './.tmp-cli-context-pack.db';
+    await invoke(['store', '--db', db, '--content', 'ReMEM context packs should be prompt ready', '--topics', 'remem,context', '--json']);
+    await invoke(['procedural-store', '--db', db, '--content', 'When packing context, keep source ids and budget visible', '--trigger', 'packing context', '--topics', 'context,procedure', '--json']);
+
+    const result = await invoke(['context-pack', '--db', db, '--query', 'packing context for remem', '--profile', 'agent-safe', '--max-chars', '1200', '--json']);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.command).toBe('context-pack');
+    expect(payload.content).toContain('ReMEM Context Pack');
+    expect(payload.usedChars).toBeLessThanOrEqual(1200);
+    expect(payload.sourceIds.length).toBeGreaterThan(0);
+  });
+
   it('returns dream synthesis JSON from long memory layers', async () => {
     const db = './.tmp-cli-dream.db';
     await invoke(['layer-store', '--db', db, '--layer', 'identity', '--content', 'Darksol values durable agent memory and direct execution', '--topics', 'identity,values', '--json']);

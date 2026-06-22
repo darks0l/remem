@@ -103,6 +103,17 @@ describe('HttpAdapter', () => {
     expect(smartRecallJson.results.length).toBeGreaterThan(0);
     expect(Object.keys(smartRecallJson.lanes)).toContain('procedural');
 
+    const contextPack = await fetch('http://127.0.0.1:18913/memory/context-pack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: 'publish remem', options: { profile: 'agent-safe', maxChars: 1200 } }),
+    });
+    expect(contextPack.status).toBe(200);
+    const contextPackJson = await readJson(contextPack) as { content: string; sourceIds: string[]; usedChars: number };
+    expect(contextPackJson.content).toContain('ReMEM Context Pack');
+    expect(contextPackJson.sourceIds.length).toBeGreaterThan(0);
+    expect(contextPackJson.usedChars).toBeLessThanOrEqual(1200);
+
     const sharedCreate = await fetch('http://127.0.0.1:18913/memory/shared', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

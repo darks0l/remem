@@ -27,6 +27,7 @@ import { QueryEngine } from './query.js';
 export interface AdvancedMemoryRuntime {
   queryWithNeighbors(query: string, options?: QueryWithNeighborsOptions): Promise<QueryResponse & { linksTraversed: number; paths?: NeighborPath[] }>;
   smartRecall(query: string, options?: import('./types.js').SmartRecallOptions): Promise<import('./types.js').SmartRecallResponse>;
+  contextPack(query: string, options?: import('./types.js').ContextPackOptions): Promise<import('./types.js').ContextPackResponse>;
   storeShared(input: import('./types.js').StoreMemoryInput & { namespace: NamespaceInput; visibility?: 'private' | 'shared' }): Promise<void>;
   queryNamespace(namespace: NamespaceInput, query: string, options?: QueryOptions, scope?: NamespaceQueryScope): Promise<QueryResponse>;
   getRecentInNamespace(namespace: NamespaceInput, n?: number, scope?: NamespaceQueryScope): Promise<QueryResult[]>;
@@ -235,6 +236,19 @@ export class HttpAdapter {
         return { status: 400, body: { error: 'query string required' } };
       }
       const result = await this.memory.smartRecall(parsed.query, parsed.options as import('./types.js').SmartRecallOptions | undefined);
+      return { status: 200, body: result };
+    }
+
+    // POST /memory/context-pack — prompt-ready bounded recall packet
+    if (method === 'POST' && path === '/memory/context-pack') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) as { query?: unknown; options?: unknown } : {};
+      if (typeof parsed.query !== 'string' || !parsed.query.trim()) {
+        return { status: 400, body: { error: 'query string required' } };
+      }
+      const result = await this.memory.contextPack(parsed.query, parsed.options as import('./types.js').ContextPackOptions | undefined);
       return { status: 200, body: result };
     }
 

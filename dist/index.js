@@ -47,6 +47,9 @@ __export(index_exports, {
   buildIdentityPackage: () => buildIdentityPackage,
   constitutionSchema: () => constitutionSchema,
   constitutionStatementSchema: () => constitutionStatementSchema,
+  contextPackOptionsSchema: () => contextPackOptionsSchema,
+  contextPackResponseSchema: () => contextPackResponseSchema,
+  contextPackSectionSchema: () => contextPackSectionSchema,
   createHermesAdapter: () => createHermesAdapter,
   createIdentitySystem: () => createIdentitySystem,
   createLangGraphStoreAdapter: () => createLangGraphStoreAdapter,
@@ -254,6 +257,29 @@ var dreamResponseSchema = import_zod.z.object({
   modelUsed: import_zod.z.string().optional(),
   tookMs: import_zod.z.number()
 });
+var contextPackOptionsSchema = smartRecallOptionsSchema.extend({
+  maxChars: import_zod.z.number().min(500).max(5e4).default(6e3),
+  includeDream: import_zod.z.boolean().default(false),
+  includeRecent: import_zod.z.boolean().default(true),
+  includeMetadata: import_zod.z.boolean().default(false)
+});
+var contextPackSectionSchema = import_zod.z.object({
+  kind: import_zod.z.enum(["overview", "recall", "recent", "dream"]),
+  title: import_zod.z.string(),
+  content: import_zod.z.string(),
+  sourceIds: import_zod.z.array(import_zod.z.string()).default([])
+});
+var contextPackResponseSchema = import_zod.z.object({
+  query: import_zod.z.string(),
+  profile: smartRecallProfileSchema,
+  content: import_zod.z.string(),
+  sections: import_zod.z.array(contextPackSectionSchema),
+  sourceIds: import_zod.z.array(import_zod.z.string()),
+  maxChars: import_zod.z.number(),
+  usedChars: import_zod.z.number(),
+  truncated: import_zod.z.boolean(),
+  tookMs: import_zod.z.number()
+});
 var namespaceInputSchema = import_zod.z.union([
   import_zod.z.string().min(1),
   import_zod.z.array(import_zod.z.string().min(1)).min(1)
@@ -415,9 +441,9 @@ var layeredMemoryEntrySchema = memoryEntrySchema.extend({
   validUntil: import_zod.z.number().optional(),
   // when this fact stopped being true (null = still valid)
   // Self-edit supersession chain
-  supersedes: import_zod.z.string().optional(),
+  supersedes: import_zod.z.string().nullish(),
   // id of the entry this one supersedes (older version)
-  supersededBy: import_zod.z.string().optional()
+  supersededBy: import_zod.z.string().nullish()
   // id of the entry that supersedes this one
 });
 var proceduralTriggerSchema = import_zod.z.object({
@@ -5085,6 +5111,17 @@ var HttpAdapter = class {
       const result = await this.memory.smartRecall(parsed.query, parsed.options);
       return { status: 200, body: result };
     }
+    if (method === "POST" && path === "/memory/context-pack") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
+        return { status: 400, body: { error: "query string required" } };
+      }
+      const result = await this.memory.contextPack(parsed.query, parsed.options);
+      return { status: 200, body: result };
+    }
     if (method === "POST" && path === "/memory/procedural/match") {
       if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
       if (!req) return { status: 400, body: { error: "Request body unavailable" } };
@@ -6217,6 +6254,148 @@ Return JSON shaped like {"title":"...","content":"...","themes":["..."],"actions
       tookMs: Date.now() - start
     };
   }
+  async contextPack(query, options) {
+    const start = Date.now();
+    const opts = contextPackOptionsSchema.parse({
+      profile: "agent-safe",
+      includeRecent: true,
+      ...options
+    });
+    const recall = await this.smartRecall(query, opts);
+    const seenIds = /* @__PURE__ */ new Set();
+    const sourceIds = [];
+    const sections = [];
+    let truncated = false;
+    const rememberSources = (ids) => {
+      for (const id of ids) {
+        if (!seenIds.has(id)) {
+          seenIds.add(id);
+          sourceIds.push(id);
+        }
+      }
+    };
+    const formatResult = (result, index) => {
+      const lane = "sourceLane" in result ? ` lane=${result.sourceLane}` : "";
+      const score = "combinedScore" in result ? ` score=${result.combinedScore.toFixed(2)}` : typeof result.relevanceScore === "number" ? ` score=${result.relevanceScore.toFixed(2)}` : "";
+      const topics = result.topics.length ? ` topics=${result.topics.join(",")}` : "";
+      const metadata = opts.includeMetadata && Object.keys(result.metadata ?? {}).length ? ` metadata=${JSON.stringify(result.metadata)}` : "";
+      const reasons = "reasons" in result && result.reasons.length ? ` reasons=${result.reasons.join("|")}` : "";
+      return `${index + 1}. [${result.id}]${lane}${score}${topics}${reasons}${metadata}
+${result.content}`;
+    };
+    const addSection = (section) => {
+      const next = this.renderContextPack(query, recall.profile, [...sections, section], opts.maxChars);
+      if (next.truncated && sections.length > 0) {
+        truncated = true;
+        return;
+      }
+      sections.push({
+        ...section,
+        content: next.sectionContents[next.sectionContents.length - 1] ?? section.content
+      });
+      truncated = truncated || next.truncated;
+      rememberSources(section.sourceIds);
+    };
+    addSection({
+      kind: "overview",
+      title: "Recall overview",
+      content: [
+        `profile: ${recall.profile}`,
+        `lanes: semantic=${recall.lanes.semantic}, graph=${recall.lanes.graph}, procedural=${recall.lanes.procedural}, recent=${recall.lanes.recent}`,
+        `totalAvailable: ${recall.totalAvailable}`
+      ].join("\n"),
+      sourceIds: []
+    });
+    if (recall.results.length) {
+      addSection({
+        kind: "recall",
+        title: "High-signal memories",
+        content: recall.results.map(formatResult).join("\n\n"),
+        sourceIds: recall.results.map((result) => result.id)
+      });
+    }
+    if (opts.includeRecent) {
+      const recent = (await this.getRecent(opts.recentLimit)).filter((entry) => !seenIds.has(entry.id));
+      if (recent.length) {
+        addSection({
+          kind: "recent",
+          title: "Recent context",
+          content: recent.map(formatResult).join("\n\n"),
+          sourceIds: recent.map((entry) => entry.id)
+        });
+      }
+    }
+    if (opts.includeDream) {
+      const dream = await this.dream({
+        query,
+        layers: ["identity", "semantic", "procedural"],
+        limit: Math.min(Math.max(opts.limit, 4), 20),
+        metadata: opts.metadata,
+        topicAllowlist: opts.topics
+      });
+      if (dream.content && dream.sourceCount > 0) {
+        addSection({
+          kind: "dream",
+          title: dream.title,
+          content: [
+            dream.content,
+            dream.themes.length ? `themes: ${dream.themes.join(", ")}` : "",
+            dream.actions.length ? `actions: ${dream.actions.join(" | ")}` : ""
+          ].filter(Boolean).join("\n"),
+          sourceIds: dream.sourceIds
+        });
+      }
+    }
+    const rendered = this.renderContextPack(query, recall.profile, sections, opts.maxChars);
+    return {
+      query,
+      profile: recall.profile,
+      content: rendered.content,
+      sections: sections.map((section, index) => ({
+        ...section,
+        content: rendered.sectionContents[index] ?? section.content
+      })),
+      sourceIds,
+      maxChars: opts.maxChars,
+      usedChars: rendered.content.length,
+      truncated: truncated || rendered.truncated,
+      tookMs: Date.now() - start
+    };
+  }
+  renderContextPack(query, profile, sections, maxChars) {
+    const header = `# ReMEM Context Pack
+query: ${query}
+profile: ${profile}
+`;
+    const sectionContents = [];
+    let content = header;
+    let truncated = false;
+    for (const section of sections) {
+      const prefix = `
+## ${section.title}
+`;
+      const available = maxChars - content.length - prefix.length;
+      if (available <= 0) {
+        truncated = true;
+        break;
+      }
+      let body = section.content;
+      if (body.length > available) {
+        body = `${body.slice(0, Math.max(0, available - 24)).trimEnd()}
+[truncated]`;
+        truncated = true;
+      }
+      sectionContents.push(body);
+      content += `${prefix}${body}
+`;
+      if (truncated) break;
+    }
+    return {
+      content: content.slice(0, maxChars),
+      sectionContents,
+      truncated
+    };
+  }
   /**
    * Returns true if semantic embeddings are enabled and configured.
    */
@@ -6636,7 +6815,7 @@ Return JSON shaped like {"title":"...","content":"...","themes":["..."],"actions
         accessedAt: current.accessedAt,
         accessCount: current.accessCount
       });
-      const nextId = current.supersededBy;
+      const nextId = current.supersededBy ?? void 0;
       current = nextId ? this.layers.get(nextId) ?? null : null;
     }
     return history;
@@ -6861,6 +7040,9 @@ Return JSON shaped like {"title":"...","content":"...","themes":["..."],"actions
   buildIdentityPackage,
   constitutionSchema,
   constitutionStatementSchema,
+  contextPackOptionsSchema,
+  contextPackResponseSchema,
+  contextPackSectionSchema,
   createHermesAdapter,
   createIdentitySystem,
   createLangGraphStoreAdapter,

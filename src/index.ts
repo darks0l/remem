@@ -28,7 +28,11 @@ import {
   rememConfigSchema,
   smartRecallOptionsSchema,
   dreamOptionsSchema,
+  contextPackOptionsSchema,
   type LinkedMemoryQueryOptions,
+  type ContextPackOptions,
+  type ContextPackResponse,
+  type ContextPackSection,
   type DreamMemoryLayer,
   type DreamOptions,
   type DreamResponse,
@@ -39,6 +43,7 @@ import {
   type QueryWithNeighborsOptions,
   type ReMEMConfig,
   type SmartRecallOptions,
+  type SmartRecallResult,
   type SmartRecallResponse,
   type StoreMemoryInput,
   type QueryOptions,
@@ -609,6 +614,164 @@ export class ReMEM {
     };
   }
 
+  async contextPack(query: string, options?: ContextPackOptions): Promise<ContextPackResponse> {
+    const start = Date.now();
+    const opts = contextPackOptionsSchema.parse({
+      profile: 'agent-safe',
+      includeRecent: true,
+      ...options,
+    });
+
+    const recall = await this.smartRecall(query, opts);
+    const seenIds = new Set<string>();
+    const sourceIds: string[] = [];
+    const sections: ContextPackSection[] = [];
+    let truncated = false;
+
+    const rememberSources = (ids: string[]) => {
+      for (const id of ids) {
+        if (!seenIds.has(id)) {
+          seenIds.add(id);
+          sourceIds.push(id);
+        }
+      }
+    };
+
+    const formatResult = (result: SmartRecallResult | QueryResult, index: number) => {
+      const lane = 'sourceLane' in result ? ` lane=${result.sourceLane}` : '';
+      const score = 'combinedScore' in result
+        ? ` score=${result.combinedScore.toFixed(2)}`
+        : typeof result.relevanceScore === 'number'
+          ? ` score=${result.relevanceScore.toFixed(2)}`
+          : '';
+      const topics = result.topics.length ? ` topics=${result.topics.join(',')}` : '';
+      const metadata = opts.includeMetadata && Object.keys(result.metadata ?? {}).length
+        ? ` metadata=${JSON.stringify(result.metadata)}`
+        : '';
+      const reasons = 'reasons' in result && result.reasons.length
+        ? ` reasons=${result.reasons.join('|')}`
+        : '';
+      return `${index + 1}. [${result.id}]${lane}${score}${topics}${reasons}${metadata}\n${result.content}`;
+    };
+
+    const addSection = (section: ContextPackSection) => {
+      const next = this.renderContextPack(query, recall.profile, [...sections, section], opts.maxChars);
+      if (next.truncated && sections.length > 0) {
+        truncated = true;
+        return;
+      }
+      sections.push({
+        ...section,
+        content: next.sectionContents[next.sectionContents.length - 1] ?? section.content,
+      });
+      truncated = truncated || next.truncated;
+      rememberSources(section.sourceIds);
+    };
+
+    addSection({
+      kind: 'overview',
+      title: 'Recall overview',
+      content: [
+        `profile: ${recall.profile}`,
+        `lanes: semantic=${recall.lanes.semantic}, graph=${recall.lanes.graph}, procedural=${recall.lanes.procedural}, recent=${recall.lanes.recent}`,
+        `totalAvailable: ${recall.totalAvailable}`,
+      ].join('\n'),
+      sourceIds: [],
+    });
+
+    if (recall.results.length) {
+      addSection({
+        kind: 'recall',
+        title: 'High-signal memories',
+        content: recall.results.map(formatResult).join('\n\n'),
+        sourceIds: recall.results.map((result) => result.id),
+      });
+    }
+
+    if (opts.includeRecent) {
+      const recent = (await this.getRecent(opts.recentLimit)).filter((entry) => !seenIds.has(entry.id));
+      if (recent.length) {
+        addSection({
+          kind: 'recent',
+          title: 'Recent context',
+          content: recent.map(formatResult).join('\n\n'),
+          sourceIds: recent.map((entry) => entry.id),
+        });
+      }
+    }
+
+    if (opts.includeDream) {
+      const dream = await this.dream({
+        query,
+        layers: ['identity', 'semantic', 'procedural'],
+        limit: Math.min(Math.max(opts.limit, 4), 20),
+        metadata: opts.metadata,
+        topicAllowlist: opts.topics,
+      });
+      if (dream.content && dream.sourceCount > 0) {
+        addSection({
+          kind: 'dream',
+          title: dream.title,
+          content: [
+            dream.content,
+            dream.themes.length ? `themes: ${dream.themes.join(', ')}` : '',
+            dream.actions.length ? `actions: ${dream.actions.join(' | ')}` : '',
+          ].filter(Boolean).join('\n'),
+          sourceIds: dream.sourceIds,
+        });
+      }
+    }
+
+    const rendered = this.renderContextPack(query, recall.profile, sections, opts.maxChars);
+
+    return {
+      query,
+      profile: recall.profile,
+      content: rendered.content,
+      sections: sections.map((section, index) => ({
+        ...section,
+        content: rendered.sectionContents[index] ?? section.content,
+      })),
+      sourceIds,
+      maxChars: opts.maxChars,
+      usedChars: rendered.content.length,
+      truncated: truncated || rendered.truncated,
+      tookMs: Date.now() - start,
+    };
+  }
+
+  private renderContextPack(query: string, profile: SmartRecallOptions['profile'], sections: ContextPackSection[], maxChars: number) {
+    const header = `# ReMEM Context Pack\nquery: ${query}\nprofile: ${profile}\n`;
+    const sectionContents: string[] = [];
+    let content = header;
+    let truncated = false;
+
+    for (const section of sections) {
+      const prefix = `\n## ${section.title}\n`;
+      const available = maxChars - content.length - prefix.length;
+      if (available <= 0) {
+        truncated = true;
+        break;
+      }
+
+      let body = section.content;
+      if (body.length > available) {
+        body = `${body.slice(0, Math.max(0, available - 24)).trimEnd()}\n[truncated]`;
+        truncated = true;
+      }
+
+      sectionContents.push(body);
+      content += `${prefix}${body}\n`;
+      if (truncated) break;
+    }
+
+    return {
+      content: content.slice(0, maxChars),
+      sectionContents,
+      truncated,
+    };
+  }
+
   /**
    * Returns true if semantic embeddings are enabled and configured.
    */
@@ -1133,7 +1296,7 @@ export class ReMEM {
         accessedAt: current.accessedAt,
         accessCount: current.accessCount,
       });
-      const nextId: string | undefined = current.supersededBy;
+      const nextId: string | undefined = current.supersededBy ?? undefined;
       current = nextId ? this.layers.get(nextId) ?? null : null;
     }
 

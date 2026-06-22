@@ -218,6 +218,38 @@ export const dreamResponseSchema = z.object({
 
 export type DreamResponse = z.infer<typeof dreamResponseSchema>;
 
+export const contextPackOptionsSchema = smartRecallOptionsSchema.extend({
+  maxChars: z.number().min(500).max(50_000).default(6_000),
+  includeDream: z.boolean().default(false),
+  includeRecent: z.boolean().default(true),
+  includeMetadata: z.boolean().default(false),
+});
+
+export type ContextPackOptions = z.infer<typeof contextPackOptionsSchema>;
+
+export const contextPackSectionSchema = z.object({
+  kind: z.enum(['overview', 'recall', 'recent', 'dream']),
+  title: z.string(),
+  content: z.string(),
+  sourceIds: z.array(z.string()).default([]),
+});
+
+export type ContextPackSection = z.infer<typeof contextPackSectionSchema>;
+
+export const contextPackResponseSchema = z.object({
+  query: z.string(),
+  profile: smartRecallProfileSchema,
+  content: z.string(),
+  sections: z.array(contextPackSectionSchema),
+  sourceIds: z.array(z.string()),
+  maxChars: z.number(),
+  usedChars: z.number(),
+  truncated: z.boolean(),
+  tookMs: z.number(),
+});
+
+export type ContextPackResponse = z.infer<typeof contextPackResponseSchema>;
+
 export const namespaceInputSchema = z.union([
   z.string().min(1),
   z.array(z.string().min(1)).min(1),
@@ -453,8 +485,8 @@ export const layeredMemoryEntrySchema = memoryEntrySchema.extend({
   validFrom: z.number().optional(),  // when this fact became true
   validUntil: z.number().optional(), // when this fact stopped being true (null = still valid)
   // Self-edit supersession chain
-  supersedes: z.string().optional(),  // id of the entry this one supersedes (older version)
-  supersededBy: z.string().optional(), // id of the entry that supersedes this one
+  supersedes: z.string().nullish(),  // id of the entry this one supersedes (older version)
+  supersededBy: z.string().nullish(), // id of the entry that supersedes this one
 });
 
 export type LayeredMemoryEntry = z.infer<typeof layeredMemoryEntrySchema>;

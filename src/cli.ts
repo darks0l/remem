@@ -5,7 +5,7 @@ import { ReMEM } from './index.js';
 import { runSmokeChecks } from './smoke.js';
 import { generateInitArtifacts, type RuntimeFocus } from './setup.js';
 import { launchTerminalUi } from './ui.js';
-import { rememConfigSchema, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions } from './types.js';
+import { rememConfigSchema, type ContextPackOptions, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions } from './types.js';
 
 type ParsedArgs = {
   command: string;
@@ -132,6 +132,7 @@ Usage:
   remem namespace-query --namespace team/ops --query <text> [--visibility all|shared|private]
   remem namespace-recent --namespace team/ops [--limit 10] [--visibility all|shared|private]
   remem smart-recall --query <text> [--profile fast|deep|agent-safe|ops-debug] [--limit 8]
+  remem context-pack --query <text> [--profile agent-safe|deep] [--max-chars 6000] [--dream]
   remem dream [--query <text>] [--layers identity,semantic,procedural] [--limit 12]
   remem snapshots --action list|create|restore|delete [--label <name>] [--snapshot-id <id>]
   remem consolidate [--summaries] [--procedural]
@@ -657,6 +658,39 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
       };
       if (jsonMode) emitJson(runtime, payload);
       else emitText(runtime, `${formatQueryResults(payload.results)}\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'context-pack') {
+    await withMemory(options, async (memory) => {
+      const metadataFilters = parseMaybeJson(options.metadata) as QueryOptions['metadata'];
+      const contextPackOptions: ContextPackOptions = {
+        profile: asString(options.profile, 'agent-safe') as ContextPackOptions['profile'],
+        limit: Number(asString(options.limit, '8')) || 8,
+        maxChars: Number(asString(options['max-chars'], '6000')) || 6000,
+        includeDream: Boolean(options.dream),
+        includeRecent: options.recent === false ? false : true,
+        includeMetadata: Boolean(options['include-metadata']),
+        recentLimit: Number(asString(options['recent-limit'], '5')) || 5,
+        includeProcedural: options.procedural === false ? false : true,
+        proceduralLimit: Number(asString(options['procedural-limit'], '5')) || 5,
+        hops: (Number(asString(options.hops, '1')) === 2 ? 2 : 1) as 1 | 2,
+        minNeighborScore: Number(asString(options['min-neighbor-score'], '0.2')) || 0.2,
+        neighborLimit: Number(asString(options['neighbor-limit'], '25')) || 25,
+        includeBaseResults: true,
+        includePathDetails: false,
+        topics: asCsv(options.topics).length ? asCsv(options.topics) : undefined,
+        minAccessCount: options['min-access-count'] ? Number(asString(options['min-access-count'])) : undefined,
+        metadata: metadataFilters && Object.keys(metadataFilters).length ? metadataFilters : undefined,
+      };
+      const payload = {
+        ok: true,
+        command,
+        ...(await memory.contextPack(asString(options.query), contextPackOptions)),
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${payload.content}\n`);
     });
     return 0;
   }
