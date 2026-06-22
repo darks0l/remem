@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.13.0](https://img.shields.io/badge/v0.13.0-doctor--adoption--release-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.14.0](https://img.shields.io/badge/v0.14.0-context--pack--recall-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -169,7 +169,7 @@ ReMEM does something different:
 - **Harness adapters** (v0.12.0) - Includes polished OpenClaw and Hermes harness-facing adapters for turns, decisions, procedures, artifacts, and shared namespace recall
 - **Shared memory namespaces** (v0.12.0) - Store reusable memory inside explicit team/project lanes with private/shared visibility controls and scoped recall
 - **Smart recall** (v0.12.0) - Fuse semantic, graph, procedural, and recent-context lanes into one higher-signal retrieval pass
-- **Context packs** (unreleased) - Generate bounded, prompt-ready recall packets from smart recall, recent context, procedural signals, and optional dream synthesis
+- **Context packs** (v0.14.0) - Generate bounded, prompt-ready recall packets from smart recall, recent context, procedural signals, and optional dream synthesis
 - **Consolidation workflows** (v0.12.5) - Run full memory curation passes that deduplicate, resolve conflicts, promote durable summaries, and optionally turn repeated patterns into procedures
 - **Memory links + neighbor-aware retrieval** (v0.8.0, expanded in v0.8.5) - Explicit typed links between memories (`about`, `supports`, `contradicts`, etc.), weighted graph-adjacent recall, and optional traversal path details
 - **Identity alignment audits** (v0.8.5) - Drift scoring plus corrective injection text for agents that need to keep behavior anchored to a constitution

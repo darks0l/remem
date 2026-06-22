@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.14.0] - 2026-06-22
+
 ### Added
 
 - Added first-class Context Pack generation via `memory.contextPack()`, `remem context-pack`, and `POST /memory/context-pack` for bounded prompt-ready recall packets.
