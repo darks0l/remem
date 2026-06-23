@@ -6460,6 +6460,39 @@ profile: ${profile}
     });
   }
   /**
+   * Return a compact inventory of the configured memory scope.
+   * Useful for health checks, release audits, and agent context budgeting.
+   */
+  async stats() {
+    const scope = { agentId: this._agentId, userId: this._userId };
+    const [coreEntries, layerEntries, snapshots] = await Promise.all([
+      this._store.getAllEntries(scope),
+      this._store.loadAllLayerEntries(scope),
+      this._store.listSnapshots(scope)
+    ]);
+    const topicCounts = /* @__PURE__ */ new Map();
+    let oldestMemoryAt = null;
+    let newestMemoryAt = null;
+    for (const entry of coreEntries) {
+      oldestMemoryAt = oldestMemoryAt === null ? entry.createdAt : Math.min(oldestMemoryAt, entry.createdAt);
+      newestMemoryAt = newestMemoryAt === null ? entry.createdAt : Math.max(newestMemoryAt, entry.createdAt);
+      for (const topic of entry.topics) {
+        topicCounts.set(topic, (topicCounts.get(topic) ?? 0) + 1);
+      }
+    }
+    const topics = [...topicCounts.entries()].map(([topic, count]) => ({ topic, count })).sort((a, b) => b.count - a.count || a.topic.localeCompare(b.topic));
+    return {
+      coreCount: coreEntries.length,
+      layerCount: layerEntries.length,
+      snapshotCount: snapshots.length,
+      eventCount: this._store.getEventLog().length,
+      topics,
+      layers: this.getLayerStats(),
+      oldestMemoryAt,
+      newestMemoryAt
+    };
+  }
+  /**
    * Get entries by topic.
    */
   async getByTopic(topic, limit = 20) {

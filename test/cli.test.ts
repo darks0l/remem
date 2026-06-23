@@ -25,6 +25,7 @@ describe('ReMEM CLI', () => {
     expect(result.stdout).toContain('ReMEM CLI');
     expect(result.stdout).toContain('remem smoke-check');
     expect(result.stdout).toContain('remem doctor');
+    expect(result.stdout).toContain('remem stats');
   });
 
   it('returns JSON status when --json is set', async () => {
@@ -34,6 +35,22 @@ describe('ReMEM CLI', () => {
     expect(payload.ok).toBe(true);
     expect(payload.command).toBe('status');
     expect(payload.storage).toBe('memory');
+  });
+
+  it('returns memory stats through the CLI JSON contract', async () => {
+    const db = './.tmp-cli-stats.db';
+    await fs.rm(db, { force: true });
+    await invoke(['store', '--db', db, '--content', 'Stats should count memory topics', '--topics', 'ops,stats', '--json']);
+    await invoke(['store', '--db', db, '--content', 'Stats should rank repeated topics', '--topics', 'stats', '--json']);
+
+    const result = await invoke(['stats', '--db', db, '--json']);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.command).toBe('stats');
+    expect(payload.coreCount).toBe(2);
+    expect(payload.snapshotCount).toBe(0);
+    expect(payload.topics[0]).toEqual({ topic: 'stats', count: 2 });
   });
 
   it('stores and queries data through the CLI JSON contract', async () => {

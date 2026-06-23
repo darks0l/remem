@@ -121,6 +121,7 @@ Usage:
   remem ui [--db <path>] [--storage sqlite|memory|postgres] [--agent-id <id>] [--user-id <id>]
   remem init [same flags as ui] [--runtime openclaw|hermes|generic] [--out-dir <path>] [--json]
   remem status [--db <path>]
+  remem stats [--db <path>] [--json]
   remem store --content <text> [--topics a,b] [--metadata '{"kind":"note"}']
   remem query --query <text> [--limit 8]
   remem recent [--limit 10]
@@ -485,6 +486,36 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
       };
       if (jsonMode) emitJson(runtime, payload);
       else emitText(runtime, `status: ok\nstorage: ${payload.storage}\ndb: ${payload.db}\nscope: ${payload.scope}\nlayers: ${payload.layersEnabled ? 'enabled' : 'disabled'}\nsnapshots: ${payload.snapshots.length}\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'stats') {
+    await withMemory(options, async (memory, context) => {
+      const stats = await memory.stats();
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...stats,
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        const topTopics = stats.topics.slice(0, 8).map((item) => `${item.topic}:${item.count}`).join(', ') || 'none';
+        emitText(
+          runtime,
+          [
+            `core memories: ${stats.coreCount}`,
+            `layer memories: ${stats.layerCount}`,
+            `snapshots: ${stats.snapshotCount}`,
+            `events: ${stats.eventCount}`,
+            `top topics: ${topTopics}`,
+            '',
+          ].join('\n')
+        );
+      }
     });
     return 0;
   }

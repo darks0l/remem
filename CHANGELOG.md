@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No unreleased changes yet.
 
+## [0.15.0] - 2026-06-23
+
+### Added
+
+- Added `memory.stats()` for compact memory inventory reports with core memory count, layer count, snapshot count, event count, top topics, and oldest/newest memory timestamps.
+- Added `remem stats --json` for agent-readable memory shape checks from the CLI.
+
+### Changed
+
+- CLI help now includes the stats command alongside status, diagnostics, recall, context-pack, and dream workflows.
+
 ## [0.14.0] - 2026-06-22
 
 ### Added
