@@ -77,6 +77,10 @@ __export(index_exports, {
   linkedMemoryQueryOptionsSchema: () => linkedMemoryQueryOptionsSchema,
   memoryEntrySchema: () => memoryEntrySchema,
   memoryEventSchema: () => memoryEventSchema,
+  memoryHealthCheckSchema: () => memoryHealthCheckSchema,
+  memoryHealthOptionsSchema: () => memoryHealthOptionsSchema,
+  memoryHealthRecommendationSchema: () => memoryHealthRecommendationSchema,
+  memoryHealthResponseSchema: () => memoryHealthResponseSchema,
   memoryLayerSchema: () => memoryLayerSchema,
   memoryLinkInputSchema: () => memoryLinkInputSchema,
   memoryLinkSchema: () => memoryLinkSchema,
@@ -279,6 +283,43 @@ var contextPackResponseSchema = import_zod.z.object({
   usedChars: import_zod.z.number(),
   truncated: import_zod.z.boolean(),
   tookMs: import_zod.z.number()
+});
+var memoryHealthOptionsSchema = import_zod.z.object({
+  staleAgeMs: import_zod.z.number().min(1).default(7 * 24 * 60 * 60 * 1e3),
+  maxSnapshotAgeMs: import_zod.z.number().min(1).default(24 * 60 * 60 * 1e3),
+  minSnapshotMemories: import_zod.z.number().min(1).default(10),
+  maxUntaggedRatio: import_zod.z.number().min(0).max(1).default(0.25),
+  duplicateSampleLimit: import_zod.z.number().min(1).max(50).default(10)
+});
+var memoryHealthCheckSchema = import_zod.z.object({
+  name: import_zod.z.string(),
+  status: import_zod.z.enum(["pass", "warn", "fail"]),
+  detail: import_zod.z.string(),
+  value: import_zod.z.unknown().optional(),
+  action: import_zod.z.string().optional(),
+  command: import_zod.z.string().optional()
+});
+var memoryHealthRecommendationSchema = import_zod.z.object({
+  priority: import_zod.z.enum(["low", "medium", "high"]),
+  action: import_zod.z.string(),
+  reason: import_zod.z.string(),
+  command: import_zod.z.string().optional()
+});
+var memoryHealthResponseSchema = import_zod.z.object({
+  score: import_zod.z.number().min(0).max(100),
+  status: import_zod.z.enum(["healthy", "watch", "attention"]),
+  checkedAt: import_zod.z.number(),
+  checks: import_zod.z.array(memoryHealthCheckSchema),
+  recommendations: import_zod.z.array(memoryHealthRecommendationSchema),
+  stats: import_zod.z.object({
+    coreCount: import_zod.z.number(),
+    layerCount: import_zod.z.number(),
+    snapshotCount: import_zod.z.number(),
+    eventCount: import_zod.z.number(),
+    duplicateGroups: import_zod.z.number(),
+    staleCount: import_zod.z.number(),
+    untaggedCount: import_zod.z.number()
+  })
 });
 var namespaceInputSchema = import_zod.z.union([
   import_zod.z.string().min(1),
@@ -5122,6 +5163,18 @@ var HttpAdapter = class {
       const result = await this.memory.contextPack(parsed.query, parsed.options);
       return { status: 200, body: result };
     }
+    if ((method === "GET" || method === "POST") && path === "/memory/health") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      let options;
+      if (method === "POST") {
+        if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+        const body = await this.readBody(req);
+        const parsed = body ? JSON.parse(body) : {};
+        options = parsed.options;
+      }
+      const result = await this.memory.health(options);
+      return { status: 200, body: result };
+    }
     if (method === "POST" && path === "/memory/procedural/match") {
       if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
       if (!req) return { status: 400, body: { error: "Request body unavailable" } };
@@ -6493,6 +6546,192 @@ profile: ${profile}
     };
   }
   /**
+   * Return a first-class memory health report with concrete maintenance actions.
+   * Use this before long-running sessions, releases, or agent handoffs to decide
+   * whether to snapshot, consolidate, dedupe, enrich metadata, or pack context.
+   */
+  async health(options) {
+    const opts = memoryHealthOptionsSchema.parse(options ?? {});
+    const checkedAt = Date.now();
+    const scope = { agentId: this._agentId, userId: this._userId };
+    const [coreEntries, layerEntries, snapshots, stats] = await Promise.all([
+      this._store.getAllEntries(scope),
+      this._store.loadAllLayerEntries(scope),
+      this._store.listSnapshots(scope),
+      this.stats()
+    ]);
+    const allEntries = [...coreEntries, ...layerEntries];
+    const checks = [];
+    const recommendations = [];
+    const addRecommendation = (priority, action, reason, command) => {
+      recommendations.push({ priority, action, reason, ...command ? { command } : {} });
+    };
+    if (allEntries.length === 0) {
+      checks.push({
+        name: "memory-volume",
+        status: "warn",
+        detail: "No memories are stored in this scope yet.",
+        value: 0,
+        action: "Store durable user, project, or procedure memories before relying on recall.",
+        command: 'remem store --content "..." --topics ...'
+      });
+      addRecommendation("medium", "seed-memory", "The memory scope is empty, so recall and context packs have nothing durable to work with.", 'remem store --content "..." --topics ...');
+    } else {
+      checks.push({
+        name: "memory-volume",
+        status: "pass",
+        detail: `${allEntries.length} memories available in this scope.`,
+        value: allEntries.length
+      });
+    }
+    const newestSnapshotAt = snapshots.reduce((latest, snapshot) => latest === null ? snapshot.createdAt : Math.max(latest, snapshot.createdAt), null);
+    const snapshotAgeMs = newestSnapshotAt === null ? null : checkedAt - newestSnapshotAt;
+    if (allEntries.length >= opts.minSnapshotMemories && snapshots.length === 0) {
+      checks.push({
+        name: "snapshot-coverage",
+        status: "warn",
+        detail: `${allEntries.length} memories exist but no snapshot has been created.`,
+        value: snapshots.length,
+        action: "Create a recovery checkpoint before more writes or a release.",
+        command: "remem snapshots --action create --label before-maintenance"
+      });
+      addRecommendation("high", "create-snapshot", "There is enough memory state to deserve a restore point.", "remem snapshots --action create --label before-maintenance");
+    } else if (snapshotAgeMs !== null && snapshotAgeMs > opts.maxSnapshotAgeMs) {
+      checks.push({
+        name: "snapshot-freshness",
+        status: "warn",
+        detail: `Newest snapshot is ${Math.round(snapshotAgeMs / 36e5)}h old.`,
+        value: snapshotAgeMs,
+        action: "Create a fresh snapshot before maintenance or deployment.",
+        command: "remem snapshots --action create --label fresh-checkpoint"
+      });
+      addRecommendation("medium", "refresh-snapshot", "The latest snapshot is older than the configured freshness window.", "remem snapshots --action create --label fresh-checkpoint");
+    } else {
+      checks.push({
+        name: "snapshot-coverage",
+        status: "pass",
+        detail: snapshots.length ? `${snapshots.length} snapshot(s), newest checkpoint is current enough.` : "Snapshot not required yet for this memory volume.",
+        value: snapshots.length
+      });
+    }
+    const duplicateGroups = this.findDuplicateGroups(allEntries, opts.duplicateSampleLimit);
+    if (duplicateGroups.length > 0) {
+      checks.push({
+        name: "duplicate-content",
+        status: "warn",
+        detail: `${duplicateGroups.length} exact duplicate content group(s) found.`,
+        value: duplicateGroups.map((group) => ({ content: group.content, count: group.ids.length, ids: group.ids })),
+        action: "Run consolidation to merge duplicate or repeated memories.",
+        command: "remem consolidate --summaries"
+      });
+      addRecommendation("medium", "consolidate-duplicates", "Repeated memories make retrieval noisier and waste context budget.", "remem consolidate --summaries");
+    } else {
+      checks.push({
+        name: "duplicate-content",
+        status: "pass",
+        detail: "No exact duplicate content groups found.",
+        value: 0
+      });
+    }
+    const staleEntries = allEntries.filter((entry) => {
+      const lastTouched = entry.accessedAt || entry.createdAt;
+      return entry.accessCount === 0 && lastTouched < checkedAt - opts.staleAgeMs;
+    });
+    if (staleEntries.length > 0) {
+      checks.push({
+        name: "stale-unaccessed",
+        status: "warn",
+        detail: `${staleEntries.length} memories have never been recalled and are older than the stale window.`,
+        value: staleEntries.slice(0, 10).map((entry) => entry.id),
+        action: "Review stale memories and consolidate or prune low-value entries.",
+        command: 'remem context-pack --query "What stale memories still matter?" --profile deep'
+      });
+      addRecommendation("low", "review-stale-memory", "Old unaccessed memories may be useful, but they should be reviewed before they become dead weight.", 'remem context-pack --query "What stale memories still matter?" --profile deep');
+    } else {
+      checks.push({
+        name: "stale-unaccessed",
+        status: "pass",
+        detail: "No stale never-recalled memories found.",
+        value: 0
+      });
+    }
+    const untaggedEntries = allEntries.filter((entry) => entry.topics.length === 0);
+    const untaggedRatio = allEntries.length ? untaggedEntries.length / allEntries.length : 0;
+    if (untaggedRatio > opts.maxUntaggedRatio) {
+      checks.push({
+        name: "topic-coverage",
+        status: "warn",
+        detail: `${untaggedEntries.length}/${allEntries.length} memories have no topics.`,
+        value: { untagged: untaggedEntries.length, ratio: untaggedRatio },
+        action: "Add topics to improve filtered recall and context-pack quality."
+      });
+      addRecommendation("medium", "improve-topic-coverage", "Too many untagged memories reduce precision for scoped recall.");
+    } else {
+      checks.push({
+        name: "topic-coverage",
+        status: "pass",
+        detail: `${untaggedEntries.length}/${allEntries.length} memories are untagged.`,
+        value: { untagged: untaggedEntries.length, ratio: untaggedRatio }
+      });
+    }
+    const layerStats = stats.layers;
+    const pressuredLayers = layerStats ? Object.entries(layerStats).filter(([, layer]) => layer.maxEntries > 0 && layer.count / layer.maxEntries >= 0.8) : [];
+    if (pressuredLayers.length > 0) {
+      checks.push({
+        name: "layer-pressure",
+        status: "warn",
+        detail: pressuredLayers.map(([layer, value]) => `${layer} ${value.count}/${value.maxEntries}`).join(", "),
+        value: Object.fromEntries(pressuredLayers),
+        action: "Run consolidation or compression before TTL/size pressure drops signal.",
+        command: "remem consolidate --summaries --procedural"
+      });
+      addRecommendation("high", "relieve-layer-pressure", "One or more long-memory layers are near capacity.", "remem consolidate --summaries --procedural");
+    } else {
+      checks.push({
+        name: "layer-pressure",
+        status: "pass",
+        detail: layerStats ? "Layer capacity is below the pressure threshold." : "Layer stats unavailable.",
+        value: layerStats
+      });
+    }
+    let score = 100;
+    for (const check of checks) {
+      if (check.status === "fail") score -= 30;
+      if (check.status === "warn") score -= check.name === "snapshot-coverage" || check.name === "layer-pressure" ? 15 : 10;
+    }
+    score = Math.max(0, Math.min(100, score));
+    return {
+      score,
+      status: score >= 85 ? "healthy" : score >= 65 ? "watch" : "attention",
+      checkedAt,
+      checks,
+      recommendations: recommendations.sort((a, b) => this.recommendationRank(b.priority) - this.recommendationRank(a.priority)),
+      stats: {
+        coreCount: stats.coreCount,
+        layerCount: stats.layerCount,
+        snapshotCount: stats.snapshotCount,
+        eventCount: stats.eventCount,
+        duplicateGroups: duplicateGroups.length,
+        staleCount: staleEntries.length,
+        untaggedCount: untaggedEntries.length
+      }
+    };
+  }
+  findDuplicateGroups(entries, limit) {
+    const groups = /* @__PURE__ */ new Map();
+    for (const entry of entries) {
+      const key = entry.content.trim().replace(/\s+/g, " ").toLowerCase();
+      if (!key) continue;
+      const group = groups.get(key) ?? { content: entry.content, ids: [] };
+      group.ids.push(entry.id);
+      groups.set(key, group);
+    }
+    return [...groups.values()].filter((group) => group.ids.length > 1).sort((a, b) => b.ids.length - a.ids.length || a.content.localeCompare(b.content)).slice(0, limit);
+  }
+  recommendationRank(priority) {
+    return { high: 3, medium: 2, low: 1 }[priority];
+  }
+  /**
    * Get entries by topic.
    */
   async getByTopic(topic, limit = 20) {
@@ -7103,6 +7342,10 @@ profile: ${profile}
   linkedMemoryQueryOptionsSchema,
   memoryEntrySchema,
   memoryEventSchema,
+  memoryHealthCheckSchema,
+  memoryHealthOptionsSchema,
+  memoryHealthRecommendationSchema,
+  memoryHealthResponseSchema,
   memoryLayerSchema,
   memoryLinkInputSchema,
   memoryLinkSchema,

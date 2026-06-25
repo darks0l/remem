@@ -114,6 +114,17 @@ describe('HttpAdapter', () => {
     expect(contextPackJson.sourceIds.length).toBeGreaterThan(0);
     expect(contextPackJson.usedChars).toBeLessThanOrEqual(1200);
 
+    const memoryHealth = await fetch('http://127.0.0.1:18913/memory/health', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ options: { minSnapshotMemories: 2 } }),
+    });
+    expect(memoryHealth.status).toBe(200);
+    const memoryHealthJson = await readJson(memoryHealth) as { score: number; checks: Array<{ name: string }>; recommendations: unknown[] };
+    expect(memoryHealthJson.score).toBeLessThanOrEqual(100);
+    expect(memoryHealthJson.checks.some((check) => check.name === 'snapshot-coverage')).toBe(true);
+    expect(Array.isArray(memoryHealthJson.recommendations)).toBe(true);
+
     const sharedCreate = await fetch('http://127.0.0.1:18913/memory/shared', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

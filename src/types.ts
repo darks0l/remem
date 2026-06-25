@@ -250,6 +250,55 @@ export const contextPackResponseSchema = z.object({
 
 export type ContextPackResponse = z.infer<typeof contextPackResponseSchema>;
 
+export const memoryHealthOptionsSchema = z.object({
+  staleAgeMs: z.number().min(1).default(7 * 24 * 60 * 60 * 1000),
+  maxSnapshotAgeMs: z.number().min(1).default(24 * 60 * 60 * 1000),
+  minSnapshotMemories: z.number().min(1).default(10),
+  maxUntaggedRatio: z.number().min(0).max(1).default(0.25),
+  duplicateSampleLimit: z.number().min(1).max(50).default(10),
+});
+
+export type MemoryHealthOptions = z.input<typeof memoryHealthOptionsSchema>;
+
+export const memoryHealthCheckSchema = z.object({
+  name: z.string(),
+  status: z.enum(['pass', 'warn', 'fail']),
+  detail: z.string(),
+  value: z.unknown().optional(),
+  action: z.string().optional(),
+  command: z.string().optional(),
+});
+
+export type MemoryHealthCheck = z.infer<typeof memoryHealthCheckSchema>;
+
+export const memoryHealthRecommendationSchema = z.object({
+  priority: z.enum(['low', 'medium', 'high']),
+  action: z.string(),
+  reason: z.string(),
+  command: z.string().optional(),
+});
+
+export type MemoryHealthRecommendation = z.infer<typeof memoryHealthRecommendationSchema>;
+
+export const memoryHealthResponseSchema = z.object({
+  score: z.number().min(0).max(100),
+  status: z.enum(['healthy', 'watch', 'attention']),
+  checkedAt: z.number(),
+  checks: z.array(memoryHealthCheckSchema),
+  recommendations: z.array(memoryHealthRecommendationSchema),
+  stats: z.object({
+    coreCount: z.number(),
+    layerCount: z.number(),
+    snapshotCount: z.number(),
+    eventCount: z.number(),
+    duplicateGroups: z.number(),
+    staleCount: z.number(),
+    untaggedCount: z.number(),
+  }),
+});
+
+export type MemoryHealthResponse = z.infer<typeof memoryHealthResponseSchema>;
+
 export const namespaceInputSchema = z.union([
   z.string().min(1),
   z.array(z.string().min(1)).min(1),

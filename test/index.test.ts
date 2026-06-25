@@ -265,6 +265,29 @@ describe('ReMEM', () => {
     expect(pack.profile).toBe('deep');
   });
 
+  it('reports memory health with concrete maintenance recommendations', async () => {
+    await memory.store({ content: 'Duplicate release note', topics: ['release'] });
+    await memory.store({ content: 'Duplicate release note', topics: ['release'] });
+    await memory.store({ content: 'Untagged but important note' });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const health = await memory.health({
+      staleAgeMs: 1,
+      minSnapshotMemories: 2,
+      maxUntaggedRatio: 0.1,
+    });
+
+    expect(health.score).toBeLessThan(100);
+    expect(health.status).toBe('attention');
+    expect(health.stats.duplicateGroups).toBe(1);
+    expect(health.stats.staleCount).toBeGreaterThan(0);
+    expect(health.stats.untaggedCount).toBe(1);
+    expect(health.checks.some((check) => check.name === 'snapshot-coverage' && check.status === 'warn')).toBe(true);
+    expect(health.checks.some((check) => check.name === 'duplicate-content' && check.status === 'warn')).toBe(true);
+    expect(health.recommendations.some((item) => item.action === 'create-snapshot')).toBe(true);
+    expect(health.recommendations.some((item) => item.command?.includes('consolidate'))).toBe(true);
+  });
+
   it('runs consolidation workflows with summaries and procedural promotion', async () => {
     memory = new ReMEM({
       storage: 'memory',

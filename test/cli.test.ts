@@ -53,6 +53,30 @@ describe('ReMEM CLI', () => {
     expect(payload.topics[0]).toEqual({ topic: 'stats', count: 2 });
   });
 
+  it('returns memory health through the CLI JSON contract', async () => {
+    const db = `./.tmp-cli-health-${Date.now()}-${Math.random().toString(16).slice(2)}.db`;
+    await fs.rm(db, { force: true });
+    await invoke(['store', '--db', db, '--content', 'Health duplicate memory', '--topics', 'health', '--json']);
+    await invoke(['store', '--db', db, '--content', 'Health duplicate memory', '--topics', 'health', '--json']);
+    await invoke(['store', '--db', db, '--content', 'Health untagged memory', '--json']);
+
+    const result = await invoke([
+      'health',
+      '--db', db,
+      '--stale-age-ms', '1',
+      '--min-snapshot-memories', '2',
+      '--max-untagged-ratio', '0.1',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.command).toBe('health');
+    expect(payload.status).toBe('attention');
+    expect(payload.stats.duplicateGroups).toBeGreaterThanOrEqual(1);
+    expect(payload.recommendations.some((item: { action: string }) => item.action === 'create-snapshot')).toBe(true);
+  });
+
   it('stores and queries data through the CLI JSON contract', async () => {
     const db = './.tmp-cli-test.db';
     const storeResult = await invoke(['store', '--db', db, '--content', 'Meta likes dark mode', '--topics', 'prefs,ui', '--json']);

@@ -46,6 +46,10 @@ import {
   linkedMemoryQueryOptionsSchema,
   memoryEntrySchema,
   memoryEventSchema,
+  memoryHealthCheckSchema,
+  memoryHealthOptionsSchema,
+  memoryHealthRecommendationSchema,
+  memoryHealthResponseSchema,
   memoryLayerSchema,
   memoryLinkInputSchema,
   memoryLinkSchema,
@@ -70,7 +74,7 @@ import {
   smartRecallResultSchema,
   storeMemoryInputSchema,
   uploadPackage
-} from "./chunk-BIGSUDQ3.mjs";
+} from "./chunk-RWFTCWIC.mjs";
 export {
   ConstitutionInjector,
   ConstitutionManager,
@@ -119,6 +123,10 @@ export {
   linkedMemoryQueryOptionsSchema,
   memoryEntrySchema,
   memoryEventSchema,
+  memoryHealthCheckSchema,
+  memoryHealthOptionsSchema,
+  memoryHealthRecommendationSchema,
+  memoryHealthResponseSchema,
   memoryLayerSchema,
   memoryLinkInputSchema,
   memoryLinkSchema,

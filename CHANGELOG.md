@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No unreleased changes yet.
 
+## [0.16.0] - 2026-06-25
+
+### Added
+
+- Added `memory.health()` for first-class memory triage reports with score, status, checks, and concrete maintenance recommendations.
+- Added `remem health --json` and `POST /memory/health` for agent-readable health checks covering snapshot coverage/freshness, exact duplicate content, stale never-recalled memories, topic coverage, and layer pressure.
+- Added health regression coverage across the core API, CLI, and HTTP adapter.
+
+### Changed
+
+- README now documents the health command as the maintenance companion to stats, context packs, dream passes, and consolidation.
+
 ## [0.15.0] - 2026-06-23
 
 ### Added

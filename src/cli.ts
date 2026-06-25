@@ -5,7 +5,7 @@ import { ReMEM } from './index.js';
 import { runSmokeChecks } from './smoke.js';
 import { generateInitArtifacts, type RuntimeFocus } from './setup.js';
 import { launchTerminalUi } from './ui.js';
-import { rememConfigSchema, type ContextPackOptions, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions } from './types.js';
+import { rememConfigSchema, type ContextPackOptions, type MemoryHealthOptions, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions } from './types.js';
 
 type ParsedArgs = {
   command: string;
@@ -122,6 +122,7 @@ Usage:
   remem init [same flags as ui] [--runtime openclaw|hermes|generic] [--out-dir <path>] [--json]
   remem status [--db <path>]
   remem stats [--db <path>] [--json]
+  remem health [--db <path>] [--json]
   remem store --content <text> [--topics a,b] [--metadata '{"kind":"note"}']
   remem query --query <text> [--limit 8]
   remem recent [--limit 10]
@@ -201,6 +202,14 @@ function formatQueryResults(results: Array<{ content: string; relevanceScore?: n
 
 function formatChecks(checks: Array<{ name: string; status: string; detail: string }>) {
   return checks.map((check) => `- [${check.status}] ${check.name}: ${check.detail}`).join('\n');
+}
+
+function formatRecommendations(recommendations: Array<{ priority: string; action: string; reason: string; command?: string }>) {
+  if (!recommendations.length) return 'No recommendations.';
+  return recommendations.map((item) => {
+    const command = item.command ? `\n  command: ${item.command}` : '';
+    return `- [${item.priority}] ${item.action}: ${item.reason}${command}`;
+  }).join('\n');
 }
 
 function hasFailingChecks(checks: Array<{ status: string }>) {
@@ -512,6 +521,42 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
             `snapshots: ${stats.snapshotCount}`,
             `events: ${stats.eventCount}`,
             `top topics: ${topTopics}`,
+            '',
+          ].join('\n')
+        );
+      }
+    });
+    return 0;
+  }
+
+  if (command === 'health') {
+    await withMemory(options, async (memory, context) => {
+      const healthOptions: MemoryHealthOptions = {
+        staleAgeMs: Number(asString(options['stale-age-ms'], String(7 * 24 * 60 * 60 * 1000))) || 7 * 24 * 60 * 60 * 1000,
+        maxSnapshotAgeMs: Number(asString(options['max-snapshot-age-ms'], String(24 * 60 * 60 * 1000))) || 24 * 60 * 60 * 1000,
+        minSnapshotMemories: Number(asString(options['min-snapshot-memories'], '10')) || 10,
+        maxUntaggedRatio: Number(asString(options['max-untagged-ratio'], '0.25')) || 0.25,
+        duplicateSampleLimit: Number(asString(options['duplicate-sample-limit'], '10')) || 10,
+      };
+      const health = await memory.health(healthOptions);
+      const payload = {
+        ok: health.status !== 'attention',
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...health,
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        emitText(
+          runtime,
+          [
+            `health: ${health.status} (${health.score}/100)`,
+            'checks:',
+            formatChecks(health.checks),
+            'recommendations:',
+            formatRecommendations(health.recommendations),
             '',
           ].join('\n')
         );

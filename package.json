@@ -1,6 +1,6 @@
 {
   "name": "@darksol/remem",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Persistent, queryable memory for AI agents with graph recall, procedural rules, identity audits, snapshots, and multi-agent scoping",
   "bin": {
     "remem": "dist/cli.js"
@@ -80,7 +80,7 @@
     "@types/pg": "^8.20.0",
     "tsup": "^8.0.0",
     "typescript": "^5.3.0",
-    "vitest": "^1.2.0"
+    "vitest": "^4.1.9"
   },
   "dependencies": {
     "sql.js": "^1.10.0",
@@ -94,6 +94,9 @@
     "pg": {
       "optional": true
     }
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
   },
   "files": [
     "dist",

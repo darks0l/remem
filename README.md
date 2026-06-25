@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.15.0](https://img.shields.io/badge/v0.15.0-memory--stats-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.16.0](https://img.shields.io/badge/v0.16.0-memory--health-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -77,6 +77,7 @@ There is also a direct CLI surface for agent-facing operations:
 ```bash
 remem status --db ./remem.db
 remem stats --db ./remem.db --json
+remem health --db ./remem.db --json
 remem store --content "Meta likes dark mode" --topics preferences,ui
 remem query --query "What does Meta like?"
 remem context-pack --query "What context should the next agent carry?" --max-chars 6000 --json
@@ -106,6 +107,21 @@ remem init --runtime openclaw --out-dir ./.remem --check --json
 Use `doctor` when you want package/runtime/config/storage/snapshot checks in one command. Use `smoke-check` when you only need the lighter snapshot + optional endpoint verification pass.
 
 Use `stats` when an agent needs a compact inventory of the memory scope before deciding whether to recall, consolidate, snapshot, or prune.
+
+Use `health` when an agent needs a maintenance plan, not just counts. It scores the current memory scope and flags missing/stale snapshots, duplicate memories, stale unaccessed entries, weak topic coverage, and long-memory layer pressure.
+
+```bash
+remem health --db ./remem.db --json
+```
+
+HTTP runtimes can call the same triage surface at `POST /memory/health`.
+
+Example actions in a health report:
+
+- create a fresh snapshot before a release or migration
+- run consolidation when duplicate memories start polluting recall
+- improve topic coverage for untagged memories
+- pack context around stale memories before deciding what to keep
 
 ### Dreaming from long memory
 
