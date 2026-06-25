@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ReMEM, MemoryStore, PostgresMemoryStore } from '../src/index.js';
+import { ReMEM, MemoryStore, PostgresMemoryStore, MemoryREPL } from '../src/index.js';
 
 describe('ReMEM', () => {
   let memory: ReMEM;
@@ -129,6 +129,51 @@ describe('ReMEM', () => {
 
     const allScoped = await memory.queryNamespace(['team', 'ops'], 'operator', { limit: 10 }, { visibility: 'all' });
     expect(allScoped.results).toHaveLength(2);
+  });
+
+  it('queries descendant namespaces when requested', async () => {
+    await memory.storeShared({
+      content: 'Parent namespace memory',
+      namespace: ['team', 'ops'],
+      visibility: 'shared',
+      topics: ['runbook'],
+    });
+    await memory.storeShared({
+      content: 'Nested release namespace memory',
+      namespace: ['team', 'ops', 'release'],
+      visibility: 'shared',
+      topics: ['runbook'],
+    });
+
+    const exact = await memory.queryNamespace(['team', 'ops'], 'namespace memory', { limit: 10 }, { visibility: 'shared' });
+    expect(exact.results.map((result) => result.content)).toEqual(['Parent namespace memory']);
+
+    const descendants = await memory.queryNamespace(
+      ['team', 'ops'],
+      'namespace memory',
+      { limit: 10 },
+      { visibility: 'shared', includeDescendants: true }
+    );
+    expect(descendants.results.map((result) => result.content)).toEqual(
+      expect.arrayContaining(['Parent namespace memory', 'Nested release namespace memory'])
+    );
+  });
+
+  it('executes memory REPL snippets in a restricted VM context', async () => {
+    await memory.store({ content: 'Dark mode preference lives in memory', topics: ['preferences'] });
+    const repl = new MemoryREPL({ store: memory.getStore() });
+    const executeCode = (repl as unknown as { executeCode(code: string): Promise<unknown> }).executeCode.bind(repl);
+
+    const observed = await executeCode('({ action: "observe", data: await mem.query("dark mode", { limit: 1 }) })');
+    expect(observed).toMatchObject({
+      action: 'observe',
+      data: {
+        count: 1,
+      },
+    });
+
+    const escaped = await executeCode('({ action: "observe", data: Function("return process")() })');
+    expect(escaped).toEqual(expect.objectContaining({ __error: expect.stringContaining('Code generation') }));
   });
 
   it('enforces agent/user scope on reads and queries', async () => {

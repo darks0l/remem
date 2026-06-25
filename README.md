@@ -24,7 +24,7 @@ ReMEM is a lightweight, framework-agnostic memory substrate for AI agents. It gi
 
 It applies the core insight from [Recursive Language Models (RLMs)](https://arxiv.org/pdf/2512.24601) - that prompts should be external environment variables, not direct context - to the problem of persistent, queryable agent memory.
 
-Built with TypeScript. Runs anywhere.
+Built with TypeScript. Node-first, with storage and adapter surfaces designed to stay framework-agnostic.
 
 ## Why teams pick ReMEM
 
@@ -114,7 +114,7 @@ Use `health` when an agent needs a maintenance plan, not just counts. It scores 
 remem health --db ./remem.db --json
 ```
 
-HTTP runtimes can call the same triage surface at `POST /memory/health`.
+HTTP runtimes can call the same triage surface at `GET /memory/health` or `POST /memory/health`.
 
 Example actions in a health report:
 
@@ -194,7 +194,7 @@ ReMEM does something different:
 - **Identity alignment audits** (v0.8.5) - Drift scoring plus corrective injection text for agents that need to keep behavior anchored to a constitution
 - **Production-aware Postgres vector lane** (v0.8.5) - Native pgvector detection, ivfflat index bootstrap, and runtime introspection for deployments that want in-database vector search
 - **Metadata-aware recall** (v0.9.0) - Filter memory queries on structured metadata, preserve metadata on results, and carry source/namespace hints through adapters + HTTP
-- **Framework-agnostic** - Works as a library (Node.js/Deno), CLI tool, or HTTP microservice
+- **Framework-agnostic** - Works as a Node.js library, CLI tool, or HTTP microservice without forcing an agent framework
 
 ---
 
@@ -713,6 +713,8 @@ The infection model:
 
 The model writes JavaScript to navigate memory. This is the key innovation: instead of retrieving and truncating (losing detail), the model explores memory programmatically.
 
+Safety note: generated snippets run in a restricted VM context with only the memory API exposed and execution timeouts applied. Treat this as defense-in-depth for agent-generated code, not as a general-purpose hostile-code sandbox.
+
 ```typescript
 // Navigate memory with the RLM loop
 const { answer, observations } = await memory.replNavigate(
@@ -975,6 +977,8 @@ const adapter = new HttpAdapter({
 
 await adapter.start();
 ```
+
+The advanced route surface includes graph recall, smart recall, context packs, memory health triage, shared namespaces, procedural matching, and identity audit endpoints.
 
 - `POST /memory/query-with-neighbors` — graph-aware retrieval with `query` + `options`
 - `POST /memory/shared` — store namespaced shared/private memory with `namespace` + `visibility`
@@ -1244,7 +1248,7 @@ const memory = new ReMEM({ llm: { type: 'ollama', baseUrl: 'http://localhost:114
 - **SQLite via sql.js** - WebAssembly-compiled SQLite. No native binaries. Cross-platform by default.
 - **PostgreSQL via optional `pg` peer dependency** - Server/shared deployment backend with JSONB topic/metadata fields, GIN topic index, event log, embeddings table, layered memory table, and snapshot export/import support.
 - **Atomic writes** - Data written to `.tmp` then renamed. Crash-safe.
-- **WAL mode** - Enables `PRAGMA journal_mode=WAL` for better concurrent write handling.
+- **WAL mode** - Best-effort `PRAGMA journal_mode=WAL` hint for SQLite/sql.js deployments where supported.
 - **Layer persistence** - `layered_memories` table ensures layer data survives process restarts.
 - **Snapshots** - Full core + layered memory state serialized to JSON in `snapshots` table with SHA-256 checksums. Ideal for backup/restore and migration.
 - **Event sourcing** - Append-only `events` table. All mutations logged with timestamps and payloads.

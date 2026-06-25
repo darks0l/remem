@@ -98,6 +98,11 @@ export class ReMEM {
     return Array.isArray(parsed) ? parsed.join('/') : parsed;
   }
 
+  private namespaceTopicTrail(namespace: string): string[] {
+    const parts = namespace.split('/').map((part) => part.trim()).filter(Boolean);
+    return parts.map((_, index) => parts.slice(0, index + 1).join('/'));
+  }
+
   private buildScopedMetadataFilters(
     scope?: NamespaceQueryScope,
     namespace?: string,
@@ -1123,7 +1128,7 @@ export class ReMEM {
     const { namespace: rawNamespace, visibility: rawVisibility, ...rest } = input;
     const namespace = this.normalizeNamespace(rawNamespace);
     const visibility = rawVisibility ?? 'shared';
-    const topics = Array.from(new Set([...(rest.topics ?? []), namespace]));
+    const topics = Array.from(new Set([...(rest.topics ?? []), ...this.namespaceTopicTrail(namespace)]));
 
     await this.store({
       content: rest.content,
@@ -1143,6 +1148,10 @@ export class ReMEM {
     scope?: NamespaceQueryScope
   ): Promise<QueryResponse> {
     const normalizedNamespace = this.normalizeNamespace(namespace);
+    const parsedScope = namespaceQueryScopeSchema.parse(scope ?? {});
+    const topics = parsedScope.includeDescendants
+      ? options?.topics
+      : Array.from(new Set([...(options?.topics ?? []), normalizedNamespace]));
     const queryOptions = queryWithNeighborsOptionsSchema.pick({
       limit: true,
       topics: true,
@@ -1152,8 +1161,8 @@ export class ReMEM {
       until: true,
     }).parse({
       ...(options ?? {}),
-      topics: Array.from(new Set([...(options?.topics ?? []), normalizedNamespace])),
-      metadata: this.buildScopedMetadataFilters(scope, normalizedNamespace, options?.metadata),
+      ...(topics ? { topics } : {}),
+      metadata: this.buildScopedMetadataFilters(parsedScope, normalizedNamespace, options?.metadata),
     });
     return this.query(query, queryOptions);
   }

@@ -4112,6 +4112,7 @@ async function infectFromServer(params) {
 }
 
 // src/repl.ts
+var import_node_vm = require("vm");
 var DEFAULT_SYSTEM_PROMPT2 = `You are a memory navigation assistant. The user has a large memory store containing thoughts, facts, preferences, and context.
 
 Your job is to navigate the memory store by writing JavaScript code. You NEVER see the full memory \u2014 you only see metadata and what you observe from your own queries.
@@ -4141,8 +4142,8 @@ RESPONSE FORMAT \u2014 return EXACTLY one of:
 
 IMPORTANT:
 - Always return valid JavaScript object literals, not statements
-- Do NOT use await, async, fetch, require, import, or any Node.js APIs
-- The 'mem' object methods are already Promise-aware when used with await inside your code
+- You may use await with the provided mem methods
+- Do NOT use fetch, require, import, timers, or any Node.js APIs
 - You can write multi-line code that calls multiple mem methods and returns an observation
 - Be specific in your queries \u2014 don't just ask for everything at once
 - After observing results, build on them with more targeted queries
@@ -4284,17 +4285,40 @@ Embeddings: ${this.store ? "available (semantic search enabled)" : "not configur
    * Uses Function constructor — no eval, no require, no Node.js globals.
    * Only exposes the safe memory API.
    */
-  executeCode(code) {
-    const memAPI = this.buildMemoryAPI();
-    const executor = new Function(
-      "mem",
-      `return (async () => { ${code} })()`
+  async executeCode(code) {
+    const memAPI = Object.freeze(this.buildMemoryAPI());
+    const context = (0, import_node_vm.createContext)(
+      /* @__PURE__ */ Object.create(null),
+      {
+        name: "remem-repl",
+        codeGeneration: { strings: false, wasm: false }
+      }
     );
+    Object.defineProperty(context, "mem", {
+      value: memAPI,
+      enumerable: true,
+      configurable: false,
+      writable: false
+    });
     try {
-      return executor(memAPI);
+      const script = new import_node_vm.Script(`"use strict"; (async () => (${code}))()`);
+      const result = script.runInContext(context, {
+        timeout: 500,
+        displayErrors: true
+      });
+      return await this.withTimeout(Promise.resolve(result), 3e3);
     } catch (err) {
-      return Promise.resolve({ __error: String(err) });
+      return { __error: String(err) };
     }
+  }
+  withTimeout(promise, timeoutMs) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`REPL execution timed out after ${timeoutMs}ms`)), timeoutMs);
+    });
+    return Promise.race([promise, timeout]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
   }
   /**
    * Build the safe memory API exposed to model-generated code.
@@ -5897,6 +5921,10 @@ var ReMEM = class {
     const parsed = namespaceInputSchema.parse(namespace);
     return Array.isArray(parsed) ? parsed.join("/") : parsed;
   }
+  namespaceTopicTrail(namespace) {
+    const parts = namespace.split("/").map((part) => part.trim()).filter(Boolean);
+    return parts.map((_, index) => parts.slice(0, index + 1).join("/"));
+  }
   buildScopedMetadataFilters(scope, namespace, existing) {
     const parsedScope = namespaceQueryScopeSchema.parse(scope ?? {});
     const metadata = { ...existing ?? {} };
@@ -6744,7 +6772,7 @@ profile: ${profile}
     const { namespace: rawNamespace, visibility: rawVisibility, ...rest } = input;
     const namespace = this.normalizeNamespace(rawNamespace);
     const visibility = rawVisibility ?? "shared";
-    const topics = Array.from(/* @__PURE__ */ new Set([...rest.topics ?? [], namespace]));
+    const topics = Array.from(/* @__PURE__ */ new Set([...rest.topics ?? [], ...this.namespaceTopicTrail(namespace)]));
     await this.store({
       content: rest.content,
       topics,
@@ -6757,6 +6785,8 @@ profile: ${profile}
   }
   async queryNamespace(namespace, query, options, scope) {
     const normalizedNamespace = this.normalizeNamespace(namespace);
+    const parsedScope = namespaceQueryScopeSchema.parse(scope ?? {});
+    const topics = parsedScope.includeDescendants ? options?.topics : Array.from(/* @__PURE__ */ new Set([...options?.topics ?? [], normalizedNamespace]));
     const queryOptions = queryWithNeighborsOptionsSchema.pick({
       limit: true,
       topics: true,
@@ -6766,8 +6796,8 @@ profile: ${profile}
       until: true
     }).parse({
       ...options ?? {},
-      topics: Array.from(/* @__PURE__ */ new Set([...options?.topics ?? [], normalizedNamespace])),
-      metadata: this.buildScopedMetadataFilters(scope, normalizedNamespace, options?.metadata)
+      ...topics ? { topics } : {},
+      metadata: this.buildScopedMetadataFilters(parsedScope, normalizedNamespace, options?.metadata)
     });
     return this.query(query, queryOptions);
   }

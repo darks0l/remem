@@ -77,6 +77,27 @@ describe('ReMEM CLI', () => {
     expect(payload.recommendations.some((item: { action: string }) => item.action === 'create-snapshot')).toBe(true);
   });
 
+  it('preserves zero-valued health thresholds', async () => {
+    const db = `./.tmp-cli-health-zero-${Date.now()}-${Math.random().toString(16).slice(2)}.db`;
+    await fs.rm(db, { force: true });
+    for (let i = 0; i < 4; i += 1) {
+      await invoke(['store', '--db', db, '--content', `Tagged health memory ${i}`, '--topics', 'health', '--json']);
+    }
+    await invoke(['store', '--db', db, '--content', 'Single untagged memory', '--json']);
+
+    const result = await invoke([
+      'health',
+      '--db', db,
+      '--min-snapshot-memories', '99',
+      '--max-untagged-ratio', '0',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.checks.some((check: { name: string; status: string }) => check.name === 'topic-coverage' && check.status === 'warn')).toBe(true);
+  });
+
   it('stores and queries data through the CLI JSON contract', async () => {
     const db = './.tmp-cli-test.db';
     const storeResult = await invoke(['store', '--db', db, '--content', 'Meta likes dark mode', '--topics', 'prefs,ui', '--json']);

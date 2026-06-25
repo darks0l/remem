@@ -22,6 +22,7 @@ import type { LLMMessage, QueryResult } from './types.js';
 import type { MemoryStoreLike } from './storage-types.js';
 import { LayerManager } from './layers.js';
 import { ModelAbstraction } from './model.js';
+import { Script, createContext } from 'node:vm';
 
 // ─── Safe Function Executor ──────────────────────────────────────────────────
 
@@ -80,8 +81,8 @@ RESPONSE FORMAT — return EXACTLY one of:
 
 IMPORTANT:
 - Always return valid JavaScript object literals, not statements
-- Do NOT use await, async, fetch, require, import, or any Node.js APIs
-- The 'mem' object methods are already Promise-aware when used with await inside your code
+- You may use await with the provided mem methods
+- Do NOT use fetch, require, import, timers, or any Node.js APIs
 - You can write multi-line code that calls multiple mem methods and returns an observation
 - Be specific in your queries — don't just ask for everything at once
 - After observing results, build on them with more targeted queries
@@ -244,24 +245,45 @@ export class MemoryREPL {
 
   /**
    * Execute model-generated code safely.
-   * Uses Function constructor — no eval, no require, no Node.js globals.
-   * Only exposes the safe memory API.
+   * Uses a restricted VM context with no Node globals exposed.
+   * Only exposes the safe memory API and applies execution timeouts.
    */
-  private executeCode(code: string): Promise<unknown> {
-    // Build safe executor with only the memory API
-    const memAPI = this.buildMemoryAPI();
-
-    // Wrap in async IIFE so we can use await inside the generated code
-    const executor = new Function(
-      'mem',
-      `return (async () => { ${code} })()`
+  private async executeCode(code: string): Promise<unknown> {
+    const memAPI = Object.freeze(this.buildMemoryAPI());
+    const context = createContext(
+      Object.create(null) as Record<string, unknown>,
+      {
+        name: 'remem-repl',
+        codeGeneration: { strings: false, wasm: false },
+      }
     );
+    Object.defineProperty(context, 'mem', {
+      value: memAPI,
+      enumerable: true,
+      configurable: false,
+      writable: false,
+    });
 
     try {
-      return executor(memAPI) as Promise<unknown>;
+      const script = new Script(`"use strict"; (async () => (${code}))()`);
+      const result = script.runInContext(context, {
+        timeout: 500,
+        displayErrors: true,
+      }) as Promise<unknown>;
+      return await this.withTimeout(Promise.resolve(result), 3_000);
     } catch (err) {
-      return Promise.resolve({ __error: String(err) });
+      return { __error: String(err) };
     }
+  }
+
+  private withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`REPL execution timed out after ${timeoutMs}ms`)), timeoutMs);
+    });
+    return Promise.race([promise, timeout]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
   }
 
   /**

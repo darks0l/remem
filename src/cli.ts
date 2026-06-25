@@ -43,6 +43,11 @@ function asString(value: string | boolean | undefined, fallback = '') {
   return fallback;
 }
 
+function asNumber(value: string | boolean | undefined, fallback: number) {
+  const parsed = Number(asString(value, String(fallback)));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function asCsv(value: string | boolean | undefined) {
   if (typeof value !== 'string') return [];
   return value.split(',').map((item) => item.trim()).filter(Boolean);
@@ -532,11 +537,11 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
   if (command === 'health') {
     await withMemory(options, async (memory, context) => {
       const healthOptions: MemoryHealthOptions = {
-        staleAgeMs: Number(asString(options['stale-age-ms'], String(7 * 24 * 60 * 60 * 1000))) || 7 * 24 * 60 * 60 * 1000,
-        maxSnapshotAgeMs: Number(asString(options['max-snapshot-age-ms'], String(24 * 60 * 60 * 1000))) || 24 * 60 * 60 * 1000,
-        minSnapshotMemories: Number(asString(options['min-snapshot-memories'], '10')) || 10,
-        maxUntaggedRatio: Number(asString(options['max-untagged-ratio'], '0.25')) || 0.25,
-        duplicateSampleLimit: Number(asString(options['duplicate-sample-limit'], '10')) || 10,
+        staleAgeMs: asNumber(options['stale-age-ms'], 7 * 24 * 60 * 60 * 1000),
+        maxSnapshotAgeMs: asNumber(options['max-snapshot-age-ms'], 24 * 60 * 60 * 1000),
+        minSnapshotMemories: asNumber(options['min-snapshot-memories'], 10),
+        maxUntaggedRatio: asNumber(options['max-untagged-ratio'], 0.25),
+        duplicateSampleLimit: asNumber(options['duplicate-sample-limit'], 10),
       };
       const health = await memory.health(healthOptions);
       const payload = {
