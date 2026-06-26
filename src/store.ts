@@ -36,7 +36,14 @@ import {
   queryOptionsSchema,
 } from './types.js';
 import { EmbeddingService } from './embeddings.js';
-import type { MemoryStoreLike, SnapshotExport, SnapshotMeta, StoreMemoryOptions } from './storage-types.js';
+import type {
+  MemoryStoreLike,
+  SnapshotExport,
+  SnapshotMeta,
+  StorageMaintenanceOptions,
+  StorageMaintenanceResult,
+  StoreMemoryOptions,
+} from './storage-types.js';
 
 export class MemoryStore implements MemoryStoreLike {
   private db: SqlJsDatabase | null = null;
@@ -1008,6 +1015,89 @@ export class MemoryStore implements MemoryStoreLike {
   // ─── Embeddings (v0.3.2) ───────────────────────────────────────────────────
 
   /**
+   * Run low-level storage maintenance.
+   * Prunes expired layered memories, removes dangling links/embeddings, and
+   * optionally compacts the SQLite database. Supports dry-run for planning.
+   */
+  async maintenance(
+    options: StorageMaintenanceOptions = {},
+    opts?: StoreMemoryOptions
+  ): Promise<StorageMaintenanceResult> {
+    this.ensureInitialized();
+    const checkedAt = options.now ?? Date.now();
+    const dryRun = options.dryRun === true;
+    const pruneExpired = options.pruneExpired !== false;
+    const pruneOrphanLinks = options.pruneOrphanLinks !== false;
+    const pruneOrphanEmbeddings = options.pruneOrphanEmbeddings !== false;
+    const compact = options.compact === true;
+
+    let expiredLayerEntries = 0;
+    let orphanLinks = 0;
+    let orphanEmbeddings = 0;
+
+    const scope = this.scopeClause(opts, 'agent_id', 'user_id');
+
+    if (pruneExpired) {
+      const where = ['expires_at IS NOT NULL', 'expires_at <= ?', ...scope.conditions];
+      const params = [checkedAt, ...scope.params];
+      expiredLayerEntries = this.countRows(`SELECT COUNT(*) AS count FROM layered_memories WHERE ${where.join(' AND ')}`, params);
+      if (!dryRun && expiredLayerEntries > 0) {
+        this.db!.run(`DELETE FROM layered_memories WHERE ${where.join(' AND ')}`, params);
+      }
+    }
+
+    if (pruneOrphanLinks) {
+      const orphanWhere = '(NOT EXISTS (SELECT 1 FROM memory m WHERE m.id = memory_links.from_id) OR NOT EXISTS (SELECT 1 FROM memory m WHERE m.id = memory_links.to_id))';
+      const scopedWhere = scope.conditions.length ? `${orphanWhere} AND ${scope.conditions.join(' AND ')}` : orphanWhere;
+      orphanLinks = this.countRows(`SELECT COUNT(*) AS count FROM memory_links WHERE ${scopedWhere}`, scope.params);
+      if (!dryRun && orphanLinks > 0) {
+        this.db!.run(`DELETE FROM memory_links WHERE ${scopedWhere}`, scope.params);
+      }
+    }
+
+    if (pruneOrphanEmbeddings) {
+      const memorySql = 'SELECT 1 FROM memory m WHERE m.id = embeddings.memory_id';
+      const layerSql = 'SELECT 1 FROM layered_memories m WHERE m.id = embeddings.memory_id';
+      const where = `NOT EXISTS (${memorySql}) AND NOT EXISTS (${layerSql})`;
+      orphanEmbeddings = this.countRows(`SELECT COUNT(*) AS count FROM embeddings WHERE ${where}`);
+      if (!dryRun && orphanEmbeddings > 0) {
+        this.db!.run(`DELETE FROM embeddings WHERE ${where}`);
+      }
+    }
+
+    let compacted = false;
+    if (compact && !dryRun) {
+      try {
+        this.db!.run('VACUUM');
+        compacted = true;
+      } catch {
+        compacted = false;
+      }
+    }
+
+    if (!dryRun && (expiredLayerEntries > 0 || orphanLinks > 0 || orphanEmbeddings > 0 || compacted)) {
+      this.logEvent('storage.maintenance', {
+        expiredLayerEntries,
+        orphanLinks,
+        orphanEmbeddings,
+        compacted,
+        scoped: opts ?? {},
+      });
+      this.persist();
+    }
+
+    return {
+      checkedAt,
+      dryRun,
+      expiredLayerEntries,
+      orphanLinks,
+      orphanEmbeddings,
+      compacted,
+      scoped: opts ?? {},
+    };
+  }
+
+  /**
    * Store a vector embedding for a memory entry.
    * Called after MemoryStore.store() when embeddings are enabled.
    */
@@ -1210,6 +1300,29 @@ export class MemoryStore implements MemoryStoreLike {
     const info = this.db.exec(`PRAGMA table_info(${table})`);
     const exists = info[0]?.values.some((row) => row[1] === column) ?? false;
     if (!exists) this.db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+
+  private countRows(sql: string, params: Array<string | number | null> = []): number {
+    const result = this.db!.exec(sql, params);
+    return Number(result[0]?.values[0]?.[0] ?? 0);
+  }
+
+  private scopeClause(
+    opts: StoreMemoryOptions | undefined,
+    agentColumn: string,
+    userColumn: string
+  ): { conditions: string[]; params: string[] } {
+    const conditions: string[] = [];
+    const params: string[] = [];
+    if (opts?.agentId) {
+      conditions.push(`${agentColumn} = ?`);
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      conditions.push(`${userColumn} = ?`);
+      params.push(opts.userId);
+    }
+    return { conditions, params };
   }
 
   private snapshotChecksum(snapshotData: unknown): string {

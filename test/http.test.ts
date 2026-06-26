@@ -125,6 +125,17 @@ describe('HttpAdapter', () => {
     expect(memoryHealthJson.checks.some((check) => check.name === 'snapshot-coverage')).toBe(true);
     expect(Array.isArray(memoryHealthJson.recommendations)).toBe(true);
 
+    const storageMaintenance = await fetch('http://127.0.0.1:18913/storage/maintenance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ options: { dryRun: true, compact: true } }),
+    });
+    expect(storageMaintenance.status).toBe(200);
+    const storageMaintenanceJson = await readJson(storageMaintenance) as { dryRun: boolean; compacted: boolean; orphanEmbeddings: number };
+    expect(storageMaintenanceJson.dryRun).toBe(true);
+    expect(storageMaintenanceJson.compacted).toBe(false);
+    expect(storageMaintenanceJson.orphanEmbeddings).toBe(0);
+
     const sharedCreate = await fetch('http://127.0.0.1:18913/memory/shared', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

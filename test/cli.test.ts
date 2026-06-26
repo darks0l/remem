@@ -77,6 +77,22 @@ describe('ReMEM CLI', () => {
     expect(payload.recommendations.some((item: { action: string }) => item.action === 'create-snapshot')).toBe(true);
   });
 
+  it('returns storage maintenance through the CLI JSON contract', async () => {
+    const db = `./.tmp-cli-storage-maintenance-${Date.now()}-${Math.random().toString(16).slice(2)}.db`;
+    await fs.rm(db, { force: true });
+
+    const result = await invoke(['storage-maintenance', '--db', db, '--dry-run', '--compact', '--json']);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.command).toBe('storage-maintenance');
+    expect(payload.dryRun).toBe(true);
+    expect(payload.compacted).toBe(false);
+    expect(payload.expiredLayerEntries).toBe(0);
+    expect(payload.orphanLinks).toBe(0);
+    expect(payload.orphanEmbeddings).toBe(0);
+  });
+
   it('preserves zero-valued health thresholds', async () => {
     const db = `./.tmp-cli-health-zero-${Date.now()}-${Math.random().toString(16).slice(2)}.db`;
     await fs.rm(db, { force: true });

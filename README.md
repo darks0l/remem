@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.16.0](https://img.shields.io/badge/v0.16.0-memory--health-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.17.0](https://img.shields.io/badge/v0.17.0-storage--maintenance-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -78,6 +78,7 @@ There is also a direct CLI surface for agent-facing operations:
 remem status --db ./remem.db
 remem stats --db ./remem.db --json
 remem health --db ./remem.db --json
+remem storage-maintenance --db ./remem.db --dry-run --json
 remem store --content "Meta likes dark mode" --topics preferences,ui
 remem query --query "What does Meta like?"
 remem context-pack --query "What context should the next agent carry?" --max-chars 6000 --json
@@ -122,6 +123,13 @@ Example actions in a health report:
 - run consolidation when duplicate memories start polluting recall
 - improve topic coverage for untagged memories
 - pack context around stale memories before deciding what to keep
+
+Use `storage-maintenance` when an agent needs to clean the backing store itself. It can dry-run or apply pruning for expired layered memories, dangling memory links, orphan embeddings, and optional SQLite compaction:
+
+```bash
+remem storage-maintenance --db ./remem.db --dry-run --json
+remem storage-maintenance --db ./remem.db --compact --json
+```
 
 ### Dreaming from long memory
 
@@ -978,7 +986,7 @@ const adapter = new HttpAdapter({
 await adapter.start();
 ```
 
-The advanced route surface includes graph recall, smart recall, context packs, memory health triage, shared namespaces, procedural matching, and identity audit endpoints.
+The advanced route surface includes graph recall, smart recall, context packs, memory health triage, storage maintenance, shared namespaces, procedural matching, and identity audit endpoints.
 
 - `POST /memory/query-with-neighbors` — graph-aware retrieval with `query` + `options`
 - `POST /memory/shared` — store namespaced shared/private memory with `namespace` + `visibility`
@@ -987,7 +995,13 @@ The advanced route surface includes graph recall, smart recall, context packs, m
 - `POST /memory/procedural/match` — procedural trigger matching with `context`
 - `POST /identity/audit` — identity drift audit with `sessionText`
 - `GET /health` — includes `advancedRoutes` and `nativeVectorSearch`
-```
+
+Additional advanced routes:
+
+- `POST /memory/smart-recall` - multi-lane recall with profiles such as `fast`, `deep`, and `agent-safe`
+- `POST /memory/context-pack` - bounded context pack generation for handoffs and agent prompts
+- `GET /memory/health` / `POST /memory/health` - memory health triage with concrete recommendations
+- `POST /storage/maintenance` - dry-run or apply expired/orphan storage cleanup
 
 ### Shared memory namespaces
 
@@ -1119,6 +1133,18 @@ const snapshots = await memory.listSnapshots()
 await memory.deleteSnapshot(snapId)
 ```
 
+### Storage maintenance
+
+```typescript
+const report = await memory.storageMaintenance({ dryRun: true })
+// -> counts expired layers, orphan links, and orphan embeddings without mutating
+
+await memory.storageMaintenance({ compact: true })
+// -> prunes expired/orphan storage rows and runs SQLite compaction when available
+```
+
+Use this after health checks, long-running sessions, or migrations to keep the backing store from accumulating dead rows.
+
 ### Identity
 
 ```typescript
@@ -1215,6 +1241,12 @@ curl -X DELETE -H "Authorization: Bearer $REMEM_TOKEN" \
 # Events
 curl -H "Authorization: Bearer $REMEM_TOKEN" \
   "http://localhost:8787/events?limit=50"
+
+# Storage maintenance
+curl -X POST "http://localhost:8787/storage/maintenance" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -d '{"options":{"dryRun":true,"compact":true}}'
 
 # Health
 curl -H "Authorization: Bearer $REMEM_TOKEN" \

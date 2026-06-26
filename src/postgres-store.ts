@@ -19,7 +19,14 @@ import {
   queryOptionsSchema,
 } from './types.js';
 import { EmbeddingService } from './embeddings.js';
-import type { MemoryStoreLike, SnapshotExport, SnapshotMeta, StoreMemoryOptions } from './storage-types.js';
+import type {
+  MemoryStoreLike,
+  SnapshotExport,
+  SnapshotMeta,
+  StorageMaintenanceOptions,
+  StorageMaintenanceResult,
+  StoreMemoryOptions,
+} from './storage-types.js';
 
 export interface PostgresStoreConfig {
   connectionString?: string;
@@ -536,6 +543,84 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     return (result.rowCount ?? 0) > 0;
   }
 
+  async maintenance(
+    options: StorageMaintenanceOptions = {},
+    opts?: StoreMemoryOptions
+  ): Promise<StorageMaintenanceResult> {
+    const checkedAt = options.now ?? Date.now();
+    const dryRun = options.dryRun === true;
+    const pruneExpired = options.pruneExpired !== false;
+    const pruneOrphanLinks = options.pruneOrphanLinks !== false;
+    const pruneOrphanEmbeddings = options.pruneOrphanEmbeddings !== false;
+    const compact = options.compact === true;
+
+    let expiredLayerEntries = 0;
+    let orphanLinks = 0;
+    let orphanEmbeddings = 0;
+
+    const scoped = this.exactScopeConditions(opts, 2);
+
+    if (pruneExpired) {
+      const conditions = ['expires_at IS NOT NULL', 'expires_at <= $1', ...scoped.conditions];
+      const params = [checkedAt, ...scoped.params];
+      expiredLayerEntries = await this.countPgRows(`SELECT COUNT(*)::text AS count FROM ${this.table('layered_memories')} WHERE ${conditions.join(' AND ')}`, params);
+      if (!dryRun && expiredLayerEntries > 0) {
+        await this.pgQuery(`DELETE FROM ${this.table('layered_memories')} WHERE ${conditions.join(' AND ')}`, params);
+      }
+    }
+
+    if (pruneOrphanLinks) {
+      const scopedLinks = this.exactScopeConditions(opts, 1);
+      const orphanWhere = '(NOT EXISTS (SELECT 1 FROM ' + this.table('memory') + ' m WHERE m.id = ml.from_id) OR NOT EXISTS (SELECT 1 FROM ' + this.table('memory') + ' m WHERE m.id = ml.to_id))';
+      const conditions = [orphanWhere, ...scopedLinks.conditions];
+      orphanLinks = await this.countPgRows(`SELECT COUNT(*)::text AS count FROM ${this.table('memory_links')} ml WHERE ${conditions.join(' AND ')}`, scopedLinks.params);
+      if (!dryRun && orphanLinks > 0) {
+        await this.pgQuery(`DELETE FROM ${this.table('memory_links')} ml WHERE ${conditions.join(' AND ')}`, scopedLinks.params);
+      }
+    }
+
+    if (pruneOrphanEmbeddings) {
+      const memorySql = `SELECT 1 FROM ${this.table('memory')} m WHERE m.id = e.memory_id`;
+      const layerSql = `SELECT 1 FROM ${this.table('layered_memories')} m WHERE m.id = e.memory_id`;
+      const where = `NOT EXISTS (${memorySql}) AND NOT EXISTS (${layerSql})`;
+      orphanEmbeddings = await this.countPgRows(`SELECT COUNT(*)::text AS count FROM ${this.table('embeddings')} e WHERE ${where}`);
+      if (!dryRun && orphanEmbeddings > 0) {
+        await this.pgQuery(`DELETE FROM ${this.table('embeddings')} e WHERE ${where}`);
+      }
+    }
+
+    let compacted = false;
+    if (compact && !dryRun) {
+      await Promise.all([
+        this.pgQuery(`VACUUM (ANALYZE) ${this.table('memory')}`).catch(() => undefined),
+        this.pgQuery(`VACUUM (ANALYZE) ${this.table('layered_memories')}`).catch(() => undefined),
+        this.pgQuery(`VACUUM (ANALYZE) ${this.table('memory_links')}`).catch(() => undefined),
+        this.pgQuery(`VACUUM (ANALYZE) ${this.table('embeddings')}`).catch(() => undefined),
+      ]);
+      compacted = true;
+    }
+
+    if (!dryRun && (expiredLayerEntries > 0 || orphanLinks > 0 || orphanEmbeddings > 0 || compacted)) {
+      await this.logEvent('storage.maintenance', {
+        expiredLayerEntries,
+        orphanLinks,
+        orphanEmbeddings,
+        compacted,
+        scoped: opts ?? {},
+      });
+    }
+
+    return {
+      checkedAt,
+      dryRun,
+      expiredLayerEntries,
+      orphanLinks,
+      orphanEmbeddings,
+      compacted,
+      scoped: opts ?? {},
+    };
+  }
+
   async storeEmbedding(memoryId: string, base64: string, dimension: number, model: string, type: 'memory' | 'layered' = 'memory'): Promise<void> {
     const vectorValue = this.pgvectorAvailable
       ? this.toPgvectorLiteral(EmbeddingService.decodeVector(base64, dimension))
@@ -758,6 +843,20 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     if (opts?.agentId) { conditions.push(`(agent_id = $${idx++} OR agent_id IS NULL)`); params.push(opts.agentId); }
     if (opts?.userId) { conditions.push(`(user_id = $${idx++} OR user_id IS NULL)`); params.push(opts.userId); }
     return { where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '', params };
+  }
+
+  private exactScopeConditions(opts: StoreMemoryOptions | undefined, startIndex = 1): { conditions: string[]; params: unknown[] } {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let idx = startIndex;
+    if (opts?.agentId) { conditions.push(`agent_id = $${idx++}`); params.push(opts.agentId); }
+    if (opts?.userId) { conditions.push(`user_id = $${idx++}`); params.push(opts.userId); }
+    return { conditions, params };
+  }
+
+  private async countPgRows(sql: string, params: unknown[] = []): Promise<number> {
+    const result = await this.pgQuery<{ count: string }>(sql, params);
+    return Number(result.rows[0]?.count ?? 0);
   }
 
   private rowToMemory(row: Record<string, unknown>): MemoryEntry {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ReMEM } from './index.js';
+import { ReMEM, type StorageMaintenanceOptions } from './index.js';
 import { runSmokeChecks } from './smoke.js';
 import { generateInitArtifacts, type RuntimeFocus } from './setup.js';
 import { launchTerminalUi } from './ui.js';
@@ -128,6 +128,7 @@ Usage:
   remem status [--db <path>]
   remem stats [--db <path>] [--json]
   remem health [--db <path>] [--json]
+  remem storage-maintenance [--dry-run] [--compact] [--json]
   remem store --content <text> [--topics a,b] [--metadata '{"kind":"note"}']
   remem query --query <text> [--limit 8]
   remem recent [--limit 10]
@@ -562,6 +563,43 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
             formatChecks(health.checks),
             'recommendations:',
             formatRecommendations(health.recommendations),
+            '',
+          ].join('\n')
+        );
+      }
+    });
+    return 0;
+  }
+
+  if (command === 'storage-maintenance') {
+    await withMemory(options, async (memory, context) => {
+      const maintenanceOptions: StorageMaintenanceOptions = {
+        dryRun: Boolean(options['dry-run']),
+        compact: Boolean(options.compact),
+        pruneExpired: !options['skip-expired'],
+        pruneOrphanLinks: !options['skip-orphan-links'],
+        pruneOrphanEmbeddings: !options['skip-orphan-embeddings'],
+        now: options.now ? asNumber(options.now, Date.now()) : undefined,
+      };
+      const result = await memory.storageMaintenance(maintenanceOptions);
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...result,
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        emitText(
+          runtime,
+          [
+            `storage maintenance: ${result.dryRun ? 'dry-run' : 'applied'}`,
+            `expired layer entries: ${result.expiredLayerEntries}`,
+            `orphan links: ${result.orphanLinks}`,
+            `orphan embeddings: ${result.orphanEmbeddings}`,
+            `compacted: ${result.compacted ? 'yes' : 'no'}`,
             '',
           ].join('\n')
         );

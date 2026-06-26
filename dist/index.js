@@ -397,6 +397,7 @@ var eventTypeSchema = import_zod.z.enum([
   "memory.superseded",
   "snapshot.created",
   "snapshot.restored",
+  "storage.maintenance",
   "identity.constitution_updated",
   "identity.drift_detected",
   "identity.drift_correction_injected"
@@ -1504,6 +1505,77 @@ var MemoryStore = class {
   }
   // ─── Embeddings (v0.3.2) ───────────────────────────────────────────────────
   /**
+   * Run low-level storage maintenance.
+   * Prunes expired layered memories, removes dangling links/embeddings, and
+   * optionally compacts the SQLite database. Supports dry-run for planning.
+   */
+  async maintenance(options = {}, opts) {
+    this.ensureInitialized();
+    const checkedAt = options.now ?? Date.now();
+    const dryRun = options.dryRun === true;
+    const pruneExpired = options.pruneExpired !== false;
+    const pruneOrphanLinks = options.pruneOrphanLinks !== false;
+    const pruneOrphanEmbeddings = options.pruneOrphanEmbeddings !== false;
+    const compact = options.compact === true;
+    let expiredLayerEntries = 0;
+    let orphanLinks = 0;
+    let orphanEmbeddings = 0;
+    const scope = this.scopeClause(opts, "agent_id", "user_id");
+    if (pruneExpired) {
+      const where = ["expires_at IS NOT NULL", "expires_at <= ?", ...scope.conditions];
+      const params = [checkedAt, ...scope.params];
+      expiredLayerEntries = this.countRows(`SELECT COUNT(*) AS count FROM layered_memories WHERE ${where.join(" AND ")}`, params);
+      if (!dryRun && expiredLayerEntries > 0) {
+        this.db.run(`DELETE FROM layered_memories WHERE ${where.join(" AND ")}`, params);
+      }
+    }
+    if (pruneOrphanLinks) {
+      const orphanWhere = "(NOT EXISTS (SELECT 1 FROM memory m WHERE m.id = memory_links.from_id) OR NOT EXISTS (SELECT 1 FROM memory m WHERE m.id = memory_links.to_id))";
+      const scopedWhere = scope.conditions.length ? `${orphanWhere} AND ${scope.conditions.join(" AND ")}` : orphanWhere;
+      orphanLinks = this.countRows(`SELECT COUNT(*) AS count FROM memory_links WHERE ${scopedWhere}`, scope.params);
+      if (!dryRun && orphanLinks > 0) {
+        this.db.run(`DELETE FROM memory_links WHERE ${scopedWhere}`, scope.params);
+      }
+    }
+    if (pruneOrphanEmbeddings) {
+      const memorySql = "SELECT 1 FROM memory m WHERE m.id = embeddings.memory_id";
+      const layerSql = "SELECT 1 FROM layered_memories m WHERE m.id = embeddings.memory_id";
+      const where = `NOT EXISTS (${memorySql}) AND NOT EXISTS (${layerSql})`;
+      orphanEmbeddings = this.countRows(`SELECT COUNT(*) AS count FROM embeddings WHERE ${where}`);
+      if (!dryRun && orphanEmbeddings > 0) {
+        this.db.run(`DELETE FROM embeddings WHERE ${where}`);
+      }
+    }
+    let compacted = false;
+    if (compact && !dryRun) {
+      try {
+        this.db.run("VACUUM");
+        compacted = true;
+      } catch {
+        compacted = false;
+      }
+    }
+    if (!dryRun && (expiredLayerEntries > 0 || orphanLinks > 0 || orphanEmbeddings > 0 || compacted)) {
+      this.logEvent("storage.maintenance", {
+        expiredLayerEntries,
+        orphanLinks,
+        orphanEmbeddings,
+        compacted,
+        scoped: opts ?? {}
+      });
+      this.persist();
+    }
+    return {
+      checkedAt,
+      dryRun,
+      expiredLayerEntries,
+      orphanLinks,
+      orphanEmbeddings,
+      compacted,
+      scoped: opts ?? {}
+    };
+  }
+  /**
    * Store a vector embedding for a memory entry.
    * Called after MemoryStore.store() when embeddings are enabled.
    */
@@ -1656,6 +1728,23 @@ var MemoryStore = class {
     const info = this.db.exec(`PRAGMA table_info(${table})`);
     const exists = info[0]?.values.some((row) => row[1] === column) ?? false;
     if (!exists) this.db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+  countRows(sql, params = []) {
+    const result = this.db.exec(sql, params);
+    return Number(result[0]?.values[0]?.[0] ?? 0);
+  }
+  scopeClause(opts, agentColumn, userColumn) {
+    const conditions = [];
+    const params = [];
+    if (opts?.agentId) {
+      conditions.push(`${agentColumn} = ?`);
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      conditions.push(`${userColumn} = ?`);
+      params.push(opts.userId);
+    }
+    return { conditions, params };
   }
   snapshotChecksum(snapshotData) {
     return (0, import_crypto2.createHash)("sha256").update(JSON.stringify(snapshotData)).digest("hex");
@@ -2288,6 +2377,72 @@ var PostgresMemoryStore = class {
     const result = await this.pgQuery(`DELETE FROM ${this.table("snapshots")} WHERE id = $1`, [snapshotId]);
     return (result.rowCount ?? 0) > 0;
   }
+  async maintenance(options = {}, opts) {
+    const checkedAt = options.now ?? Date.now();
+    const dryRun = options.dryRun === true;
+    const pruneExpired = options.pruneExpired !== false;
+    const pruneOrphanLinks = options.pruneOrphanLinks !== false;
+    const pruneOrphanEmbeddings = options.pruneOrphanEmbeddings !== false;
+    const compact = options.compact === true;
+    let expiredLayerEntries = 0;
+    let orphanLinks = 0;
+    let orphanEmbeddings = 0;
+    const scoped = this.exactScopeConditions(opts, 2);
+    if (pruneExpired) {
+      const conditions = ["expires_at IS NOT NULL", "expires_at <= $1", ...scoped.conditions];
+      const params = [checkedAt, ...scoped.params];
+      expiredLayerEntries = await this.countPgRows(`SELECT COUNT(*)::text AS count FROM ${this.table("layered_memories")} WHERE ${conditions.join(" AND ")}`, params);
+      if (!dryRun && expiredLayerEntries > 0) {
+        await this.pgQuery(`DELETE FROM ${this.table("layered_memories")} WHERE ${conditions.join(" AND ")}`, params);
+      }
+    }
+    if (pruneOrphanLinks) {
+      const scopedLinks = this.exactScopeConditions(opts, 1);
+      const orphanWhere = "(NOT EXISTS (SELECT 1 FROM " + this.table("memory") + " m WHERE m.id = ml.from_id) OR NOT EXISTS (SELECT 1 FROM " + this.table("memory") + " m WHERE m.id = ml.to_id))";
+      const conditions = [orphanWhere, ...scopedLinks.conditions];
+      orphanLinks = await this.countPgRows(`SELECT COUNT(*)::text AS count FROM ${this.table("memory_links")} ml WHERE ${conditions.join(" AND ")}`, scopedLinks.params);
+      if (!dryRun && orphanLinks > 0) {
+        await this.pgQuery(`DELETE FROM ${this.table("memory_links")} ml WHERE ${conditions.join(" AND ")}`, scopedLinks.params);
+      }
+    }
+    if (pruneOrphanEmbeddings) {
+      const memorySql = `SELECT 1 FROM ${this.table("memory")} m WHERE m.id = e.memory_id`;
+      const layerSql = `SELECT 1 FROM ${this.table("layered_memories")} m WHERE m.id = e.memory_id`;
+      const where = `NOT EXISTS (${memorySql}) AND NOT EXISTS (${layerSql})`;
+      orphanEmbeddings = await this.countPgRows(`SELECT COUNT(*)::text AS count FROM ${this.table("embeddings")} e WHERE ${where}`);
+      if (!dryRun && orphanEmbeddings > 0) {
+        await this.pgQuery(`DELETE FROM ${this.table("embeddings")} e WHERE ${where}`);
+      }
+    }
+    let compacted = false;
+    if (compact && !dryRun) {
+      await Promise.all([
+        this.pgQuery(`VACUUM (ANALYZE) ${this.table("memory")}`).catch(() => void 0),
+        this.pgQuery(`VACUUM (ANALYZE) ${this.table("layered_memories")}`).catch(() => void 0),
+        this.pgQuery(`VACUUM (ANALYZE) ${this.table("memory_links")}`).catch(() => void 0),
+        this.pgQuery(`VACUUM (ANALYZE) ${this.table("embeddings")}`).catch(() => void 0)
+      ]);
+      compacted = true;
+    }
+    if (!dryRun && (expiredLayerEntries > 0 || orphanLinks > 0 || orphanEmbeddings > 0 || compacted)) {
+      await this.logEvent("storage.maintenance", {
+        expiredLayerEntries,
+        orphanLinks,
+        orphanEmbeddings,
+        compacted,
+        scoped: opts ?? {}
+      });
+    }
+    return {
+      checkedAt,
+      dryRun,
+      expiredLayerEntries,
+      orphanLinks,
+      orphanEmbeddings,
+      compacted,
+      scoped: opts ?? {}
+    };
+  }
   async storeEmbedding(memoryId, base64, dimension, model, type = "memory") {
     const vectorValue = this.pgvectorAvailable ? this.toPgvectorLiteral(EmbeddingService.decodeVector(base64, dimension)) : null;
     await this.pgQuery(
@@ -2537,6 +2692,24 @@ var PostgresMemoryStore = class {
       params.push(opts.userId);
     }
     return { where: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "", params };
+  }
+  exactScopeConditions(opts, startIndex = 1) {
+    const conditions = [];
+    const params = [];
+    let idx = startIndex;
+    if (opts?.agentId) {
+      conditions.push(`agent_id = $${idx++}`);
+      params.push(opts.agentId);
+    }
+    if (opts?.userId) {
+      conditions.push(`user_id = $${idx++}`);
+      params.push(opts.userId);
+    }
+    return { conditions, params };
+  }
+  async countPgRows(sql, params = []) {
+    const result = await this.pgQuery(sql, params);
+    return Number(result.rows[0]?.count ?? 0);
   }
   rowToMemory(row) {
     return {
@@ -4282,8 +4455,8 @@ Embeddings: ${this.store ? "available (semantic search enabled)" : "not configur
   }
   /**
    * Execute model-generated code safely.
-   * Uses Function constructor — no eval, no require, no Node.js globals.
-   * Only exposes the safe memory API.
+   * Uses a restricted VM context with no Node globals exposed.
+   * Only exposes the safe memory API and applies execution timeouts.
    */
   async executeCode(code) {
     const memAPI = Object.freeze(this.buildMemoryAPI());
@@ -5197,6 +5370,14 @@ var HttpAdapter = class {
         options = parsed.options;
       }
       const result = await this.memory.health(options);
+      return { status: 200, body: result };
+    }
+    if (method === "POST" && path === "/storage/maintenance") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      const result = await this.memory.storageMaintenance(parsed.options);
       return { status: 200, body: result };
     }
     if (method === "POST" && path === "/memory/procedural/match") {
@@ -6572,6 +6753,19 @@ profile: ${profile}
       oldestMemoryAt,
       newestMemoryAt
     };
+  }
+  /**
+   * Run storage maintenance for the configured memory scope.
+   * Use dryRun first to inspect expired layers and dangling storage rows before pruning.
+   */
+  async storageMaintenance(options) {
+    if (!this._store.maintenance) {
+      throw new Error("Configured storage adapter does not support maintenance");
+    }
+    return this._store.maintenance(options, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
   }
   /**
    * Return a first-class memory health report with concrete maintenance actions.

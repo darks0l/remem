@@ -21,7 +21,7 @@ import {
   queryWithNeighborsOptionsSchema,
   storeMemoryInputSchema,
 } from './types.js';
-import type { MemoryStoreLike } from './storage-types.js';
+import type { MemoryStoreLike, StorageMaintenanceOptions, StorageMaintenanceResult } from './storage-types.js';
 import { ModelAbstraction } from './model.js';
 import { QueryEngine } from './query.js';
 
@@ -30,6 +30,7 @@ export interface AdvancedMemoryRuntime {
   smartRecall(query: string, options?: import('./types.js').SmartRecallOptions): Promise<import('./types.js').SmartRecallResponse>;
   contextPack(query: string, options?: import('./types.js').ContextPackOptions): Promise<import('./types.js').ContextPackResponse>;
   health(options?: MemoryHealthOptions): Promise<import('./types.js').MemoryHealthResponse>;
+  storageMaintenance(options?: StorageMaintenanceOptions): Promise<StorageMaintenanceResult>;
   storeShared(input: import('./types.js').StoreMemoryInput & { namespace: NamespaceInput; visibility?: 'private' | 'shared' }): Promise<void>;
   queryNamespace(namespace: NamespaceInput, query: string, options?: QueryOptions, scope?: NamespaceQueryScope): Promise<QueryResponse>;
   getRecentInNamespace(namespace: NamespaceInput, n?: number, scope?: NamespaceQueryScope): Promise<QueryResult[]>;
@@ -268,6 +269,15 @@ export class HttpAdapter {
     }
 
     // POST /memory/procedural/match — evaluate procedural triggers against context
+    if (method === 'POST' && path === '/storage/maintenance') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) as { options?: StorageMaintenanceOptions } : {};
+      const result = await this.memory.storageMaintenance(parsed.options);
+      return { status: 200, body: result };
+    }
+
     if (method === 'POST' && path === '/memory/procedural/match') {
       if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
       if (!req) return { status: 400, body: { error: 'Request body unavailable' } };

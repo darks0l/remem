@@ -426,6 +426,7 @@ export const eventTypeSchema = z.enum([
   'memory.superseded',
   'snapshot.created',
   'snapshot.restored',
+  'storage.maintenance',
   'identity.constitution_updated',
   'identity.drift_detected',
   'identity.drift_correction_injected',

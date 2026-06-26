@@ -39,6 +39,25 @@ export interface StoreMemoryOptions {
   userId?: string;
 }
 
+export interface StorageMaintenanceOptions {
+  dryRun?: boolean;
+  now?: number;
+  pruneExpired?: boolean;
+  pruneOrphanLinks?: boolean;
+  pruneOrphanEmbeddings?: boolean;
+  compact?: boolean;
+}
+
+export interface StorageMaintenanceResult {
+  checkedAt: number;
+  dryRun: boolean;
+  expiredLayerEntries: number;
+  orphanLinks: number;
+  orphanEmbeddings: number;
+  compacted: boolean;
+  scoped: StoreMemoryOptions;
+}
+
 export interface MemoryStoreLike {
   matchMetadata?(entryMetadata: Record<string, unknown>, filters: Record<string, MetadataFilter>): boolean;
   init(): Promise<void>;
@@ -62,6 +81,7 @@ export interface MemoryStoreLike {
   exportSnapshot(snapshotId: string): Promise<SnapshotExport>;
   importSnapshot(snapshot: SnapshotExport, opts?: { overwrite?: boolean }): Promise<SnapshotMeta>;
   deleteSnapshot(snapshotId: string): Promise<boolean>;
+  maintenance?(options?: StorageMaintenanceOptions, opts?: StoreMemoryOptions): Promise<StorageMaintenanceResult>;
   storeEmbedding(memoryId: string, base64: string, dimension: number, model: string, type?: 'memory' | 'layered'): Promise<void>;
   getEmbedding(memoryId: string): Promise<{ base64: string; dimension: number } | null>;
   deleteEmbedding(memoryId: string): Promise<void>;

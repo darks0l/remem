@@ -5,7 +5,7 @@
 
 import { MemoryStore } from './store.js';
 import { PostgresMemoryStore, type PostgresStoreConfig } from './postgres-store.js';
-import type { MemoryStoreLike } from './storage-types.js';
+import type { MemoryStoreLike, StorageMaintenanceOptions, StorageMaintenanceResult } from './storage-types.js';
 import { ModelAbstraction } from './model.js';
 import { QueryEngine } from './query.js';
 import {
@@ -901,6 +901,20 @@ export class ReMEM {
       oldestMemoryAt,
       newestMemoryAt,
     };
+  }
+
+  /**
+   * Run storage maintenance for the configured memory scope.
+   * Use dryRun first to inspect expired layers and dangling storage rows before pruning.
+   */
+  async storageMaintenance(options?: StorageMaintenanceOptions): Promise<StorageMaintenanceResult> {
+    if (!this._store.maintenance) {
+      throw new Error('Configured storage adapter does not support maintenance');
+    }
+    return this._store.maintenance(options, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
   }
 
   /**
@@ -1841,7 +1855,14 @@ export class ReMEM {
 // Re-export everything
 export { MemoryStore } from './store.js';
 export { PostgresMemoryStore } from './postgres-store.js';
-export type { MemoryStoreLike, SnapshotExport, SnapshotMeta, StoreMemoryOptions } from './storage-types.js';
+export type {
+  MemoryStoreLike,
+  SnapshotExport,
+  SnapshotMeta,
+  StorageMaintenanceOptions,
+  StorageMaintenanceResult,
+  StoreMemoryOptions,
+} from './storage-types.js';
 export { ModelAbstraction } from './model.js';
 export { QueryEngine } from './query.js';
 export { MemoryREPL } from './repl.js';

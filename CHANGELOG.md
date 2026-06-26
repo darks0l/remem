@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No unreleased changes yet.
 
+## [0.17.0] - 2026-06-26
+
+### Added
+
+- Added `memory.storageMaintenance()` for dry-run capable storage cleanup of expired layered memories, dangling memory links, orphan embeddings, and optional SQLite compaction.
+- Added `remem storage-maintenance --json` for agent-readable storage maintenance reports.
+- Added `POST /storage/maintenance` for HTTP runtimes that need to inspect or apply storage cleanup remotely.
+- Added regression coverage for the core storage maintenance API, CLI JSON contract, and HTTP route.
+
+### Changed
+
+- README now documents storage maintenance alongside stats, health triage, snapshots, and advanced HTTP routes.
+
 ## [0.16.0] - 2026-06-25
 
 ### Added
