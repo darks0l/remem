@@ -314,6 +314,89 @@ export const namespaceQueryScopeSchema = z.object({
 export type NamespaceQueryScope = z.infer<typeof namespaceQueryScopeSchema>;
 
 // ============================================================================
+// External Knowledge / Code Graph Types
+// ============================================================================
+
+export const knowledgeNodeSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1).default('Node'),
+  name: z.string().min(1).optional(),
+  kind: z.string().min(1).optional(),
+  content: z.string().optional(),
+  summary: z.string().optional(),
+  path: z.string().optional(),
+  language: z.string().optional(),
+  metadata: z.record(z.unknown()).optional().default({}),
+});
+
+export type KnowledgeNode = z.infer<typeof knowledgeNodeSchema>;
+
+export const knowledgeEdgeSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+  type: z.string().min(1),
+  metadata: z.record(z.unknown()).optional().default({}),
+});
+
+export type KnowledgeEdge = z.infer<typeof knowledgeEdgeSchema>;
+
+export const knowledgeGraphArtifactSchema = z.object({
+  source: z.string().min(1).default('external-knowledge'),
+  project: z.string().min(1).optional(),
+  version: z.string().optional(),
+  generatedAt: z.number().optional(),
+  artifactPath: z.string().optional(),
+  nodes: z.array(knowledgeNodeSchema).default([]),
+  edges: z.array(knowledgeEdgeSchema).default([]),
+  metadata: z.record(z.unknown()).optional().default({}),
+});
+
+export type KnowledgeGraphArtifact = z.infer<typeof knowledgeGraphArtifactSchema>;
+
+export const knowledgeIngestOptionsSchema = z.object({
+  source: z.string().min(1).optional(),
+  project: z.string().min(1).optional(),
+  namespace: namespaceInputSchema.optional(),
+  visibility: z.enum(['private', 'shared']).default('shared'),
+  topic: z.string().min(1).default('knowledge-graph'),
+  linkTypePrefix: z.string().default('knowledge'),
+});
+
+export type KnowledgeIngestOptions = z.infer<typeof knowledgeIngestOptionsSchema>;
+
+export const knowledgeIngestResultSchema = z.object({
+  source: z.string(),
+  project: z.string().optional(),
+  namespace: z.string(),
+  nodesStored: z.number(),
+  edgesLinked: z.number(),
+  skippedEdges: z.number(),
+  nodeMemoryIds: z.record(z.string()),
+});
+
+export type KnowledgeIngestResult = z.infer<typeof knowledgeIngestResultSchema>;
+
+export const knowledgeArtifactRegistrationSchema = z.object({
+  source: z.string().min(1).default('external-knowledge'),
+  project: z.string().min(1).optional(),
+  artifactPath: z.string().min(1),
+  format: z.string().min(1).default('json'),
+  compression: z.string().min(1).optional(),
+  checksum: z.string().optional(),
+  generatedAt: z.number().optional(),
+  metadata: z.record(z.unknown()).optional().default({}),
+});
+
+export type KnowledgeArtifactRegistration = z.infer<typeof knowledgeArtifactRegistrationSchema>;
+
+export type KnowledgeArtifactRegistrationResult = {
+  id: string;
+  source: string;
+  project?: string;
+  artifactPath: string;
+};
+
+// ============================================================================
 // Model Abstraction Types
 // ============================================================================
 
@@ -427,6 +510,8 @@ export const eventTypeSchema = z.enum([
   'snapshot.created',
   'snapshot.restored',
   'storage.maintenance',
+  'knowledge.ingested',
+  'knowledge.artifact_registered',
   'identity.constitution_updated',
   'identity.drift_detected',
   'identity.drift_correction_injected',

@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { gunzip } from 'node:zlib';
+import { promisify } from 'node:util';
 import { ReMEM, type StorageMaintenanceOptions } from './index.js';
 import { runSmokeChecks } from './smoke.js';
 import { generateInitArtifacts, type RuntimeFocus } from './setup.js';
 import { launchTerminalUi } from './ui.js';
-import { rememConfigSchema, type ContextPackOptions, type MemoryHealthOptions, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions } from './types.js';
+import { knowledgeArtifactRegistrationSchema, knowledgeGraphArtifactSchema, rememConfigSchema, type ContextPackOptions, type MemoryHealthOptions, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions } from './types.js';
+
+const gunzipAsync = promisify(gunzip);
 
 type ParsedArgs = {
   command: string;
@@ -129,6 +133,8 @@ Usage:
   remem stats [--db <path>] [--json]
   remem health [--db <path>] [--json]
   remem storage-maintenance [--dry-run] [--compact] [--json]
+  remem knowledge-artifact --path <file> [--source codebase-memory-mcp] [--project <name>] [--format sqlite] [--compression zstd] [--json]
+  remem knowledge-ingest --artifact <graph.json|graph.json.gz> [--source <name>] [--project <name>] [--namespace team/code] [--visibility shared|private] [--json]
   remem store --content <text> [--topics a,b] [--metadata '{"kind":"note"}']
   remem query --query <text> [--limit 8]
   remem recent [--limit 10]
@@ -245,6 +251,15 @@ async function writeInitArtifacts(outDir: string, artifacts: ReturnType<typeof g
 async function readJsonFile(filePath: string) {
   const raw = await fs.readFile(filePath, 'utf8');
   return JSON.parse(raw) as unknown;
+}
+
+async function readKnowledgeGraphFile(filePath: string) {
+  const resolved = path.resolve(filePath);
+  const data = await fs.readFile(resolved);
+  const raw = resolved.endsWith('.gz')
+    ? (await gunzipAsync(data)).toString('utf8')
+    : data.toString('utf8');
+  return knowledgeGraphArtifactSchema.parse(JSON.parse(raw));
 }
 
 async function validateConfigFile(filePath: string) {
@@ -604,6 +619,64 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
           ].join('\n')
         );
       }
+    });
+    return 0;
+  }
+
+  if (command === 'knowledge-artifact') {
+    await withMemory(options, async (memory, context) => {
+      const artifactPath = asString(options.path);
+      const registration = knowledgeArtifactRegistrationSchema.parse({
+        source: asString(options.source, 'codebase-memory-mcp'),
+        project: asString(options.project) || undefined,
+        artifactPath,
+        format: asString(options.format, artifactPath.endsWith('.zst') ? 'sqlite' : 'json'),
+        compression: asString(options.compression, artifactPath.endsWith('.zst') ? 'zstd' : '') || undefined,
+        checksum: asString(options.checksum) || undefined,
+        generatedAt: options['generated-at'] ? asNumber(options['generated-at'], Date.now()) : undefined,
+        metadata: parseMaybeJson(options.metadata),
+      });
+      const result = await memory.registerKnowledgeArtifact(registration);
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...result,
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `Registered knowledge artifact ${result.artifactPath} (${result.id}).\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'knowledge-ingest') {
+    await withMemory(options, async (memory, context) => {
+      const artifactPath = asString(options.artifact);
+      const graph = await readKnowledgeGraphFile(artifactPath);
+      const visibility = asString(options.visibility, 'shared') === 'private' ? 'private' : 'shared';
+      const result = await memory.ingestKnowledgeGraph(graph, {
+        source: asString(options.source) || graph.source,
+        project: asString(options.project) || graph.project,
+        namespace: asNamespace(options.namespace).length
+          ? asNamespace(options.namespace)
+          : undefined,
+        visibility,
+        topic: asString(options.topic, 'knowledge-graph'),
+        linkTypePrefix: asString(options['link-prefix'], 'knowledge'),
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        artifact: path.resolve(artifactPath),
+        ...result,
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `Ingested ${result.nodesStored} knowledge nodes and ${result.edgesLinked} links (${result.skippedEdges} skipped).\n`);
     });
     return 0;
   }

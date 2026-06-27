@@ -93,6 +93,56 @@ describe('ReMEM CLI', () => {
     expect(payload.orphanEmbeddings).toBe(0);
   });
 
+  it('registers and ingests knowledge graphs through the CLI JSON contract', async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const db = `./.tmp-cli-knowledge-${suffix}.db`;
+    const artifact = `./.tmp-cli-knowledge-${suffix}.json`;
+    await fs.rm(db, { force: true });
+    await fs.writeFile(artifact, JSON.stringify({
+      source: 'codebase-memory-mcp',
+      project: 'remem',
+      nodes: [
+        { id: 'fn:ProcessOrder', label: 'Function', name: 'ProcessOrder' },
+        { id: 'fn:ChargeCard', label: 'Function', name: 'ChargeCard' },
+      ],
+      edges: [
+        { from: 'fn:ProcessOrder', to: 'fn:ChargeCard', type: 'CALLS' },
+      ],
+    }), 'utf8');
+
+    const registered = await invoke([
+      'knowledge-artifact',
+      '--db', db,
+      '--path', '.codebase-memory/graph.db.zst',
+      '--source', 'codebase-memory-mcp',
+      '--project', 'remem',
+      '--format', 'sqlite',
+      '--compression', 'zstd',
+      '--json',
+    ]);
+    expect(registered.exitCode).toBe(0);
+    const registeredPayload = JSON.parse(registered.stdout);
+    expect(registeredPayload.command).toBe('knowledge-artifact');
+    expect(registeredPayload.artifactPath).toBe('.codebase-memory/graph.db.zst');
+
+    const ingested = await invoke([
+      'knowledge-ingest',
+      '--db', db,
+      '--artifact', artifact,
+      '--json',
+    ]);
+    expect(ingested.exitCode).toBe(0);
+    const ingestedPayload = JSON.parse(ingested.stdout);
+    expect(ingestedPayload.command).toBe('knowledge-ingest');
+    expect(ingestedPayload.nodesStored).toBe(2);
+    expect(ingestedPayload.edgesLinked).toBe(1);
+
+    const queried = await invoke(['query', '--db', db, '--query', 'ProcessOrder', '--json']);
+    expect(JSON.parse(queried.stdout).results[0].metadata.source).toBe('remem.knowledge.node');
+
+    await fs.rm(artifact, { force: true });
+  });
+
   it('preserves zero-valued health thresholds', async () => {
     const db = `./.tmp-cli-health-zero-${Date.now()}-${Math.random().toString(16).slice(2)}.db`;
     await fs.rm(db, { force: true });

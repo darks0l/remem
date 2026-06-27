@@ -24,6 +24,9 @@ import { MemoryREPL } from './repl.js';
 import { MemoryConsolidator, type ConsolidationWorkflowOptions, type ConsolidationWorkflowResult } from './consolidate.js';
 import {
   linkedMemoryQueryOptionsSchema,
+  knowledgeArtifactRegistrationSchema,
+  knowledgeGraphArtifactSchema,
+  knowledgeIngestOptionsSchema,
   queryWithNeighborsOptionsSchema,
   rememConfigSchema,
   smartRecallOptionsSchema,
@@ -43,6 +46,12 @@ import {
   type MemoryHealthRecommendation,
   type MemoryHealthResponse,
   type LayeredMemoryEntry,
+  type KnowledgeArtifactRegistration,
+  type KnowledgeArtifactRegistrationResult,
+  type KnowledgeGraphArtifact,
+  type KnowledgeIngestOptions,
+  type KnowledgeIngestResult,
+  type KnowledgeNode,
   type NeighborPath,
   type ProceduralMatch,
   type ProceduralTrigger,
@@ -915,6 +924,161 @@ export class ReMEM {
       agentId: this._agentId,
       userId: this._userId,
     });
+  }
+
+  /**
+   * Register an external knowledge artifact without importing all of its rows.
+   * Use this for compressed or tool-owned graph files, for example a
+   * `.codebase-memory/graph.db.zst` produced by a codebase-memory MCP.
+   */
+  async registerKnowledgeArtifact(input: KnowledgeArtifactRegistration): Promise<KnowledgeArtifactRegistrationResult> {
+    const artifact = knowledgeArtifactRegistrationSchema.parse(input);
+    const source = artifact.source;
+    const namespace = this.normalizeNamespace(['knowledge', source, artifact.project ?? 'default']);
+    const content = [
+      `External knowledge artifact registered: ${artifact.artifactPath}`,
+      `source: ${source}`,
+      artifact.project ? `project: ${artifact.project}` : null,
+      `format: ${artifact.format}`,
+      artifact.compression ? `compression: ${artifact.compression}` : null,
+      artifact.checksum ? `checksum: ${artifact.checksum}` : null,
+    ].filter(Boolean).join('\n');
+
+    const entry = await this._store.store({
+      content,
+      topics: Array.from(new Set(['knowledge-artifact', source, ...this.namespaceTopicTrail(namespace)])),
+      metadata: {
+        ...artifact.metadata,
+        source: 'remem.knowledge.artifact',
+        knowledgeSource: source,
+        project: artifact.project,
+        artifactPath: artifact.artifactPath,
+        format: artifact.format,
+        compression: artifact.compression,
+        checksum: artifact.checksum,
+        generatedAt: artifact.generatedAt,
+        namespace,
+        visibility: 'shared',
+      },
+    }, {
+      agentId: this._agentId,
+      userId: this._userId,
+    });
+
+    return {
+      id: entry.id,
+      source,
+      project: artifact.project,
+      artifactPath: artifact.artifactPath,
+    };
+  }
+
+  /**
+   * Ingest a portable external knowledge graph into ReMEM.
+   * Nodes become memory entries and edges become ReMEM links, so existing
+   * graph recall can traverse architecture/import/call relationships.
+   */
+  async ingestKnowledgeGraph(
+    artifact: KnowledgeGraphArtifact,
+    options?: KnowledgeIngestOptions
+  ): Promise<KnowledgeIngestResult> {
+    const graph = knowledgeGraphArtifactSchema.parse(artifact);
+    const opts = knowledgeIngestOptionsSchema.parse({
+      source: graph.source,
+      project: graph.project,
+      ...options,
+    });
+    const source = opts.source ?? graph.source;
+    const project = opts.project ?? graph.project;
+    const namespace = this.normalizeNamespace(opts.namespace ?? ['knowledge', source, project ?? 'default']);
+    const scope = { agentId: this._agentId, userId: this._userId };
+    const nodeMemoryIds: Record<string, string> = {};
+    let nodesStored = 0;
+    let edgesLinked = 0;
+    let skippedEdges = 0;
+
+    for (const node of graph.nodes) {
+      const entry = await this._store.store({
+        content: this.renderKnowledgeNodeContent(node),
+        topics: Array.from(new Set([
+          opts.topic,
+          source,
+          node.label,
+          ...(node.kind ? [node.kind] : []),
+          ...(node.language ? [`language:${node.language}`] : []),
+          ...this.namespaceTopicTrail(namespace),
+        ])),
+        metadata: {
+          ...node.metadata,
+          source: 'remem.knowledge.node',
+          knowledgeSource: source,
+          project,
+          externalId: node.id,
+          label: node.label,
+          name: node.name,
+          kind: node.kind,
+          path: node.path,
+          language: node.language,
+          namespace,
+          visibility: opts.visibility,
+        },
+      }, scope);
+      nodeMemoryIds[node.id] = entry.id;
+      nodesStored += 1;
+    }
+
+    for (const edge of graph.edges) {
+      const fromId = nodeMemoryIds[edge.from];
+      const toId = nodeMemoryIds[edge.to];
+      if (!fromId || !toId) {
+        skippedEdges += 1;
+        continue;
+      }
+      await this._store.createLink({
+        fromId,
+        toId,
+        type: this.normalizeKnowledgeLinkType(edge.type, opts.linkTypePrefix),
+        metadata: {
+          ...edge.metadata,
+          source: 'remem.knowledge.edge',
+          knowledgeSource: source,
+          project,
+          externalFrom: edge.from,
+          externalTo: edge.to,
+          externalType: edge.type,
+        },
+      }, scope);
+      edgesLinked += 1;
+    }
+
+    return {
+      source,
+      project,
+      namespace,
+      nodesStored,
+      edgesLinked,
+      skippedEdges,
+      nodeMemoryIds,
+    };
+  }
+
+  private renderKnowledgeNodeContent(node: KnowledgeNode): string {
+    const title = node.name ?? node.id;
+    const lines = [
+      `${node.label}: ${title}`,
+      node.kind ? `kind: ${node.kind}` : null,
+      node.path ? `path: ${node.path}` : null,
+      node.language ? `language: ${node.language}` : null,
+      node.summary,
+      node.content,
+    ].filter((line): line is string => typeof line === 'string' && line.trim().length > 0);
+    return lines.join('\n');
+  }
+
+  private normalizeKnowledgeLinkType(type: string, prefix: string): string {
+    const normalized = type.trim().toLowerCase().replace(/[^a-z0-9_:-]+/g, '_').replace(/^_+|_+$/g, '');
+    if (!prefix) return normalized || 'related';
+    return `${prefix}:${normalized || 'related'}`;
   }
 
   /**
@@ -1874,6 +2038,7 @@ export {
   createHermesAdapter,
   createLangGraphStoreAdapter,
   createOpenClawAdapter,
+  createCodebaseMemoryAdapter,
 } from './adapters.js';
 export type { ReMEMAdapterOptions } from './adapters.js';
 export * from './types.js';

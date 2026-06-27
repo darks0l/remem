@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No unreleased changes yet.
 
+## [0.18.0] - 2026-06-26
+
+### Added
+
+- Added `memory.registerKnowledgeArtifact()` to store durable pointers to external knowledge graph artifacts such as `.codebase-memory/graph.db.zst`.
+- Added `memory.ingestKnowledgeGraph()` to import portable node/edge graphs as ReMEM memories and traversable memory links.
+- Added `createCodebaseMemoryAdapter()` with `registerArtifact`, `ingestGraph`, `searchGraph`, `architecture`, `impact`, and prompt-context helpers for codebase intelligence tools.
+- Added `remem knowledge-artifact` and `remem knowledge-ingest` for CLI-driven artifact registration and JSON/JSON.GZ graph ingestion.
+- Added `POST /knowledge/artifact` and `POST /knowledge/ingest` for HTTP runtimes and MCP bridges.
+- Added regression coverage for knowledge artifact registration, graph ingestion, link traversal, and the codebase adapter.
+
+### Changed
+
+- README now documents external/codebase knowledge interop alongside storage maintenance, adapters, and advanced HTTP routes.
+
 ## [0.17.0] - 2026-06-26
 
 ### Added

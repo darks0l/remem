@@ -50,6 +50,7 @@ __export(index_exports, {
   contextPackOptionsSchema: () => contextPackOptionsSchema,
   contextPackResponseSchema: () => contextPackResponseSchema,
   contextPackSectionSchema: () => contextPackSectionSchema,
+  createCodebaseMemoryAdapter: () => createCodebaseMemoryAdapter,
   createHermesAdapter: () => createHermesAdapter,
   createIdentitySystem: () => createIdentitySystem,
   createLangGraphStoreAdapter: () => createLangGraphStoreAdapter,
@@ -72,6 +73,12 @@ __export(index_exports, {
   infect: () => infect,
   infectFromServer: () => infectFromServer,
   infectionConfigSchema: () => infectionConfigSchema,
+  knowledgeArtifactRegistrationSchema: () => knowledgeArtifactRegistrationSchema,
+  knowledgeEdgeSchema: () => knowledgeEdgeSchema,
+  knowledgeGraphArtifactSchema: () => knowledgeGraphArtifactSchema,
+  knowledgeIngestOptionsSchema: () => knowledgeIngestOptionsSchema,
+  knowledgeIngestResultSchema: () => knowledgeIngestResultSchema,
+  knowledgeNodeSchema: () => knowledgeNodeSchema,
   layerConfigSchema: () => layerConfigSchema,
   layeredMemoryEntrySchema: () => layeredMemoryEntrySchema,
   linkedMemoryQueryOptionsSchema: () => linkedMemoryQueryOptionsSchema,
@@ -329,6 +336,60 @@ var namespaceQueryScopeSchema = import_zod.z.object({
   visibility: import_zod.z.enum(["private", "shared", "all"]).default("all"),
   includeDescendants: import_zod.z.boolean().default(false)
 });
+var knowledgeNodeSchema = import_zod.z.object({
+  id: import_zod.z.string().min(1),
+  label: import_zod.z.string().min(1).default("Node"),
+  name: import_zod.z.string().min(1).optional(),
+  kind: import_zod.z.string().min(1).optional(),
+  content: import_zod.z.string().optional(),
+  summary: import_zod.z.string().optional(),
+  path: import_zod.z.string().optional(),
+  language: import_zod.z.string().optional(),
+  metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
+});
+var knowledgeEdgeSchema = import_zod.z.object({
+  from: import_zod.z.string().min(1),
+  to: import_zod.z.string().min(1),
+  type: import_zod.z.string().min(1),
+  metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
+});
+var knowledgeGraphArtifactSchema = import_zod.z.object({
+  source: import_zod.z.string().min(1).default("external-knowledge"),
+  project: import_zod.z.string().min(1).optional(),
+  version: import_zod.z.string().optional(),
+  generatedAt: import_zod.z.number().optional(),
+  artifactPath: import_zod.z.string().optional(),
+  nodes: import_zod.z.array(knowledgeNodeSchema).default([]),
+  edges: import_zod.z.array(knowledgeEdgeSchema).default([]),
+  metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
+});
+var knowledgeIngestOptionsSchema = import_zod.z.object({
+  source: import_zod.z.string().min(1).optional(),
+  project: import_zod.z.string().min(1).optional(),
+  namespace: namespaceInputSchema.optional(),
+  visibility: import_zod.z.enum(["private", "shared"]).default("shared"),
+  topic: import_zod.z.string().min(1).default("knowledge-graph"),
+  linkTypePrefix: import_zod.z.string().default("knowledge")
+});
+var knowledgeIngestResultSchema = import_zod.z.object({
+  source: import_zod.z.string(),
+  project: import_zod.z.string().optional(),
+  namespace: import_zod.z.string(),
+  nodesStored: import_zod.z.number(),
+  edgesLinked: import_zod.z.number(),
+  skippedEdges: import_zod.z.number(),
+  nodeMemoryIds: import_zod.z.record(import_zod.z.string())
+});
+var knowledgeArtifactRegistrationSchema = import_zod.z.object({
+  source: import_zod.z.string().min(1).default("external-knowledge"),
+  project: import_zod.z.string().min(1).optional(),
+  artifactPath: import_zod.z.string().min(1),
+  format: import_zod.z.string().min(1).default("json"),
+  compression: import_zod.z.string().min(1).optional(),
+  checksum: import_zod.z.string().optional(),
+  generatedAt: import_zod.z.number().optional(),
+  metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
+});
 var modelConfigSchema = import_zod.z.discriminatedUnion("type", [
   import_zod.z.object({
     type: import_zod.z.literal("bankr"),
@@ -398,6 +459,8 @@ var eventTypeSchema = import_zod.z.enum([
   "snapshot.created",
   "snapshot.restored",
   "storage.maintenance",
+  "knowledge.ingested",
+  "knowledge.artifact_registered",
   "identity.constitution_updated",
   "identity.drift_detected",
   "identity.drift_correction_injected"
@@ -873,8 +936,13 @@ var MemoryStore = class {
   async query(text, options, scope) {
     this.ensureInitialized();
     const opts = queryOptionsSchema.parse(options ?? {});
-    let sql = "SELECT * FROM memory WHERE content LIKE ?";
-    const params = [`%${text}%`];
+    const terms = text.toLowerCase().split(/\s+/).map((term) => term.trim()).filter(Boolean);
+    let sql = "SELECT * FROM memory WHERE 1=1";
+    const params = [];
+    if (terms.length > 0) {
+      sql += ` AND (${terms.map(() => "LOWER(content) LIKE ?").join(" OR ")})`;
+      params.push(...terms.map((term) => `%${term}%`));
+    }
     if (scope?.agentId) {
       sql += " AND (agent_id = ? OR agent_id IS NULL)";
       params.push(scope.agentId);
@@ -899,13 +967,19 @@ var MemoryStore = class {
     }
     const rows = result[0].values.map((v) => this.rowToObject(result[0].columns, v));
     const filteredEntries = rows.map((row) => memoryEntrySchema.parse(row)).filter((entry) => !opts.topics || this.matchTopics(entry.topics, opts.topics)).filter((entry) => !opts.minAccessCount || entry.accessCount >= opts.minAccessCount).filter((entry) => !opts.metadata || this.matchMetadata(entry.metadata, opts.metadata));
-    const totalAvailable = filteredEntries.length;
-    const results = filteredEntries.slice(0, opts.limit).map((entry) => ({
+    const scoredEntries = filteredEntries.map((entry) => ({
+      entry,
+      relevanceScore: this.simpleRelevance(entry.content, text)
+    })).filter((scored) => terms.length === 0 || scored.relevanceScore > 0).sort(
+      (a, b) => b.relevanceScore - a.relevanceScore || b.entry.accessCount - a.entry.accessCount || b.entry.accessedAt - a.entry.accessedAt
+    );
+    const totalAvailable = scoredEntries.length;
+    const results = scoredEntries.slice(0, opts.limit).map(({ entry, relevanceScore }) => ({
       id: entry.id,
       content: entry.content,
       topics: entry.topics,
       metadata: entry.metadata,
-      relevanceScore: this.simpleRelevance(entry.content, text),
+      relevanceScore,
       createdAt: entry.createdAt,
       accessedAt: entry.accessedAt,
       accessCount: entry.accessCount
@@ -5380,6 +5454,24 @@ var HttpAdapter = class {
       const result = await this.memory.storageMaintenance(parsed.options);
       return { status: 200, body: result };
     }
+    if (method === "POST" && path === "/knowledge/artifact") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const artifact = knowledgeArtifactRegistrationSchema.parse(body ? JSON.parse(body) : {});
+      const result = await this.memory.registerKnowledgeArtifact(artifact);
+      return { status: 201, body: result };
+    }
+    if (method === "POST" && path === "/knowledge/ingest") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      const graph = knowledgeGraphArtifactSchema.parse(parsed.graph ?? parsed);
+      const options = parsed.options ? knowledgeIngestOptionsSchema.parse(parsed.options) : void 0;
+      const result = await this.memory.ingestKnowledgeGraph(graph, options);
+      return { status: 201, body: result };
+    }
     if (method === "POST" && path === "/memory/procedural/match") {
       if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
       if (!req) return { status: 400, body: { error: "Request body unavailable" } };
@@ -6084,6 +6176,67 @@ function createHermesAdapter(memory, options = {}) {
     }
   };
 }
+function createCodebaseMemoryAdapter(memory, options = {}) {
+  const defaultLimit = options.defaultLimit ?? 10;
+  return {
+    name: "codebase-memory",
+    async registerArtifact(input) {
+      const artifact = knowledgeArtifactRegistrationSchema.parse(input);
+      return memory.registerKnowledgeArtifact(artifact);
+    },
+    async ingestGraph(graph, ingestOptions) {
+      const parsed = knowledgeGraphArtifactSchema.parse(graph);
+      return memory.ingestKnowledgeGraph(parsed, ingestOptions);
+    },
+    async searchGraph(query, queryOptions = { limit: defaultLimit }) {
+      return memory.query(query, {
+        ...queryOptions,
+        metadata: {
+          ...queryOptions.metadata ?? {},
+          source: "remem.knowledge.node"
+        }
+      });
+    },
+    async architecture(project, limit = defaultLimit) {
+      return memory.query("architecture routes packages entry points hotspots boundaries clusters", {
+        limit,
+        metadata: {
+          source: "remem.knowledge.node",
+          ...project ? { project } : {}
+        }
+      });
+    },
+    async impact(subject, optionsOrLimit = defaultLimit) {
+      const queryOptions = typeof optionsOrLimit === "number" ? { limit: optionsOrLimit, neighborLimit: optionsOrLimit } : optionsOrLimit;
+      const limit = queryOptions.limit ?? defaultLimit;
+      const { project, metadata, ...rest } = queryOptions;
+      return memory.queryWithNeighbors(subject, {
+        ...rest,
+        limit,
+        metadata: {
+          ...metadata ?? {},
+          source: "remem.knowledge.node",
+          ...project ? { project } : {}
+        },
+        hops: 2,
+        includeBaseResults: true,
+        includePathDetails: true,
+        neighborLimit: queryOptions.neighborLimit ?? limit,
+        minNeighborScore: 0.1
+      });
+    },
+    async context(query, queryOptions = { limit: defaultLimit }) {
+      const response = await this.searchGraph(query, queryOptions);
+      return response.results.map((result) => {
+        const label = typeof result.metadata?.label === "string" ? result.metadata.label : "Node";
+        const name = typeof result.metadata?.name === "string" ? result.metadata.name : result.id;
+        const path = typeof result.metadata?.path === "string" ? ` ${result.metadata.path}` : "";
+        return `- ${label} ${name}${path}
+  ${result.content.replace(/\n/g, "\n  ")}`;
+      }).join("\n");
+    }
+  };
+}
 
 // src/index.ts
 var ReMEM = class {
@@ -6766,6 +6919,149 @@ profile: ${profile}
       agentId: this._agentId,
       userId: this._userId
     });
+  }
+  /**
+   * Register an external knowledge artifact without importing all of its rows.
+   * Use this for compressed or tool-owned graph files, for example a
+   * `.codebase-memory/graph.db.zst` produced by a codebase-memory MCP.
+   */
+  async registerKnowledgeArtifact(input) {
+    const artifact = knowledgeArtifactRegistrationSchema.parse(input);
+    const source = artifact.source;
+    const namespace = this.normalizeNamespace(["knowledge", source, artifact.project ?? "default"]);
+    const content = [
+      `External knowledge artifact registered: ${artifact.artifactPath}`,
+      `source: ${source}`,
+      artifact.project ? `project: ${artifact.project}` : null,
+      `format: ${artifact.format}`,
+      artifact.compression ? `compression: ${artifact.compression}` : null,
+      artifact.checksum ? `checksum: ${artifact.checksum}` : null
+    ].filter(Boolean).join("\n");
+    const entry = await this._store.store({
+      content,
+      topics: Array.from(/* @__PURE__ */ new Set(["knowledge-artifact", source, ...this.namespaceTopicTrail(namespace)])),
+      metadata: {
+        ...artifact.metadata,
+        source: "remem.knowledge.artifact",
+        knowledgeSource: source,
+        project: artifact.project,
+        artifactPath: artifact.artifactPath,
+        format: artifact.format,
+        compression: artifact.compression,
+        checksum: artifact.checksum,
+        generatedAt: artifact.generatedAt,
+        namespace,
+        visibility: "shared"
+      }
+    }, {
+      agentId: this._agentId,
+      userId: this._userId
+    });
+    return {
+      id: entry.id,
+      source,
+      project: artifact.project,
+      artifactPath: artifact.artifactPath
+    };
+  }
+  /**
+   * Ingest a portable external knowledge graph into ReMEM.
+   * Nodes become memory entries and edges become ReMEM links, so existing
+   * graph recall can traverse architecture/import/call relationships.
+   */
+  async ingestKnowledgeGraph(artifact, options) {
+    const graph = knowledgeGraphArtifactSchema.parse(artifact);
+    const opts = knowledgeIngestOptionsSchema.parse({
+      source: graph.source,
+      project: graph.project,
+      ...options
+    });
+    const source = opts.source ?? graph.source;
+    const project = opts.project ?? graph.project;
+    const namespace = this.normalizeNamespace(opts.namespace ?? ["knowledge", source, project ?? "default"]);
+    const scope = { agentId: this._agentId, userId: this._userId };
+    const nodeMemoryIds = {};
+    let nodesStored = 0;
+    let edgesLinked = 0;
+    let skippedEdges = 0;
+    for (const node of graph.nodes) {
+      const entry = await this._store.store({
+        content: this.renderKnowledgeNodeContent(node),
+        topics: Array.from(/* @__PURE__ */ new Set([
+          opts.topic,
+          source,
+          node.label,
+          ...node.kind ? [node.kind] : [],
+          ...node.language ? [`language:${node.language}`] : [],
+          ...this.namespaceTopicTrail(namespace)
+        ])),
+        metadata: {
+          ...node.metadata,
+          source: "remem.knowledge.node",
+          knowledgeSource: source,
+          project,
+          externalId: node.id,
+          label: node.label,
+          name: node.name,
+          kind: node.kind,
+          path: node.path,
+          language: node.language,
+          namespace,
+          visibility: opts.visibility
+        }
+      }, scope);
+      nodeMemoryIds[node.id] = entry.id;
+      nodesStored += 1;
+    }
+    for (const edge of graph.edges) {
+      const fromId = nodeMemoryIds[edge.from];
+      const toId = nodeMemoryIds[edge.to];
+      if (!fromId || !toId) {
+        skippedEdges += 1;
+        continue;
+      }
+      await this._store.createLink({
+        fromId,
+        toId,
+        type: this.normalizeKnowledgeLinkType(edge.type, opts.linkTypePrefix),
+        metadata: {
+          ...edge.metadata,
+          source: "remem.knowledge.edge",
+          knowledgeSource: source,
+          project,
+          externalFrom: edge.from,
+          externalTo: edge.to,
+          externalType: edge.type
+        }
+      }, scope);
+      edgesLinked += 1;
+    }
+    return {
+      source,
+      project,
+      namespace,
+      nodesStored,
+      edgesLinked,
+      skippedEdges,
+      nodeMemoryIds
+    };
+  }
+  renderKnowledgeNodeContent(node) {
+    const title = node.name ?? node.id;
+    const lines = [
+      `${node.label}: ${title}`,
+      node.kind ? `kind: ${node.kind}` : null,
+      node.path ? `path: ${node.path}` : null,
+      node.language ? `language: ${node.language}` : null,
+      node.summary,
+      node.content
+    ].filter((line) => typeof line === "string" && line.trim().length > 0);
+    return lines.join("\n");
+  }
+  normalizeKnowledgeLinkType(type, prefix) {
+    const normalized = type.trim().toLowerCase().replace(/[^a-z0-9_:-]+/g, "_").replace(/^_+|_+$/g, "");
+    if (!prefix) return normalized || "related";
+    return `${prefix}:${normalized || "related"}`;
   }
   /**
    * Return a first-class memory health report with concrete maintenance actions.
@@ -7539,6 +7835,7 @@ profile: ${profile}
   contextPackOptionsSchema,
   contextPackResponseSchema,
   contextPackSectionSchema,
+  createCodebaseMemoryAdapter,
   createHermesAdapter,
   createIdentitySystem,
   createLangGraphStoreAdapter,
@@ -7561,6 +7858,12 @@ profile: ${profile}
   infect,
   infectFromServer,
   infectionConfigSchema,
+  knowledgeArtifactRegistrationSchema,
+  knowledgeEdgeSchema,
+  knowledgeGraphArtifactSchema,
+  knowledgeIngestOptionsSchema,
+  knowledgeIngestResultSchema,
+  knowledgeNodeSchema,
   layerConfigSchema,
   layeredMemoryEntrySchema,
   linkedMemoryQueryOptionsSchema,

@@ -277,9 +277,15 @@ export class MemoryStore implements MemoryStoreLike {
   async query(text: string, options?: QueryOptions, scope?: StoreMemoryOptions): Promise<{ results: QueryResult[]; totalAvailable: number }> {
     this.ensureInitialized();
     const opts = queryOptionsSchema.parse(options ?? {});
+    const terms = text.toLowerCase().split(/\s+/).map((term) => term.trim()).filter(Boolean);
 
-    let sql = 'SELECT * FROM memory WHERE content LIKE ?';
-    const params: (string | number | null)[] = [`%${text}%`];
+    let sql = 'SELECT * FROM memory WHERE 1=1';
+    const params: (string | number | null)[] = [];
+
+    if (terms.length > 0) {
+      sql += ` AND (${terms.map(() => 'LOWER(content) LIKE ?').join(' OR ')})`;
+      params.push(...terms.map((term) => `%${term}%`));
+    }
 
     if (scope?.agentId) {
       sql += ' AND (agent_id = ? OR agent_id IS NULL)';
@@ -317,15 +323,27 @@ export class MemoryStore implements MemoryStoreLike {
       .filter((entry) => !opts.minAccessCount || entry.accessCount >= opts.minAccessCount)
       .filter((entry) => !opts.metadata || this.matchMetadata(entry.metadata, opts.metadata));
 
-    const totalAvailable = filteredEntries.length;
-    const results: QueryResult[] = filteredEntries
-      .slice(0, opts.limit)
+    const scoredEntries = filteredEntries
       .map((entry) => ({
+        entry,
+        relevanceScore: this.simpleRelevance(entry.content, text),
+      }))
+      .filter((scored) => terms.length === 0 || scored.relevanceScore > 0)
+      .sort((a, b) =>
+        b.relevanceScore - a.relevanceScore ||
+        b.entry.accessCount - a.entry.accessCount ||
+        b.entry.accessedAt - a.entry.accessedAt
+      );
+
+    const totalAvailable = scoredEntries.length;
+    const results: QueryResult[] = scoredEntries
+      .slice(0, opts.limit)
+      .map(({ entry, relevanceScore }) => ({
         id: entry.id,
         content: entry.content,
         topics: entry.topics,
         metadata: entry.metadata,
-        relevanceScore: this.simpleRelevance(entry.content, text),
+        relevanceScore,
         createdAt: entry.createdAt,
         accessedAt: entry.accessedAt,
         accessCount: entry.accessCount,

@@ -14,8 +14,14 @@ import type {
   QueryResult,
   QueryWithNeighborsOptions,
   MemoryHealthOptions,
+  KnowledgeArtifactRegistration,
+  KnowledgeGraphArtifact,
+  KnowledgeIngestOptions,
 } from './types.js';
 import {
+  knowledgeArtifactRegistrationSchema,
+  knowledgeGraphArtifactSchema,
+  knowledgeIngestOptionsSchema,
   namespaceInputSchema,
   namespaceQueryScopeSchema,
   queryWithNeighborsOptionsSchema,
@@ -31,6 +37,8 @@ export interface AdvancedMemoryRuntime {
   contextPack(query: string, options?: import('./types.js').ContextPackOptions): Promise<import('./types.js').ContextPackResponse>;
   health(options?: MemoryHealthOptions): Promise<import('./types.js').MemoryHealthResponse>;
   storageMaintenance(options?: StorageMaintenanceOptions): Promise<StorageMaintenanceResult>;
+  registerKnowledgeArtifact(input: KnowledgeArtifactRegistration): Promise<import('./types.js').KnowledgeArtifactRegistrationResult>;
+  ingestKnowledgeGraph(graph: KnowledgeGraphArtifact, options?: KnowledgeIngestOptions): Promise<import('./types.js').KnowledgeIngestResult>;
   storeShared(input: import('./types.js').StoreMemoryInput & { namespace: NamespaceInput; visibility?: 'private' | 'shared' }): Promise<void>;
   queryNamespace(namespace: NamespaceInput, query: string, options?: QueryOptions, scope?: NamespaceQueryScope): Promise<QueryResponse>;
   getRecentInNamespace(namespace: NamespaceInput, n?: number, scope?: NamespaceQueryScope): Promise<QueryResult[]>;
@@ -276,6 +284,28 @@ export class HttpAdapter {
       const parsed = body ? JSON.parse(body) as { options?: StorageMaintenanceOptions } : {};
       const result = await this.memory.storageMaintenance(parsed.options);
       return { status: 200, body: result };
+    }
+
+    // POST /knowledge/artifact - register a tool-owned external knowledge artifact
+    if (method === 'POST' && path === '/knowledge/artifact') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const artifact = knowledgeArtifactRegistrationSchema.parse(body ? JSON.parse(body) : {});
+      const result = await this.memory.registerKnowledgeArtifact(artifact);
+      return { status: 201, body: result };
+    }
+
+    // POST /knowledge/ingest - import portable graph nodes/edges as ReMEM memories/links
+    if (method === 'POST' && path === '/knowledge/ingest') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) as { graph?: unknown; options?: unknown } : {};
+      const graph = knowledgeGraphArtifactSchema.parse(parsed.graph ?? parsed);
+      const options = parsed.options ? knowledgeIngestOptionsSchema.parse(parsed.options) : undefined;
+      const result = await this.memory.ingestKnowledgeGraph(graph, options);
+      return { status: 201, body: result };
     }
 
     if (method === 'POST' && path === '/memory/procedural/match') {

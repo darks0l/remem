@@ -4,7 +4,20 @@
  */
 
 import type { ReMEM } from './index.js';
-import { namespaceQueryScopeSchema, storeMemoryInputSchema, type NamespaceInput, type NamespaceQueryScope, type QueryOptions, type QueryResponse, type StoreMemoryInput } from './types.js';
+import {
+  knowledgeArtifactRegistrationSchema,
+  knowledgeGraphArtifactSchema,
+  namespaceQueryScopeSchema,
+  storeMemoryInputSchema,
+  type KnowledgeArtifactRegistration,
+  type KnowledgeGraphArtifact,
+  type NamespaceInput,
+  type NamespaceQueryScope,
+  type QueryOptions,
+  type QueryResponse,
+  type QueryWithNeighborsOptions,
+  type StoreMemoryInput,
+} from './types.js';
 
 export interface ReMEMAdapterOptions {
   /** Default topic attached to memories stored through the adapter. */
@@ -412,6 +425,84 @@ export function createHermesAdapter(memory: ReMEM, options: ReMEMAdapterOptions 
 
     async query(query: string, queryOptions?: QueryOptions): Promise<QueryResponse> {
       return memory.query(query, queryOptions);
+    },
+  };
+}
+
+/**
+ * Codebase knowledge adapter.
+ *
+ * This does not try to reimplement a parser or tree-sitter pipeline. It gives
+ * code graph tools a stable way to feed ReMEM with architecture nodes, routes,
+ * call/import edges, ADRs, and compressed graph artifact pointers.
+ */
+export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapterOptions = {}) {
+  const defaultLimit = options.defaultLimit ?? 10;
+
+  return {
+    name: 'codebase-memory',
+
+    async registerArtifact(input: KnowledgeArtifactRegistration) {
+      const artifact = knowledgeArtifactRegistrationSchema.parse(input);
+      return memory.registerKnowledgeArtifact(artifact);
+    },
+
+    async ingestGraph(graph: KnowledgeGraphArtifact, ingestOptions?: Parameters<ReMEM['ingestKnowledgeGraph']>[1]) {
+      const parsed = knowledgeGraphArtifactSchema.parse(graph);
+      return memory.ingestKnowledgeGraph(parsed, ingestOptions);
+    },
+
+    async searchGraph(query: string, queryOptions: QueryOptions = { limit: defaultLimit }) {
+      return memory.query(query, {
+        ...queryOptions,
+        metadata: {
+          ...(queryOptions.metadata ?? {}),
+          source: 'remem.knowledge.node',
+        },
+      });
+    },
+
+    async architecture(project?: string, limit = defaultLimit) {
+      return memory.query('architecture routes packages entry points hotspots boundaries clusters', {
+        limit,
+        metadata: {
+          source: 'remem.knowledge.node',
+          ...(project ? { project } : {}),
+        },
+      });
+    },
+
+    async impact(subject: string, optionsOrLimit: number | (Partial<QueryWithNeighborsOptions> & { project?: string }) = defaultLimit) {
+      const queryOptions = typeof optionsOrLimit === 'number'
+        ? { limit: optionsOrLimit, neighborLimit: optionsOrLimit }
+        : optionsOrLimit;
+      const limit = queryOptions.limit ?? defaultLimit;
+      const { project, metadata, ...rest } = queryOptions;
+
+      return memory.queryWithNeighbors(subject, {
+        ...rest,
+        limit,
+        metadata: {
+          ...(metadata ?? {}),
+          source: 'remem.knowledge.node',
+          ...(project ? { project } : {}),
+        },
+        hops: 2,
+        includeBaseResults: true,
+        includePathDetails: true,
+        neighborLimit: queryOptions.neighborLimit ?? limit,
+        minNeighborScore: 0.1,
+      });
+    },
+
+    async context(query: string, queryOptions: QueryOptions = { limit: defaultLimit }) {
+      const response = await this.searchGraph(query, queryOptions);
+      return response.results.map((result) => {
+        const label = typeof result.metadata?.label === 'string' ? result.metadata.label : 'Node';
+        const name = typeof result.metadata?.name === 'string' ? result.metadata.name : result.id;
+        const path = typeof result.metadata?.path === 'string' ? ` ${result.metadata.path}` : '';
+        return `- ${label} ${name}${path}\n  ${result.content.replace(/\n/g, '\n  ')}`;
+      }).join('\n');
     },
   };
 }

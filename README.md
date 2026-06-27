@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.17.0](https://img.shields.io/badge/v0.17.0-storage--maintenance-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.18.0](https://img.shields.io/badge/v0.18.0-knowledge--graph--adapters-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -79,6 +79,8 @@ remem status --db ./remem.db
 remem stats --db ./remem.db --json
 remem health --db ./remem.db --json
 remem storage-maintenance --db ./remem.db --dry-run --json
+remem knowledge-artifact --db ./remem.db --path .codebase-memory/graph.db.zst --source codebase-memory-mcp --project remem --format sqlite --compression zstd --json
+remem knowledge-ingest --db ./remem.db --artifact ./code-graph.json --source codebase-memory-mcp --project remem --json
 remem store --content "Meta likes dark mode" --topics preferences,ui
 remem query --query "What does Meta like?"
 remem context-pack --query "What context should the next agent carry?" --max-chars 6000 --json
@@ -130,6 +132,30 @@ Use `storage-maintenance` when an agent needs to clean the backing store itself.
 remem storage-maintenance --db ./remem.db --dry-run --json
 remem storage-maintenance --db ./remem.db --compact --json
 ```
+
+Use `knowledge-artifact` and `knowledge-ingest` when another tool already owns the code intelligence layer. ReMEM can either remember the external graph artifact pointer or import a portable node/edge graph so normal memory recall can traverse architecture, route, import, and call relationships.
+
+```bash
+# Register a compressed code graph produced by another local tool.
+remem knowledge-artifact \
+  --db ./remem.db \
+  --path .codebase-memory/graph.db.zst \
+  --source codebase-memory-mcp \
+  --project remem \
+  --format sqlite \
+  --compression zstd \
+  --json
+
+# Ingest a portable graph JSON/JSON.GZ export into ReMEM memories + links.
+remem knowledge-ingest \
+  --db ./remem.db \
+  --artifact ./code-graph.json \
+  --source codebase-memory-mcp \
+  --project remem \
+  --json
+```
+
+This keeps ReMEM focused on durable agent memory while letting specialized code graph systems handle tree-sitter, LSP, indexing, and watcher work.
 
 ### Dreaming from long memory
 
@@ -198,6 +224,7 @@ ReMEM does something different:
 - **Smart recall** (v0.12.0) - Fuse semantic, graph, procedural, and recent-context lanes into one higher-signal retrieval pass
 - **Context packs** (v0.14.0) - Generate bounded, prompt-ready recall packets from smart recall, recent context, procedural signals, and optional dream synthesis
 - **Consolidation workflows** (v0.12.5) - Run full memory curation passes that deduplicate, resolve conflicts, promote durable summaries, and optionally turn repeated patterns into procedures
+- **External knowledge graph ingestion** (v0.18.0) - Register compressed graph artifacts or ingest portable node/edge graphs from codebase intelligence tools as ReMEM memories and traversable links
 - **Memory links + neighbor-aware retrieval** (v0.8.0, expanded in v0.8.5) - Explicit typed links between memories (`about`, `supports`, `contradicts`, etc.), weighted graph-adjacent recall, and optional traversal path details
 - **Identity alignment audits** (v0.8.5) - Drift scoring plus corrective injection text for agents that need to keep behavior anchored to a constitution
 - **Production-aware Postgres vector lane** (v0.8.5) - Native pgvector detection, ivfflat index bootstrap, and runtime introspection for deployments that want in-database vector search
@@ -572,6 +599,7 @@ const triggered = memory.fireProcedural('User is asking about Solana DeFi');
 ```typescript
 import {
   createVercelAIAdapter,
+  createCodebaseMemoryAdapter,
   createHermesAdapter,
   createLangGraphStoreAdapter,
   createOpenClawAdapter,
@@ -622,9 +650,33 @@ await hermes.rememberShared({
 });
 
 const hermesShared = await hermes.recallShared(['team', 'hermes'], 'rollout lane');
+
+// Codebase knowledge adapter: let specialized code graph tools feed ReMEM
+const codebase = createCodebaseMemoryAdapter(memory);
+await codebase.registerArtifact({
+  source: 'codebase-memory-mcp',
+  project: 'remem',
+  artifactPath: '.codebase-memory/graph.db.zst',
+  format: 'sqlite',
+  compression: 'zstd',
+});
+
+await codebase.ingestGraph({
+  source: 'codebase-memory-mcp',
+  project: 'remem',
+  nodes: [
+    { id: 'fn:ProcessOrder', label: 'Function', name: 'ProcessOrder', path: 'src/orders.ts' },
+    { id: 'fn:ChargeCard', label: 'Function', name: 'ChargeCard', path: 'src/payments.ts' },
+  ],
+  edges: [
+    { from: 'fn:ProcessOrder', to: 'fn:ChargeCard', type: 'CALLS' },
+  ],
+});
+
+const impacted = await codebase.impact('ProcessOrder');
 ```
 
-Adapters are intentionally dependency-free. They expose structural interfaces you can wrap into your framework of choice without dragging Vercel, LangChain, OpenClaw, or Hermes-specific runtime code into your memory layer.
+Adapters are intentionally dependency-free. They expose structural interfaces you can wrap into your framework of choice without dragging Vercel, LangChain, OpenClaw, Hermes, or code-indexer-specific runtime code into your memory layer.
 
 ### For Long-Running Agents (1-3 year lifespan)
 
@@ -1002,6 +1054,8 @@ Additional advanced routes:
 - `POST /memory/context-pack` - bounded context pack generation for handoffs and agent prompts
 - `GET /memory/health` / `POST /memory/health` - memory health triage with concrete recommendations
 - `POST /storage/maintenance` - dry-run or apply expired/orphan storage cleanup
+- `POST /knowledge/artifact` - register an external compressed or tool-owned knowledge graph artifact
+- `POST /knowledge/ingest` - ingest portable graph nodes/edges as ReMEM memories and links
 
 ### Shared memory namespaces
 
@@ -1247,6 +1301,18 @@ curl -X POST "http://localhost:8787/storage/maintenance" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $REMEM_TOKEN" \
   -d '{"options":{"dryRun":true,"compact":true}}'
+
+# Register external knowledge artifact
+curl -X POST "http://localhost:8787/knowledge/artifact" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -d '{"source":"codebase-memory-mcp","project":"remem","artifactPath":".codebase-memory/graph.db.zst","format":"sqlite","compression":"zstd"}'
+
+# Ingest portable knowledge graph
+curl -X POST "http://localhost:8787/knowledge/ingest" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -d '{"graph":{"source":"codebase-memory-mcp","project":"remem","nodes":[{"id":"fn:ProcessOrder","label":"Function","name":"ProcessOrder"}],"edges":[]}}'
 
 # Health
 curl -H "Authorization: Bearer $REMEM_TOKEN" \
