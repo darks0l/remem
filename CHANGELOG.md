@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No unreleased changes yet.
 
+## [0.19.0] - 2026-06-29
+
+### Added
+
+- Expanded `createCodebaseMemoryAdapter()` with `subgraph`, `explain`, `entrypoints`, `owners`, `deadzones`, and `overview` helpers for agent-native code graph inspection.
+- Added typed codebase graph option/result exports so downstream tools can consume graph context, owner summaries, entrypoint candidates, and isolated-node diagnostics directly.
+- Added weighted code graph ingestion and traversal: portable knowledge nodes/edges can carry explicit weights, ReMEM infers sensible defaults for code node/edge types, and neighbor traversal now factors node and connection weights into graph recall scores.
+- Added the `Codebase Graph as memory` snapshot surface with selectable connection filters, display modes (`memory`, `graph`, `context`, `inventory`), dense connection output, and LLM-ready context snapshots for whole-repo codebase ingestion.
+
+### Fixed
+
+- `searchGraph()` now honors the top-level `project` option by translating it into ReMEM metadata filters.
+
 ## [0.18.0] - 2026-06-26
 
 ### Added

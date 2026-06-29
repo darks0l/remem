@@ -1310,6 +1310,7 @@ declare const knowledgeNodeSchema: z.ZodObject<{
     summary: z.ZodOptional<z.ZodString>;
     path: z.ZodOptional<z.ZodString>;
     language: z.ZodOptional<z.ZodString>;
+    weight: z.ZodOptional<z.ZodNumber>;
     metadata: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>>;
 }, "strip", z.ZodTypeAny, {
     id: string;
@@ -1321,6 +1322,7 @@ declare const knowledgeNodeSchema: z.ZodObject<{
     content?: string | undefined;
     summary?: string | undefined;
     language?: string | undefined;
+    weight?: number | undefined;
 }, {
     id: string;
     path?: string | undefined;
@@ -1330,6 +1332,7 @@ declare const knowledgeNodeSchema: z.ZodObject<{
     content?: string | undefined;
     summary?: string | undefined;
     language?: string | undefined;
+    weight?: number | undefined;
     metadata?: Record<string, unknown> | undefined;
 }>;
 type KnowledgeNode = z.infer<typeof knowledgeNodeSchema>;
@@ -1337,16 +1340,19 @@ declare const knowledgeEdgeSchema: z.ZodObject<{
     from: z.ZodString;
     to: z.ZodString;
     type: z.ZodString;
+    weight: z.ZodOptional<z.ZodNumber>;
     metadata: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>>;
 }, "strip", z.ZodTypeAny, {
     type: string;
     metadata: Record<string, unknown>;
     from: string;
     to: string;
+    weight?: number | undefined;
 }, {
     type: string;
     from: string;
     to: string;
+    weight?: number | undefined;
     metadata?: Record<string, unknown> | undefined;
 }>;
 type KnowledgeEdge = z.infer<typeof knowledgeEdgeSchema>;
@@ -1365,6 +1371,7 @@ declare const knowledgeGraphArtifactSchema: z.ZodObject<{
         summary: z.ZodOptional<z.ZodString>;
         path: z.ZodOptional<z.ZodString>;
         language: z.ZodOptional<z.ZodString>;
+        weight: z.ZodOptional<z.ZodNumber>;
         metadata: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>>;
     }, "strip", z.ZodTypeAny, {
         id: string;
@@ -1376,6 +1383,7 @@ declare const knowledgeGraphArtifactSchema: z.ZodObject<{
         content?: string | undefined;
         summary?: string | undefined;
         language?: string | undefined;
+        weight?: number | undefined;
     }, {
         id: string;
         path?: string | undefined;
@@ -1385,22 +1393,26 @@ declare const knowledgeGraphArtifactSchema: z.ZodObject<{
         content?: string | undefined;
         summary?: string | undefined;
         language?: string | undefined;
+        weight?: number | undefined;
         metadata?: Record<string, unknown> | undefined;
     }>, "many">>;
     edges: z.ZodDefault<z.ZodArray<z.ZodObject<{
         from: z.ZodString;
         to: z.ZodString;
         type: z.ZodString;
+        weight: z.ZodOptional<z.ZodNumber>;
         metadata: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>>;
     }, "strip", z.ZodTypeAny, {
         type: string;
         metadata: Record<string, unknown>;
         from: string;
         to: string;
+        weight?: number | undefined;
     }, {
         type: string;
         from: string;
         to: string;
+        weight?: number | undefined;
         metadata?: Record<string, unknown> | undefined;
     }>, "many">>;
     metadata: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>>;
@@ -1417,12 +1429,14 @@ declare const knowledgeGraphArtifactSchema: z.ZodObject<{
         content?: string | undefined;
         summary?: string | undefined;
         language?: string | undefined;
+        weight?: number | undefined;
     }[];
     edges: {
         type: string;
         metadata: Record<string, unknown>;
         from: string;
         to: string;
+        weight?: number | undefined;
     }[];
     project?: string | undefined;
     version?: string | undefined;
@@ -1444,12 +1458,14 @@ declare const knowledgeGraphArtifactSchema: z.ZodObject<{
         content?: string | undefined;
         summary?: string | undefined;
         language?: string | undefined;
+        weight?: number | undefined;
         metadata?: Record<string, unknown> | undefined;
     }[] | undefined;
     edges?: {
         type: string;
         from: string;
         to: string;
+        weight?: number | undefined;
         metadata?: Record<string, unknown> | undefined;
     }[] | undefined;
 }>;
@@ -1921,10 +1937,10 @@ declare const constitutionStatementSchema: z.ZodObject<{
     createdAt: z.ZodNumber;
 }, "strip", z.ZodTypeAny, {
     id: string;
+    weight: number;
     createdAt: number;
     text: string;
     category: "values" | "boundaries" | "preferences" | "goals";
-    weight: number;
     source?: string | undefined;
 }, {
     id: string;
@@ -1945,10 +1961,10 @@ declare const constitutionSchema: z.ZodObject<{
         createdAt: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
         id: string;
+        weight: number;
         createdAt: number;
         text: string;
         category: "values" | "boundaries" | "preferences" | "goals";
-        weight: number;
         source?: string | undefined;
     }, {
         id: string;
@@ -1966,10 +1982,10 @@ declare const constitutionSchema: z.ZodObject<{
     createdAt: number;
     statements: {
         id: string;
+        weight: number;
         createdAt: number;
         text: string;
         category: "values" | "boundaries" | "preferences" | "goals";
-        weight: number;
         source?: string | undefined;
     }[];
     updatedAt: number;
@@ -1999,10 +2015,10 @@ declare const driftResultSchema: z.ZodObject<{
         createdAt: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
         id: string;
+        weight: number;
         createdAt: number;
         text: string;
         category: "values" | "boundaries" | "preferences" | "goals";
-        weight: number;
         source?: string | undefined;
     }, {
         id: string;
@@ -2019,10 +2035,10 @@ declare const driftResultSchema: z.ZodObject<{
     level: "aligned" | "minor" | "moderate" | "critical";
     violatingStatements: {
         id: string;
+        weight: number;
         createdAt: number;
         text: string;
         category: "values" | "boundaries" | "preferences" | "goals";
-        weight: number;
         source?: string | undefined;
     }[];
     reasoning: string;
@@ -2053,10 +2069,10 @@ declare const identityConfigSchema: z.ZodObject<{
             createdAt: z.ZodNumber;
         }, "strip", z.ZodTypeAny, {
             id: string;
+            weight: number;
             createdAt: number;
             text: string;
             category: "values" | "boundaries" | "preferences" | "goals";
-            weight: number;
             source?: string | undefined;
         }, {
             id: string;
@@ -2074,10 +2090,10 @@ declare const identityConfigSchema: z.ZodObject<{
         createdAt: number;
         statements: {
             id: string;
+            weight: number;
             createdAt: number;
             text: string;
             category: "values" | "boundaries" | "preferences" | "goals";
-            weight: number;
             source?: string | undefined;
         }[];
         updatedAt: number;
@@ -2161,10 +2177,10 @@ declare const identityConfigSchema: z.ZodObject<{
         createdAt: number;
         statements: {
             id: string;
+            weight: number;
             createdAt: number;
             text: string;
             category: "values" | "boundaries" | "preferences" | "goals";
-            weight: number;
             source?: string | undefined;
         }[];
         updatedAt: number;
@@ -2285,8 +2301,8 @@ declare const layerConfigSchema: z.ZodObject<{
         maxEntries: number;
         trigger?: string | undefined;
     }, {
-        trigger?: string | undefined;
         weight?: number | undefined;
+        trigger?: string | undefined;
         ttlMs?: number | undefined;
         maxEntries?: number | undefined;
     }>;
@@ -2333,8 +2349,8 @@ declare const layerConfigSchema: z.ZodObject<{
         maxEntries?: number | undefined;
     };
     procedural: {
-        trigger?: string | undefined;
         weight?: number | undefined;
+        trigger?: string | undefined;
         ttlMs?: number | undefined;
         maxEntries?: number | undefined;
     };
@@ -2520,10 +2536,10 @@ declare const driftEventSchema: z.ZodObject<{
             createdAt: z.ZodNumber;
         }, "strip", z.ZodTypeAny, {
             id: string;
+            weight: number;
             createdAt: number;
             text: string;
             category: "values" | "boundaries" | "preferences" | "goals";
-            weight: number;
             source?: string | undefined;
         }, {
             id: string;
@@ -2540,10 +2556,10 @@ declare const driftEventSchema: z.ZodObject<{
         level: "aligned" | "minor" | "moderate" | "critical";
         violatingStatements: {
             id: string;
+            weight: number;
             createdAt: number;
             text: string;
             category: "values" | "boundaries" | "preferences" | "goals";
-            weight: number;
             source?: string | undefined;
         }[];
         reasoning: string;
@@ -2570,10 +2586,10 @@ declare const driftEventSchema: z.ZodObject<{
         level: "aligned" | "minor" | "moderate" | "critical";
         violatingStatements: {
             id: string;
+            weight: number;
             createdAt: number;
             text: string;
             category: "values" | "boundaries" | "preferences" | "goals";
-            weight: number;
             source?: string | undefined;
         }[];
         reasoning: string;
@@ -2615,10 +2631,10 @@ declare const identityPackageSchema: z.ZodObject<{
             createdAt: z.ZodNumber;
         }, "strip", z.ZodTypeAny, {
             id: string;
+            weight: number;
             createdAt: number;
             text: string;
             category: "values" | "boundaries" | "preferences" | "goals";
-            weight: number;
             source?: string | undefined;
         }, {
             id: string;
@@ -2636,10 +2652,10 @@ declare const identityPackageSchema: z.ZodObject<{
         createdAt: number;
         statements: {
             id: string;
+            weight: number;
             createdAt: number;
             text: string;
             category: "values" | "boundaries" | "preferences" | "goals";
-            weight: number;
             source?: string | undefined;
         }[];
         updatedAt: number;
@@ -2732,10 +2748,10 @@ declare const identityPackageSchema: z.ZodObject<{
         createdAt: number;
         statements: {
             id: string;
+            weight: number;
             createdAt: number;
             text: string;
             category: "values" | "boundaries" | "preferences" | "goals";
-            weight: number;
             source?: string | undefined;
         }[];
         updatedAt: number;
@@ -3929,6 +3945,76 @@ interface ReMEMAdapterOptions {
     /** Default query limit when the caller does not provide one. */
     defaultLimit?: number;
 }
+interface CodebaseGraphQueryOptions extends QueryOptions {
+    project?: string;
+}
+interface CodebaseSubgraphOptions extends Partial<QueryWithNeighborsOptions> {
+    project?: string;
+    maxContextChars?: number;
+    connectionTypes?: string[];
+    includeConnections?: string[];
+    minConnectionWeight?: number;
+}
+interface CodebaseGraphInventoryOptions {
+    project?: string;
+    limit?: number;
+}
+interface CodebaseGraphOwnerSummary {
+    owner: string;
+    type: 'directory' | 'package' | 'project';
+    nodes: number;
+    files: number;
+    symbols: number;
+    packages: number;
+    averageWeight: number;
+    paths: string[];
+}
+interface CodebaseGraphNodeHealth {
+    node: QueryResult;
+    incoming: number;
+    outgoing: number;
+    weight: number;
+    links: MemoryLink[];
+}
+interface CodebaseGraphSubgraph {
+    query: string;
+    project?: string;
+    results: QueryResult[];
+    paths: NeighborPath[];
+    linksTraversed: number;
+    context: string;
+}
+type CodebaseGraphDisplayType = 'memory' | 'graph' | 'context' | 'inventory';
+interface CodebaseGraphAsMemoryOptions extends CodebaseSubgraphOptions {
+    displayType?: CodebaseGraphDisplayType;
+    snapshotName?: string;
+    nodeLabels?: string[];
+}
+interface CodebaseGraphConnection {
+    fromId: string;
+    toId: string;
+    type: string;
+    weight: number;
+    from?: QueryResult;
+    to?: QueryResult;
+}
+interface CodebaseGraphMemorySnapshot {
+    name: 'Codebase Graph as memory';
+    displayType: CodebaseGraphDisplayType;
+    query: string;
+    project?: string;
+    summary: string;
+    nodes: QueryResult[];
+    connections: CodebaseGraphConnection[];
+    paths: NeighborPath[];
+    linksTraversed: number;
+    context: string;
+    inventory?: {
+        owners: CodebaseGraphOwnerSummary[];
+        entrypoints: CodebaseGraphNodeHealth[];
+        deadzones: CodebaseGraphNodeHealth[];
+    };
+}
 /**
  * Vercel AI SDK-style helper.
  *
@@ -4060,6 +4146,7 @@ declare function createHermesAdapter(memory: ReMEM, options?: ReMEMAdapterOption
  */
 declare function createCodebaseMemoryAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
     name: string;
+    key: string;
     registerArtifact(input: KnowledgeArtifactRegistration): Promise<KnowledgeArtifactRegistrationResult>;
     ingestGraph(graph: KnowledgeGraphArtifact, ingestOptions?: Parameters<ReMEM["ingestKnowledgeGraph"]>[1]): Promise<{
         source: string;
@@ -4070,7 +4157,7 @@ declare function createCodebaseMemoryAdapter(memory: ReMEM, options?: ReMEMAdapt
         nodeMemoryIds: Record<string, string>;
         project?: string | undefined;
     }>;
-    searchGraph(query: string, queryOptions?: QueryOptions): Promise<{
+    searchGraph(query: string, queryOptions?: CodebaseGraphQueryOptions): Promise<{
         query: string;
         results: {
             id: string;
@@ -4120,7 +4207,69 @@ declare function createCodebaseMemoryAdapter(memory: ReMEM, options?: ReMEMAdapt
         linksTraversed: number;
         paths?: NeighborPath[];
     }>;
-    context(query: string, queryOptions?: QueryOptions): Promise<string>;
+    subgraph(query: string, queryOptions?: CodebaseSubgraphOptions): Promise<{
+        query: string;
+        project: string | undefined;
+        results: {
+            id: string;
+            content: string;
+            metadata: Record<string, unknown>;
+            topics: string[];
+            createdAt: number;
+            accessedAt: number;
+            accessCount: number;
+            relevanceScore?: number | undefined;
+        }[];
+        paths: {
+            type: string;
+            score: number;
+            fromId: string;
+            toId: string;
+            throughId: string;
+            hop: number;
+        }[];
+        linksTraversed: number;
+        context: string;
+    }>;
+    asMemory(query: string, queryOptions?: CodebaseGraphAsMemoryOptions): Promise<CodebaseGraphMemorySnapshot>;
+    graphAsMemory(query: string, queryOptions?: CodebaseGraphAsMemoryOptions): Promise<CodebaseGraphMemorySnapshot>;
+    explain(query: string, queryOptions?: CodebaseSubgraphOptions): Promise<{
+        summary: string;
+        query: string;
+        project: string | undefined;
+        results: {
+            id: string;
+            content: string;
+            metadata: Record<string, unknown>;
+            topics: string[];
+            createdAt: number;
+            accessedAt: number;
+            accessCount: number;
+            relevanceScore?: number | undefined;
+        }[];
+        paths: {
+            type: string;
+            score: number;
+            fromId: string;
+            toId: string;
+            throughId: string;
+            hop: number;
+        }[];
+        linksTraversed: number;
+        context: string;
+    }>;
+    entrypoints(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]>;
+    owners(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphOwnerSummary[]>;
+    deadzones(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]>;
+    overview(project?: string): Promise<{
+        project: string | undefined;
+        nodes: number;
+        labels: Record<string, number>;
+        owners: CodebaseGraphOwnerSummary[];
+        entrypoints: CodebaseGraphNodeHealth[];
+        deadzones: CodebaseGraphNodeHealth[];
+    }>;
+    context(query: string, queryOptions?: CodebaseGraphQueryOptions): Promise<string>;
 };
 
 /**
@@ -4347,6 +4496,7 @@ declare class ReMEM {
     getEmbeddingService(): EmbeddingService | undefined;
     usesNativeVectorSearch(): boolean;
     private defaultLinkWeight;
+    private metadataNumericWeight;
     /**
      * Get the layer manager for advanced layer/consolidation operations.
      */
@@ -4398,6 +4548,8 @@ declare class ReMEM {
      */
     ingestKnowledgeGraph(artifact: KnowledgeGraphArtifact, options?: KnowledgeIngestOptions): Promise<KnowledgeIngestResult>;
     private renderKnowledgeNodeContent;
+    private inferKnowledgeNodeWeight;
+    private inferKnowledgeEdgeWeight;
     private normalizeKnowledgeLinkType;
     /**
      * Return a first-class memory health report with concrete maintenance actions.
@@ -4679,4 +4831,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, type ContextPackOptions, type ContextPackResponse, type ContextPackSection, DEFAULT_LAYER_CONFIG, type DreamMemoryLayer, type DreamOptions, type DreamResponse, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type KnowledgeArtifactRegistration, type KnowledgeArtifactRegistrationResult, type KnowledgeEdge, type KnowledgeGraphArtifact, type KnowledgeIngestOptions, type KnowledgeIngestResult, type KnowledgeNode, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryHealthCheck, type MemoryHealthOptions, type MemoryHealthRecommendation, type MemoryHealthResponse, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, type MetadataFilter, type MetadataFilterOperator, type MetadataFilterValue, ModelAbstraction, type ModelConfig, type NamespaceInput, type NamespaceQueryScope, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SmartRecallOptions, type SmartRecallProfile, type SmartRecallResponse, type SmartRecallResult, type SnapshotExport, type SnapshotMeta, type StorageMaintenanceOptions, type StorageMaintenanceResult, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, contextPackOptionsSchema, contextPackResponseSchema, contextPackSectionSchema, createCodebaseMemoryAdapter, createHermesAdapter, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, dreamMemoryLayerSchema, dreamOptionsSchema, dreamResponseSchema, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, knowledgeArtifactRegistrationSchema, knowledgeEdgeSchema, knowledgeGraphArtifactSchema, knowledgeIngestOptionsSchema, knowledgeIngestResultSchema, knowledgeNodeSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryHealthCheckSchema, memoryHealthOptionsSchema, memoryHealthRecommendationSchema, memoryHealthResponseSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, metadataFilterOperatorSchema, metadataFilterSchema, metadataFilterValueSchema, modelConfigSchema, namespaceInputSchema, namespaceQueryScopeSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, smartRecallOptionsSchema, smartRecallProfileSchema, smartRecallResponseSchema, smartRecallResultSchema, storeMemoryInputSchema, uploadPackage };
+export { type Adapter, type CodebaseGraphAsMemoryOptions, type CodebaseGraphConnection, type CodebaseGraphDisplayType, type CodebaseGraphInventoryOptions, type CodebaseGraphMemorySnapshot, type CodebaseGraphNodeHealth, type CodebaseGraphOwnerSummary, type CodebaseGraphQueryOptions, type CodebaseGraphSubgraph, type CodebaseSubgraphOptions, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, type ContextPackOptions, type ContextPackResponse, type ContextPackSection, DEFAULT_LAYER_CONFIG, type DreamMemoryLayer, type DreamOptions, type DreamResponse, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type KnowledgeArtifactRegistration, type KnowledgeArtifactRegistrationResult, type KnowledgeEdge, type KnowledgeGraphArtifact, type KnowledgeIngestOptions, type KnowledgeIngestResult, type KnowledgeNode, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryHealthCheck, type MemoryHealthOptions, type MemoryHealthRecommendation, type MemoryHealthResponse, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, type MetadataFilter, type MetadataFilterOperator, type MetadataFilterValue, ModelAbstraction, type ModelConfig, type NamespaceInput, type NamespaceQueryScope, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SmartRecallOptions, type SmartRecallProfile, type SmartRecallResponse, type SmartRecallResult, type SnapshotExport, type SnapshotMeta, type StorageMaintenanceOptions, type StorageMaintenanceResult, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, contextPackOptionsSchema, contextPackResponseSchema, contextPackSectionSchema, createCodebaseMemoryAdapter, createHermesAdapter, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, dreamMemoryLayerSchema, dreamOptionsSchema, dreamResponseSchema, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, knowledgeArtifactRegistrationSchema, knowledgeEdgeSchema, knowledgeGraphArtifactSchema, knowledgeIngestOptionsSchema, knowledgeIngestResultSchema, knowledgeNodeSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryHealthCheckSchema, memoryHealthOptionsSchema, memoryHealthRecommendationSchema, memoryHealthResponseSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, metadataFilterOperatorSchema, metadataFilterSchema, metadataFilterValueSchema, modelConfigSchema, namespaceInputSchema, namespaceQueryScopeSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, smartRecallOptionsSchema, smartRecallProfileSchema, smartRecallResponseSchema, smartRecallResultSchema, storeMemoryInputSchema, uploadPackage };

@@ -345,12 +345,14 @@ var knowledgeNodeSchema = import_zod.z.object({
   summary: import_zod.z.string().optional(),
   path: import_zod.z.string().optional(),
   language: import_zod.z.string().optional(),
+  weight: import_zod.z.number().min(0).max(2).optional(),
   metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
 });
 var knowledgeEdgeSchema = import_zod.z.object({
   from: import_zod.z.string().min(1),
   to: import_zod.z.string().min(1),
   type: import_zod.z.string().min(1),
+  weight: import_zod.z.number().min(0).max(2).optional(),
   metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
 });
 var knowledgeGraphArtifactSchema = import_zod.z.object({
@@ -5923,6 +5925,60 @@ function contentFromMessages(messages) {
 function normalizeNamespace(namespace) {
   return Array.isArray(namespace) ? namespace.join("/") : namespace;
 }
+function getStringMetadata(entry, key) {
+  const value = entry.metadata?.[key];
+  return typeof value === "string" ? value : void 0;
+}
+function getNumberMetadata(entry, key) {
+  const value = entry.metadata?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+}
+function isKnowledgeNode(entry, project) {
+  if (entry.metadata?.source !== "remem.knowledge.node") return false;
+  return !project || entry.metadata?.project === project;
+}
+function codebaseNodeWeight(entry) {
+  return getNumberMetadata(entry, "graphWeight") ?? getNumberMetadata(entry, "nodeWeight") ?? 1;
+}
+function codebaseLinkWeight(link) {
+  const metadata = link.metadata ?? {};
+  const value = metadata.graphWeight ?? metadata.weight ?? metadata.strength;
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(2, value)) : 1;
+}
+function normalizeCodebaseConnectionTypes(types) {
+  if (!types?.length) return void 0;
+  return Array.from(new Set(types.map((type) => type.trim().toLowerCase()).filter(Boolean).map((type) => type.startsWith("knowledge:") ? type : `knowledge:${type}`)));
+}
+function connectionTypeMatches(type, allowed) {
+  if (!allowed?.length) return true;
+  return allowed.includes(type.toLowerCase());
+}
+function topLevelOwner(entry) {
+  const label = getStringMetadata(entry, "label")?.toLowerCase();
+  const path = getStringMetadata(entry, "path") ?? getStringMetadata(entry, "name") ?? "";
+  if (label === "package") return { owner: path || "external", type: "package" };
+  if (label === "project") return { owner: getStringMetadata(entry, "name") ?? "project", type: "project" };
+  const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "");
+  const first = normalized.split("/").filter(Boolean)[0];
+  return { owner: first || ".", type: "directory" };
+}
+function formatCodebaseContext(results, maxChars = 6e3) {
+  const lines = [];
+  for (const result of results) {
+    const label = getStringMetadata(result, "label") ?? "Node";
+    const name = getStringMetadata(result, "name") ?? getStringMetadata(result, "externalId") ?? result.id;
+    const path = getStringMetadata(result, "path");
+    const project = getStringMetadata(result, "project");
+    const header = `${label}: ${name}${path ? ` (${path})` : ""}${project ? ` [${project}]` : ""}`;
+    lines.push(`- ${header}`);
+    const summary = result.content.split("\n").filter((line) => !line.startsWith(`${label}:`)).join(" ").trim();
+    if (summary) lines.push(`  ${summary}`);
+    if (lines.join("\n").length >= maxChars) break;
+  }
+  const content = lines.join("\n");
+  return content.length > maxChars ? `${content.slice(0, Math.max(0, maxChars - 14)).trimEnd()}
+...truncated` : content;
+}
 function createVercelAIAdapter(memory, options = {}) {
   return {
     name: "vercel-ai",
@@ -6178,8 +6234,50 @@ function createHermesAdapter(memory, options = {}) {
 }
 function createCodebaseMemoryAdapter(memory, options = {}) {
   const defaultLimit = options.defaultLimit ?? 10;
+  const codebaseLinkTypeWeights = {
+    "knowledge:http_calls": 1.35,
+    "knowledge:calls": 1.25,
+    "knowledge:uses": 1.15,
+    "knowledge:imports": 1.05,
+    "knowledge:depends_on": 1.05,
+    "knowledge:defines": 0.95,
+    "knowledge:contains": 0.7
+  };
+  const knowledgeNodes = async (project) => {
+    const entries = await memory.getStore().getAllEntries();
+    return entries.filter((entry) => isKnowledgeNode(entry, project));
+  };
+  const collectConnections = async (nodes, options2 = {}) => {
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const allowedTypes = normalizeCodebaseConnectionTypes(options2.connectionTypes);
+    const minWeight = options2.minConnectionWeight ?? 0;
+    const connections = /* @__PURE__ */ new Map();
+    for (const node of nodes) {
+      const linked = await memory.getLinkedMemories(node.id, { direction: "both", limit: 100 });
+      for (const item of linked) {
+        const link = item.link;
+        const type = link.type.toLowerCase();
+        const weight = codebaseLinkWeight(link);
+        if (!connectionTypeMatches(type, allowedTypes)) continue;
+        if (weight < minWeight) continue;
+        const from = byId.get(link.fromId);
+        const to = byId.get(link.toId);
+        if (!options2.includeExternal && (!from || !to)) continue;
+        connections.set(link.id, {
+          fromId: link.fromId,
+          toId: link.toId,
+          type: link.type,
+          weight,
+          ...from ? { from } : {},
+          ...to ? { to } : {}
+        });
+      }
+    }
+    return Array.from(connections.values()).sort((a, b) => b.weight - a.weight || a.type.localeCompare(b.type));
+  };
   return {
-    name: "codebase-memory",
+    name: "Codebase Graph as memory",
+    key: "codebase-memory",
     async registerArtifact(input) {
       const artifact = knowledgeArtifactRegistrationSchema.parse(input);
       return memory.registerKnowledgeArtifact(artifact);
@@ -6189,11 +6287,13 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
       return memory.ingestKnowledgeGraph(parsed, ingestOptions);
     },
     async searchGraph(query, queryOptions = { limit: defaultLimit }) {
+      const { project, metadata, ...rest } = queryOptions;
       return memory.query(query, {
-        ...queryOptions,
+        ...rest,
         metadata: {
-          ...queryOptions.metadata ?? {},
-          source: "remem.knowledge.node"
+          ...metadata ?? {},
+          source: "remem.knowledge.node",
+          ...project ? { project } : {}
         }
       });
     },
@@ -6213,6 +6313,10 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
       return memory.queryWithNeighbors(subject, {
         ...rest,
         limit,
+        linkTypeWeights: {
+          ...codebaseLinkTypeWeights,
+          ...rest.linkTypeWeights ?? {}
+        },
         metadata: {
           ...metadata ?? {},
           source: "remem.knowledge.node",
@@ -6222,18 +6326,171 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
         includeBaseResults: true,
         includePathDetails: true,
         neighborLimit: queryOptions.neighborLimit ?? limit,
-        minNeighborScore: 0.1
+        minNeighborScore: queryOptions.minNeighborScore ?? 0.08
       });
+    },
+    async subgraph(query, queryOptions = {}) {
+      const selectedConnectionTypes = normalizeCodebaseConnectionTypes([
+        ...queryOptions.connectionTypes ?? [],
+        ...queryOptions.includeConnections ?? []
+      ]);
+      const response = await this.impact(query, {
+        ...queryOptions,
+        ...selectedConnectionTypes ? { linkTypes: selectedConnectionTypes } : {},
+        limit: queryOptions.limit ?? defaultLimit,
+        neighborLimit: queryOptions.neighborLimit ?? (queryOptions.limit ?? defaultLimit),
+        includePathDetails: true
+      });
+      const paths = (response.paths ?? []).filter((path) => connectionTypeMatches(path.type, selectedConnectionTypes)).filter((path) => (queryOptions.minConnectionWeight ?? 0) <= path.score);
+      return {
+        query,
+        project: queryOptions.project,
+        results: response.results,
+        paths,
+        linksTraversed: paths.length || response.linksTraversed,
+        context: formatCodebaseContext(response.results, queryOptions.maxContextChars ?? 6e3)
+      };
+    },
+    async asMemory(query, queryOptions = {}) {
+      const displayType = queryOptions.displayType ?? "memory";
+      const selectedConnectionTypes = normalizeCodebaseConnectionTypes([
+        ...queryOptions.connectionTypes ?? [],
+        ...queryOptions.includeConnections ?? []
+      ]);
+      const subgraph = await this.subgraph(query, {
+        ...queryOptions,
+        connectionTypes: selectedConnectionTypes,
+        limit: queryOptions.limit ?? defaultLimit,
+        neighborLimit: queryOptions.neighborLimit ?? (queryOptions.limit ?? defaultLimit)
+      });
+      const allowedLabels = queryOptions.nodeLabels?.map((label) => label.toLowerCase());
+      const nodes = allowedLabels?.length ? subgraph.results.filter((node) => allowedLabels.includes((getStringMetadata(node, "label") ?? "").toLowerCase())) : subgraph.results;
+      const connections = await collectConnections(nodes, {
+        connectionTypes: selectedConnectionTypes,
+        minConnectionWeight: queryOptions.minConnectionWeight
+      });
+      const relationTypes = Array.from(new Set(connections.map((connection) => connection.type))).sort();
+      const project = queryOptions.project;
+      const summary = `${queryOptions.snapshotName ?? "Codebase Graph as memory"} captured ${nodes.length} nodes and ${connections.length} selected connections${project ? ` for ${project}` : ""}${relationTypes.length ? ` (${relationTypes.join(", ")})` : ""}.`;
+      return {
+        name: "Codebase Graph as memory",
+        displayType,
+        query,
+        project,
+        summary,
+        nodes,
+        connections,
+        paths: subgraph.paths,
+        linksTraversed: subgraph.linksTraversed,
+        context: displayType === "graph" ? formatCodebaseContext(nodes, queryOptions.maxContextChars ?? 4e3) : subgraph.context,
+        ...displayType === "inventory" ? {
+          inventory: {
+            owners: await this.owners({ project, limit: 10 }),
+            entrypoints: await this.entrypoints({ project, limit: 10 }),
+            deadzones: await this.deadzones({ project, limit: 10 })
+          }
+        } : {}
+      };
+    },
+    async graphAsMemory(query, queryOptions = {}) {
+      return this.asMemory(query, queryOptions);
+    },
+    async explain(query, queryOptions = {}) {
+      const graph = await this.subgraph(query, queryOptions);
+      const focus = graph.results[0];
+      const label = focus ? getStringMetadata(focus, "label") ?? "Node" : "Node";
+      const name = focus ? getStringMetadata(focus, "name") ?? getStringMetadata(focus, "externalId") ?? focus.id : query;
+      const relationTypes = Array.from(new Set(graph.paths.map((path) => path.type))).sort();
+      const summary = graph.results.length === 0 ? `No codebase graph nodes matched ${query}.` : `${label} ${name} connects to ${Math.max(0, graph.results.length - 1)} graph nodes through ${graph.linksTraversed} traversed links${relationTypes.length ? ` (${relationTypes.join(", ")})` : ""}.`;
+      return {
+        ...graph,
+        summary
+      };
+    },
+    async entrypoints(projectOrOptions) {
+      const inventoryOptions = typeof projectOrOptions === "string" ? { project: projectOrOptions } : projectOrOptions ?? {};
+      const limit = inventoryOptions.limit ?? defaultLimit;
+      const nodes = await knowledgeNodes(inventoryOptions.project);
+      const candidates = [];
+      for (const node of nodes) {
+        const label = (getStringMetadata(node, "label") ?? "").toLowerCase();
+        const path = getStringMetadata(node, "path") ?? "";
+        const name = getStringMetadata(node, "name") ?? "";
+        const looksLikeEntrypoint = ["project", "route", "command", "entrypoint", "api"].includes(label) || label === "file" && /\b(cli|server|index|main|app|route|command)s?\b/i.test(`${path} ${name}`);
+        if (!looksLikeEntrypoint) continue;
+        const links = await memory.getLinkedMemories(node.id, { direction: "both", limit: 100 });
+        const rawLinks = links.map((item) => item.link);
+        const incoming = rawLinks.filter((link) => link.toId === node.id);
+        const outgoing = rawLinks.filter((link) => link.fromId === node.id);
+        candidates.push({
+          node,
+          incoming: incoming.length,
+          outgoing: outgoing.length,
+          weight: codebaseNodeWeight(node) + outgoing.reduce((sum, link) => sum + codebaseLinkWeight(link), 0) + incoming.reduce((sum, link) => sum + codebaseLinkWeight(link) * 0.15, 0),
+          links: rawLinks
+        });
+      }
+      return candidates.sort((a, b) => b.weight - a.weight || b.outgoing - a.outgoing || a.incoming - b.incoming).slice(0, limit);
+    },
+    async owners(projectOrOptions) {
+      const inventoryOptions = typeof projectOrOptions === "string" ? { project: projectOrOptions } : projectOrOptions ?? {};
+      const limit = inventoryOptions.limit ?? defaultLimit;
+      const nodes = await knowledgeNodes(inventoryOptions.project);
+      const owners = /* @__PURE__ */ new Map();
+      for (const node of nodes) {
+        const { owner, type } = topLevelOwner(node);
+        const key = `${type}:${owner}`;
+        const summary = owners.get(key) ?? { owner, type, nodes: 0, files: 0, symbols: 0, packages: 0, averageWeight: 0, paths: [] };
+        const label = (getStringMetadata(node, "label") ?? "").toLowerCase();
+        const path = getStringMetadata(node, "path");
+        const previousTotal = summary.averageWeight * summary.nodes;
+        summary.nodes += 1;
+        summary.averageWeight = (previousTotal + codebaseNodeWeight(node)) / summary.nodes;
+        if (label === "file") summary.files += 1;
+        if (["function", "class", "constant", "symbol"].includes(label)) summary.symbols += 1;
+        if (label === "package") summary.packages += 1;
+        if (path && !summary.paths.includes(path)) summary.paths.push(path);
+        owners.set(key, summary);
+      }
+      return Array.from(owners.values()).sort((a, b) => b.nodes * b.averageWeight - a.nodes * a.averageWeight || a.owner.localeCompare(b.owner)).slice(0, limit).map((owner) => ({ ...owner, averageWeight: Number(owner.averageWeight.toFixed(3)), paths: owner.paths.slice(0, 10) }));
+    },
+    async deadzones(projectOrOptions) {
+      const inventoryOptions = typeof projectOrOptions === "string" ? { project: projectOrOptions } : projectOrOptions ?? {};
+      const limit = inventoryOptions.limit ?? defaultLimit;
+      const nodes = await knowledgeNodes(inventoryOptions.project);
+      const dead = [];
+      for (const node of nodes) {
+        const label = (getStringMetadata(node, "label") ?? "").toLowerCase();
+        if (!["file", "function", "class", "constant", "symbol", "package"].includes(label)) continue;
+        const links = await memory.getLinkedMemories(node.id, { direction: "both", limit: 100 });
+        const rawLinks = links.map((item) => item.link);
+        const incoming = rawLinks.filter((link) => link.toId === node.id).length;
+        const outgoing = rawLinks.filter((link) => link.fromId === node.id).length;
+        if (incoming === 0 && outgoing === 0) {
+          dead.push({ node, incoming, outgoing, weight: codebaseNodeWeight(node), links: rawLinks });
+        }
+      }
+      return dead.sort((a, b) => b.weight - a.weight).slice(0, limit);
+    },
+    async overview(project) {
+      const nodes = await knowledgeNodes(project);
+      const counts = {};
+      for (const node of nodes) {
+        const label = getStringMetadata(node, "label") ?? "Node";
+        counts[label] = (counts[label] ?? 0) + 1;
+      }
+      return {
+        project,
+        nodes: nodes.length,
+        labels: counts,
+        owners: await this.owners({ project, limit: 10 }),
+        entrypoints: await this.entrypoints({ project, limit: 10 }),
+        deadzones: await this.deadzones({ project, limit: 10 })
+      };
     },
     async context(query, queryOptions = { limit: defaultLimit }) {
       const response = await this.searchGraph(query, queryOptions);
-      return response.results.map((result) => {
-        const label = typeof result.metadata?.label === "string" ? result.metadata.label : "Node";
-        const name = typeof result.metadata?.name === "string" ? result.metadata.name : result.id;
-        const path = typeof result.metadata?.path === "string" ? ` ${result.metadata.path}` : "";
-        return `- ${label} ${name}${path}
-  ${result.content.replace(/\n/g, "\n  ")}`;
-      }).join("\n");
+      return formatCodebaseContext(response.results);
     }
   };
 }
@@ -6432,8 +6689,10 @@ var ReMEM = class {
         for (const neighbor of neighbors) {
           if (!neighbor.memory) continue;
           const linkWeight = opts.linkTypeWeights?.[neighbor.link.type] ?? this.defaultLinkWeight(neighbor.link.type);
+          const connectionWeight = this.metadataNumericWeight(neighbor.link.metadata, ["graphWeight", "weight", "strength"], 1);
+          const nodeWeight = this.metadataNumericWeight(neighbor.memory.metadata ?? {}, ["graphWeight", "nodeWeight", "importance"], 1);
           const hopDecay = Math.max(0.2, 0.9 - hop * 0.15);
-          const neighborScore = Math.min(1.5, (item.score || 0.6) * hopDecay * linkWeight);
+          const neighborScore = Math.min(1.5, (item.score || 0.6) * hopDecay * linkWeight * connectionWeight * nodeWeight);
           if (neighborScore < opts.minNeighborScore) continue;
           if (opts.includePathDetails) {
             paths.push({
@@ -6828,6 +7087,17 @@ profile: ${profile}
   }
   defaultLinkWeight(type) {
     switch (type) {
+      case "knowledge:calls":
+      case "knowledge:http_calls":
+      case "knowledge:uses":
+        return 1.1;
+      case "knowledge:imports":
+      case "knowledge:depends_on":
+        return 1;
+      case "knowledge:defines":
+        return 0.9;
+      case "knowledge:contains":
+        return 0.7;
       case "supports":
       case "about":
         return 1;
@@ -6842,6 +7112,15 @@ profile: ${profile}
       default:
         return 0.75;
     }
+  }
+  metadataNumericWeight(metadata, keys, fallback) {
+    for (const key of keys) {
+      const value = metadata[key];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return Math.max(0, Math.min(2, value));
+      }
+    }
+    return fallback;
   }
   /**
    * Get the layer manager for advanced layer/consolidation operations.
@@ -6985,6 +7264,7 @@ profile: ${profile}
     let edgesLinked = 0;
     let skippedEdges = 0;
     for (const node of graph.nodes) {
+      const graphWeight = node.weight ?? this.inferKnowledgeNodeWeight(node);
       const entry = await this._store.store({
         content: this.renderKnowledgeNodeContent(node),
         topics: Array.from(/* @__PURE__ */ new Set([
@@ -7006,6 +7286,8 @@ profile: ${profile}
           kind: node.kind,
           path: node.path,
           language: node.language,
+          graphWeight,
+          nodeWeight: graphWeight,
           namespace,
           visibility: opts.visibility
         }
@@ -7020,6 +7302,7 @@ profile: ${profile}
         skippedEdges += 1;
         continue;
       }
+      const graphWeight = edge.weight ?? this.inferKnowledgeEdgeWeight(edge);
       await this._store.createLink({
         fromId,
         toId,
@@ -7031,7 +7314,9 @@ profile: ${profile}
           project,
           externalFrom: edge.from,
           externalTo: edge.to,
-          externalType: edge.type
+          externalType: edge.type,
+          graphWeight,
+          weight: graphWeight
         }
       }, scope);
       edgesLinked += 1;
@@ -7057,6 +7342,36 @@ profile: ${profile}
       node.content
     ].filter((line) => typeof line === "string" && line.trim().length > 0);
     return lines.join("\n");
+  }
+  inferKnowledgeNodeWeight(node) {
+    const label = node.label.toLowerCase();
+    const kind = node.kind?.toLowerCase();
+    if (kind === "entrypoint" || ["route", "api", "command"].includes(label)) return 1.25;
+    if (label === "project") return 1.15;
+    if (["class", "function"].includes(label)) return 1.1;
+    if (label === "file") return 1;
+    if (label === "package") return 0.9;
+    if (label === "directory") return 0.75;
+    if (label === "constant") return 0.85;
+    return 1;
+  }
+  inferKnowledgeEdgeWeight(edge) {
+    const type = edge.type.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    switch (type) {
+      case "http_calls":
+      case "calls":
+      case "uses":
+        return 1.2;
+      case "imports":
+      case "depends_on":
+        return 1.05;
+      case "defines":
+        return 0.95;
+      case "contains":
+        return 0.7;
+      default:
+        return 1;
+    }
   }
   normalizeKnowledgeLinkType(type, prefix) {
     const normalized = type.trim().toLowerCase().replace(/[^a-z0-9_:-]+/g, "_").replace(/^_+|_+$/g, "");

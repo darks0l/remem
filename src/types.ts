@@ -326,6 +326,7 @@ export const knowledgeNodeSchema = z.object({
   summary: z.string().optional(),
   path: z.string().optional(),
   language: z.string().optional(),
+  weight: z.number().min(0).max(2).optional(),
   metadata: z.record(z.unknown()).optional().default({}),
 });
 
@@ -335,6 +336,7 @@ export const knowledgeEdgeSchema = z.object({
   from: z.string().min(1),
   to: z.string().min(1),
   type: z.string().min(1),
+  weight: z.number().min(0).max(2).optional(),
   metadata: z.record(z.unknown()).optional().default({}),
 });
 

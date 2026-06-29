@@ -17,6 +17,7 @@ import {
   createVercelAIAdapter,
   createLangGraphStoreAdapter,
   createOpenClawAdapter,
+  createCodebaseMemoryAdapter,
 } from '../src/index.js';
 
 describe('package exports', () => {
@@ -34,5 +35,6 @@ describe('package exports', () => {
     expect(createVercelAIAdapter).toBeTypeOf('function');
     expect(createLangGraphStoreAdapter).toBeTypeOf('function');
     expect(createOpenClawAdapter).toBeTypeOf('function');
+    expect(createCodebaseMemoryAdapter).toBeTypeOf('function');
   });
 });

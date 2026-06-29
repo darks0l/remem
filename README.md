@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.18.0](https://img.shields.io/badge/v0.18.0-knowledge--graph--adapters-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.19.0](https://img.shields.io/badge/v0.19.0-codebase--graph--as--memory-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -133,7 +133,16 @@ remem storage-maintenance --db ./remem.db --dry-run --json
 remem storage-maintenance --db ./remem.db --compact --json
 ```
 
-Use `knowledge-artifact` and `knowledge-ingest` when another tool already owns the code intelligence layer. ReMEM can either remember the external graph artifact pointer or import a portable node/edge graph so normal memory recall can traverse architecture, route, import, and call relationships.
+Use `knowledge-artifact` and `knowledge-ingest` when another tool already owns the code intelligence layer. ReMEM can either remember the external graph artifact pointer or import a portable node/edge graph so normal memory recall can traverse architecture, route, import, and call relationships. The codebase adapter can then turn those links into scoped search, weighted impact traversal, subgraph context, entrypoint discovery, owner/directory summaries, isolated-node diagnostics, and **Codebase Graph as memory** snapshots.
+
+Portable graph nodes and edges may include `weight` values from `0` to `2`. When weights are omitted, ReMEM infers practical code graph defaults: calls/imports are stronger than containment, symbols and entrypoints carry more context weight than plain directories, and traversal still respects the existing ReMEM hop decay and link-type weighting.
+
+`Codebase Graph as memory` is the agent-facing snapshot mode for full repo ingestion. It lets callers choose which connection types to include (`calls`, `imports`, `contains`, `http_calls`, etc.) and which display mode they need:
+
+- `memory` - balanced default with nodes, selected connections, traversal paths, and prompt context
+- `graph` - visualization-friendly nodes and connections for dense screenshots or UI rendering
+- `context` - LLM-ready context text backed by the selected graph neighborhood
+- `inventory` - graph snapshot plus owners, entrypoints, and deadzone diagnostics
 
 ```bash
 # Register a compressed code graph produced by another local tool.
@@ -666,14 +675,40 @@ await codebase.ingestGraph({
   project: 'remem',
   nodes: [
     { id: 'fn:ProcessOrder', label: 'Function', name: 'ProcessOrder', path: 'src/orders.ts' },
-    { id: 'fn:ChargeCard', label: 'Function', name: 'ChargeCard', path: 'src/payments.ts' },
+    { id: 'fn:ChargeCard', label: 'Function', name: 'ChargeCard', path: 'src/payments.ts', weight: 1.4 },
   ],
   edges: [
-    { from: 'fn:ProcessOrder', to: 'fn:ChargeCard', type: 'CALLS' },
+    { from: 'fn:ProcessOrder', to: 'fn:ChargeCard', type: 'CALLS', weight: 1.3 },
   ],
 });
 
 const impacted = await codebase.impact('ProcessOrder');
+const subgraph = await codebase.subgraph('ProcessOrder', {
+  project: 'remem',
+  maxContextChars: 4000,
+});
+const graphMemory = await codebase.asMemory('ProcessOrder', {
+  project: 'remem',
+  displayType: 'graph',
+  connectionTypes: ['calls', 'imports', 'http_calls'],
+  minConnectionWeight: 0.8,
+  maxContextChars: 4000,
+});
+const inventoryMemory = await codebase.graphAsMemory('ProcessOrder', {
+  project: 'remem',
+  displayType: 'inventory',
+  includeConnections: ['calls', 'contains'],
+});
+const explanation = await codebase.explain('ProcessOrder', { project: 'remem' });
+const entrypoints = await codebase.entrypoints({ project: 'remem', limit: 10 });
+const owners = await codebase.owners({ project: 'remem', limit: 10 });
+const deadzones = await codebase.deadzones({ project: 'remem', limit: 10 });
+const overview = await codebase.overview('remem');
+
+console.log(subgraph.context);
+console.log(graphMemory.summary);
+console.log(inventoryMemory.inventory?.entrypoints);
+console.log(explanation.summary);
 ```
 
 Adapters are intentionally dependency-free. They expose structural interfaces you can wrap into your framework of choice without dragging Vercel, LangChain, OpenClaw, Hermes, or code-indexer-specific runtime code into your memory layer.

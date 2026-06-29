@@ -21,6 +21,7 @@ function graphFixture(): KnowledgeGraphArtifact {
         name: 'ChargeCard',
         path: 'src/payments.ts',
         language: 'typescript',
+        weight: 1.4,
         summary: 'Captures a card payment through the payment gateway.',
       },
       {
@@ -30,10 +31,19 @@ function graphFixture(): KnowledgeGraphArtifact {
         path: 'src/routes.ts',
         summary: 'Creates an order.',
       },
+      {
+        id: 'fn:UnusedCoupon',
+        label: 'Function',
+        name: 'UnusedCoupon',
+        path: 'src/coupons.ts',
+        language: 'typescript',
+        weight: 1.6,
+        summary: 'Unused coupon helper with no known graph edges.',
+      },
     ],
     edges: [
       { from: 'route:POST /orders', to: 'fn:ProcessOrder', type: 'HTTP_CALLS' },
-      { from: 'fn:ProcessOrder', to: 'fn:ChargeCard', type: 'CALLS' },
+      { from: 'fn:ProcessOrder', to: 'fn:ChargeCard', type: 'CALLS', weight: 1.3 },
       { from: 'missing', to: 'fn:ChargeCard', type: 'CALLS' },
     ],
   };
@@ -76,7 +86,7 @@ describe('knowledge graph ingestion', () => {
     expect(result).toMatchObject({
       source: 'codebase-memory-mcp',
       project: 'checkout-service',
-      nodesStored: 3,
+      nodesStored: 4,
       edgesLinked: 2,
       skippedEdges: 1,
     });
@@ -87,8 +97,15 @@ describe('knowledge graph ingestion', () => {
       source: 'remem.knowledge.node',
       externalId: 'fn:ProcessOrder',
       label: 'Function',
+      graphWeight: 1.1,
       namespace: 'knowledge/codebase-memory-mcp/checkout-service',
       visibility: 'shared',
+    });
+
+    const weightedNode = await memory.query('ChargeCard', { limit: 1 });
+    expect(weightedNode.results[0].metadata).toMatchObject({
+      graphWeight: 1.4,
+      nodeWeight: 1.4,
     });
 
     const multiTerm = await memory.query('ProcessOrder knowledge graph', { limit: 5 });
@@ -104,6 +121,7 @@ describe('knowledge graph ingestion', () => {
     expect(withNeighbors.linksTraversed).toBeGreaterThanOrEqual(1);
     expect(withNeighbors.results.map((entry) => entry.metadata?.name)).toContain('ChargeCard');
     expect(withNeighbors.paths?.some((path) => path.type === 'knowledge:calls')).toBe(true);
+    expect(withNeighbors.paths?.find((path) => path.type === 'knowledge:calls')?.score).toBeGreaterThan(1);
   });
 
   it('exposes a codebase-memory shaped adapter', async () => {
@@ -112,8 +130,14 @@ describe('knowledge graph ingestion', () => {
     const adapter = createCodebaseMemoryAdapter(memory);
 
     await adapter.ingestGraph(graphFixture());
+    expect(adapter.name).toBe('Codebase Graph as memory');
+    expect(adapter.key).toBe('codebase-memory');
+
     const search = await adapter.searchGraph('ChargeCard');
     expect(search.results[0]?.metadata?.name).toBe('ChargeCard');
+
+    const scopedMiss = await adapter.searchGraph('ChargeCard', { project: 'other-project', limit: 5 });
+    expect(scopedMiss.results).toHaveLength(0);
 
     const impact = await adapter.impact('ProcessOrder');
     expect(impact.results.map((entry) => entry.metadata?.name)).toContain('ChargeCard');
@@ -125,5 +149,50 @@ describe('knowledge graph ingestion', () => {
     });
     expect(scopedImpact.results.length).toBeGreaterThan(0);
     expect(scopedImpact.results.every((entry) => entry.metadata?.project === 'checkout-service')).toBe(true);
+
+    const subgraph = await adapter.subgraph('ProcessOrder', { project: 'checkout-service', maxContextChars: 800 });
+    expect(subgraph.linksTraversed).toBeGreaterThanOrEqual(1);
+    expect(subgraph.context).toContain('ProcessOrder');
+
+    const callsOnly = await adapter.asMemory('ProcessOrder', {
+      project: 'checkout-service',
+      displayType: 'graph',
+      connectionTypes: ['calls'],
+      limit: 5,
+      neighborLimit: 5,
+    });
+    expect(callsOnly.name).toBe('Codebase Graph as memory');
+    expect(callsOnly.displayType).toBe('graph');
+    expect(callsOnly.summary).toContain('selected connections');
+    expect(callsOnly.connections.length).toBeGreaterThanOrEqual(1);
+    expect(callsOnly.connections.every((connection) => connection.type === 'knowledge:calls')).toBe(true);
+    expect(callsOnly.nodes.map((entry) => entry.metadata?.name)).toContain('ChargeCard');
+
+    const inventorySnapshot = await adapter.graphAsMemory('ProcessOrder', {
+      project: 'checkout-service',
+      displayType: 'inventory',
+      includeConnections: ['http_calls', 'calls'],
+      limit: 5,
+      neighborLimit: 5,
+    });
+    expect(inventorySnapshot.inventory?.owners.some((owner) => owner.owner === 'src')).toBe(true);
+    expect(inventorySnapshot.connections.every((connection) => ['knowledge:http_calls', 'knowledge:calls'].includes(connection.type))).toBe(true);
+
+    const explanation = await adapter.explain('ProcessOrder', { project: 'checkout-service' });
+    expect(explanation.summary).toContain('connects to');
+
+    const owners = await adapter.owners({ project: 'checkout-service', limit: 5 });
+    expect(owners.some((owner) => owner.owner === 'src')).toBe(true);
+
+    const entrypoints = await adapter.entrypoints({ project: 'checkout-service', limit: 5 });
+    expect(entrypoints.some((entry) => entry.node.metadata?.label === 'Route')).toBe(true);
+    expect(entrypoints[0].weight).toBeGreaterThan(1);
+
+    const deadzones = await adapter.deadzones({ project: 'checkout-service', limit: 5 });
+    expect(deadzones.some((entry) => entry.node.metadata?.name === 'UnusedCoupon')).toBe(true);
+    expect(deadzones[0].weight).toBe(1.6);
+
+    const overview = await adapter.overview('checkout-service');
+    expect(overview.labels.Function).toBe(3);
   });
 });

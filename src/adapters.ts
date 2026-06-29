@@ -11,10 +11,13 @@ import {
   storeMemoryInputSchema,
   type KnowledgeArtifactRegistration,
   type KnowledgeGraphArtifact,
+  type MemoryLink,
   type NamespaceInput,
   type NamespaceQueryScope,
+  type NeighborPath,
   type QueryOptions,
   type QueryResponse,
+  type QueryResult,
   type QueryWithNeighborsOptions,
   type StoreMemoryInput,
 } from './types.js';
@@ -24,6 +27,86 @@ export interface ReMEMAdapterOptions {
   defaultTopic?: string;
   /** Default query limit when the caller does not provide one. */
   defaultLimit?: number;
+}
+
+export interface CodebaseGraphQueryOptions extends QueryOptions {
+  project?: string;
+}
+
+export interface CodebaseSubgraphOptions extends Partial<QueryWithNeighborsOptions> {
+  project?: string;
+  maxContextChars?: number;
+  connectionTypes?: string[];
+  includeConnections?: string[];
+  minConnectionWeight?: number;
+}
+
+export interface CodebaseGraphInventoryOptions {
+  project?: string;
+  limit?: number;
+}
+
+export interface CodebaseGraphOwnerSummary {
+  owner: string;
+  type: 'directory' | 'package' | 'project';
+  nodes: number;
+  files: number;
+  symbols: number;
+  packages: number;
+  averageWeight: number;
+  paths: string[];
+}
+
+export interface CodebaseGraphNodeHealth {
+  node: QueryResult;
+  incoming: number;
+  outgoing: number;
+  weight: number;
+  links: MemoryLink[];
+}
+
+export interface CodebaseGraphSubgraph {
+  query: string;
+  project?: string;
+  results: QueryResult[];
+  paths: NeighborPath[];
+  linksTraversed: number;
+  context: string;
+}
+
+export type CodebaseGraphDisplayType = 'memory' | 'graph' | 'context' | 'inventory';
+
+export interface CodebaseGraphAsMemoryOptions extends CodebaseSubgraphOptions {
+  displayType?: CodebaseGraphDisplayType;
+  snapshotName?: string;
+  nodeLabels?: string[];
+}
+
+export interface CodebaseGraphConnection {
+  fromId: string;
+  toId: string;
+  type: string;
+  weight: number;
+  from?: QueryResult;
+  to?: QueryResult;
+}
+
+export interface CodebaseGraphMemorySnapshot {
+  name: 'Codebase Graph as memory';
+  displayType: CodebaseGraphDisplayType;
+  query: string;
+  project?: string;
+  summary: string;
+  nodes: QueryResult[];
+  connections: CodebaseGraphConnection[];
+  paths: NeighborPath[];
+  linksTraversed: number;
+  context: string;
+  inventory?: {
+    owners: CodebaseGraphOwnerSummary[];
+    entrypoints: CodebaseGraphNodeHealth[];
+    deadzones: CodebaseGraphNodeHealth[];
+  };
 }
 
 function withDefaultTopic(input: StoreMemoryInput, defaultTopic?: string): StoreMemoryInput {
@@ -65,6 +148,71 @@ function contentFromMessages(messages: unknown): string {
 
 function normalizeNamespace(namespace: NamespaceInput): string {
   return Array.isArray(namespace) ? namespace.join('/') : namespace;
+}
+
+function getStringMetadata(entry: QueryResult, key: string): string | undefined {
+  const value = entry.metadata?.[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumberMetadata(entry: QueryResult, key: string): number | undefined {
+  const value = entry.metadata?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function isKnowledgeNode(entry: QueryResult, project?: string): boolean {
+  if (entry.metadata?.source !== 'remem.knowledge.node') return false;
+  return !project || entry.metadata?.project === project;
+}
+
+function codebaseNodeWeight(entry: QueryResult): number {
+  return getNumberMetadata(entry, 'graphWeight') ?? getNumberMetadata(entry, 'nodeWeight') ?? 1;
+}
+
+function codebaseLinkWeight(link: MemoryLink): number {
+  const metadata = link.metadata ?? {};
+  const value = metadata.graphWeight ?? metadata.weight ?? metadata.strength;
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(2, value)) : 1;
+}
+
+function normalizeCodebaseConnectionTypes(types?: string[]): string[] | undefined {
+  if (!types?.length) return undefined;
+  return Array.from(new Set(types
+    .map((type) => type.trim().toLowerCase())
+    .filter(Boolean)
+    .map((type) => type.startsWith('knowledge:') ? type : `knowledge:${type}`)));
+}
+
+function connectionTypeMatches(type: string, allowed?: string[]): boolean {
+  if (!allowed?.length) return true;
+  return allowed.includes(type.toLowerCase());
+}
+
+function topLevelOwner(entry: QueryResult): { owner: string; type: CodebaseGraphOwnerSummary['type'] } {
+  const label = getStringMetadata(entry, 'label')?.toLowerCase();
+  const path = getStringMetadata(entry, 'path') ?? getStringMetadata(entry, 'name') ?? '';
+  if (label === 'package') return { owner: path || 'external', type: 'package' };
+  if (label === 'project') return { owner: getStringMetadata(entry, 'name') ?? 'project', type: 'project' };
+  const normalized = path.replace(/\\/g, '/').replace(/^\.\//, '');
+  const first = normalized.split('/').filter(Boolean)[0];
+  return { owner: first || '.', type: 'directory' };
+}
+
+function formatCodebaseContext(results: QueryResult[], maxChars = 6_000): string {
+  const lines: string[] = [];
+  for (const result of results) {
+    const label = getStringMetadata(result, 'label') ?? 'Node';
+    const name = getStringMetadata(result, 'name') ?? getStringMetadata(result, 'externalId') ?? result.id;
+    const path = getStringMetadata(result, 'path');
+    const project = getStringMetadata(result, 'project');
+    const header = `${label}: ${name}${path ? ` (${path})` : ''}${project ? ` [${project}]` : ''}`;
+    lines.push(`- ${header}`);
+    const summary = result.content.split('\n').filter((line) => !line.startsWith(`${label}:`)).join(' ').trim();
+    if (summary) lines.push(`  ${summary}`);
+    if (lines.join('\n').length >= maxChars) break;
+  }
+  const content = lines.join('\n');
+  return content.length > maxChars ? `${content.slice(0, Math.max(0, maxChars - 14)).trimEnd()}\n...truncated` : content;
 }
 
 /**
@@ -438,9 +586,63 @@ export function createHermesAdapter(memory: ReMEM, options: ReMEMAdapterOptions 
  */
 export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapterOptions = {}) {
   const defaultLimit = options.defaultLimit ?? 10;
+  const codebaseLinkTypeWeights = {
+    'knowledge:http_calls': 1.35,
+    'knowledge:calls': 1.25,
+    'knowledge:uses': 1.15,
+    'knowledge:imports': 1.05,
+    'knowledge:depends_on': 1.05,
+    'knowledge:defines': 0.95,
+    'knowledge:contains': 0.7,
+  };
+
+  const knowledgeNodes = async (project?: string): Promise<QueryResult[]> => {
+    const entries = await memory.getStore().getAllEntries();
+    return entries.filter((entry) => isKnowledgeNode(entry, project));
+  };
+
+  const collectConnections = async (
+    nodes: QueryResult[],
+    options: {
+      connectionTypes?: string[];
+      minConnectionWeight?: number;
+      includeExternal?: boolean;
+    } = {}
+  ): Promise<CodebaseGraphConnection[]> => {
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const allowedTypes = normalizeCodebaseConnectionTypes(options.connectionTypes);
+    const minWeight = options.minConnectionWeight ?? 0;
+    const connections = new Map<string, CodebaseGraphConnection>();
+
+    for (const node of nodes) {
+      const linked = await memory.getLinkedMemories(node.id, { direction: 'both', limit: 100 });
+      for (const item of linked) {
+        const link = item.link;
+        const type = link.type.toLowerCase();
+        const weight = codebaseLinkWeight(link);
+        if (!connectionTypeMatches(type, allowedTypes)) continue;
+        if (weight < minWeight) continue;
+        const from = byId.get(link.fromId);
+        const to = byId.get(link.toId);
+        if (!options.includeExternal && (!from || !to)) continue;
+        connections.set(link.id, {
+          fromId: link.fromId,
+          toId: link.toId,
+          type: link.type,
+          weight,
+          ...(from ? { from } : {}),
+          ...(to ? { to } : {}),
+        });
+      }
+    }
+
+    return Array.from(connections.values())
+      .sort((a, b) => b.weight - a.weight || a.type.localeCompare(b.type));
+  };
 
   return {
-    name: 'codebase-memory',
+    name: 'Codebase Graph as memory',
+    key: 'codebase-memory',
 
     async registerArtifact(input: KnowledgeArtifactRegistration) {
       const artifact = knowledgeArtifactRegistrationSchema.parse(input);
@@ -452,12 +654,14 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
       return memory.ingestKnowledgeGraph(parsed, ingestOptions);
     },
 
-    async searchGraph(query: string, queryOptions: QueryOptions = { limit: defaultLimit }) {
+    async searchGraph(query: string, queryOptions: CodebaseGraphQueryOptions = { limit: defaultLimit }) {
+      const { project, metadata, ...rest } = queryOptions;
       return memory.query(query, {
-        ...queryOptions,
+        ...rest,
         metadata: {
-          ...(queryOptions.metadata ?? {}),
+          ...(metadata ?? {}),
           source: 'remem.knowledge.node',
+          ...(project ? { project } : {}),
         },
       });
     },
@@ -482,6 +686,10 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
       return memory.queryWithNeighbors(subject, {
         ...rest,
         limit,
+        linkTypeWeights: {
+          ...codebaseLinkTypeWeights,
+          ...(rest.linkTypeWeights ?? {}),
+        },
         metadata: {
           ...(metadata ?? {}),
           source: 'remem.knowledge.node',
@@ -491,18 +699,199 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
         includeBaseResults: true,
         includePathDetails: true,
         neighborLimit: queryOptions.neighborLimit ?? limit,
-        minNeighborScore: 0.1,
+        minNeighborScore: queryOptions.minNeighborScore ?? 0.08,
       });
     },
 
-    async context(query: string, queryOptions: QueryOptions = { limit: defaultLimit }) {
+    async subgraph(query: string, queryOptions: CodebaseSubgraphOptions = {}) {
+      const selectedConnectionTypes = normalizeCodebaseConnectionTypes([
+        ...(queryOptions.connectionTypes ?? []),
+        ...(queryOptions.includeConnections ?? []),
+      ]);
+      const response = await this.impact(query, {
+        ...queryOptions,
+        ...(selectedConnectionTypes ? { linkTypes: selectedConnectionTypes } : {}),
+        limit: queryOptions.limit ?? defaultLimit,
+        neighborLimit: queryOptions.neighborLimit ?? (queryOptions.limit ?? defaultLimit),
+        includePathDetails: true,
+      });
+      const paths = (response.paths ?? [])
+        .filter((path) => connectionTypeMatches(path.type, selectedConnectionTypes))
+        .filter((path) => (queryOptions.minConnectionWeight ?? 0) <= path.score);
+      return {
+        query,
+        project: queryOptions.project,
+        results: response.results,
+        paths,
+        linksTraversed: paths.length || response.linksTraversed,
+        context: formatCodebaseContext(response.results, queryOptions.maxContextChars ?? 6_000),
+      };
+    },
+
+    async asMemory(query: string, queryOptions: CodebaseGraphAsMemoryOptions = {}): Promise<CodebaseGraphMemorySnapshot> {
+      const displayType = queryOptions.displayType ?? 'memory';
+      const selectedConnectionTypes = normalizeCodebaseConnectionTypes([
+        ...(queryOptions.connectionTypes ?? []),
+        ...(queryOptions.includeConnections ?? []),
+      ]);
+      const subgraph = await this.subgraph(query, {
+        ...queryOptions,
+        connectionTypes: selectedConnectionTypes,
+        limit: queryOptions.limit ?? defaultLimit,
+        neighborLimit: queryOptions.neighborLimit ?? (queryOptions.limit ?? defaultLimit),
+      });
+      const allowedLabels = queryOptions.nodeLabels?.map((label) => label.toLowerCase());
+      const nodes = allowedLabels?.length
+        ? subgraph.results.filter((node) => allowedLabels.includes((getStringMetadata(node, 'label') ?? '').toLowerCase()))
+        : subgraph.results;
+      const connections = await collectConnections(nodes, {
+        connectionTypes: selectedConnectionTypes,
+        minConnectionWeight: queryOptions.minConnectionWeight,
+      });
+      const relationTypes = Array.from(new Set(connections.map((connection) => connection.type))).sort();
+      const project = queryOptions.project;
+      const summary = `${queryOptions.snapshotName ?? 'Codebase Graph as memory'} captured ${nodes.length} nodes and ${connections.length} selected connections${project ? ` for ${project}` : ''}${relationTypes.length ? ` (${relationTypes.join(', ')})` : ''}.`;
+
+      return {
+        name: 'Codebase Graph as memory',
+        displayType,
+        query,
+        project,
+        summary,
+        nodes,
+        connections,
+        paths: subgraph.paths,
+        linksTraversed: subgraph.linksTraversed,
+        context: displayType === 'graph'
+          ? formatCodebaseContext(nodes, queryOptions.maxContextChars ?? 4_000)
+          : subgraph.context,
+        ...(displayType === 'inventory'
+          ? {
+              inventory: {
+                owners: await this.owners({ project, limit: 10 }),
+                entrypoints: await this.entrypoints({ project, limit: 10 }),
+                deadzones: await this.deadzones({ project, limit: 10 }),
+              },
+            }
+          : {}),
+      };
+    },
+
+    async graphAsMemory(query: string, queryOptions: CodebaseGraphAsMemoryOptions = {}) {
+      return this.asMemory(query, queryOptions);
+    },
+
+    async explain(query: string, queryOptions: CodebaseSubgraphOptions = {}) {
+      const graph = await this.subgraph(query, queryOptions);
+      const focus = graph.results[0];
+      const label = focus ? getStringMetadata(focus, 'label') ?? 'Node' : 'Node';
+      const name = focus ? getStringMetadata(focus, 'name') ?? getStringMetadata(focus, 'externalId') ?? focus.id : query;
+      const relationTypes = Array.from(new Set(graph.paths.map((path) => path.type))).sort();
+      const summary = graph.results.length === 0
+        ? `No codebase graph nodes matched ${query}.`
+        : `${label} ${name} connects to ${Math.max(0, graph.results.length - 1)} graph nodes through ${graph.linksTraversed} traversed links${relationTypes.length ? ` (${relationTypes.join(', ')})` : ''}.`;
+      return {
+        ...graph,
+        summary,
+      };
+    },
+
+    async entrypoints(projectOrOptions?: string | CodebaseGraphInventoryOptions) {
+      const inventoryOptions = typeof projectOrOptions === 'string' ? { project: projectOrOptions } : projectOrOptions ?? {};
+      const limit = inventoryOptions.limit ?? defaultLimit;
+      const nodes = await knowledgeNodes(inventoryOptions.project);
+      const candidates: CodebaseGraphNodeHealth[] = [];
+      for (const node of nodes) {
+        const label = (getStringMetadata(node, 'label') ?? '').toLowerCase();
+        const path = getStringMetadata(node, 'path') ?? '';
+        const name = getStringMetadata(node, 'name') ?? '';
+        const looksLikeEntrypoint = ['project', 'route', 'command', 'entrypoint', 'api'].includes(label)
+          || (label === 'file' && /\b(cli|server|index|main|app|route|command)s?\b/i.test(`${path} ${name}`));
+        if (!looksLikeEntrypoint) continue;
+        const links = await memory.getLinkedMemories(node.id, { direction: 'both', limit: 100 });
+        const rawLinks = links.map((item) => item.link);
+        const incoming = rawLinks.filter((link) => link.toId === node.id);
+        const outgoing = rawLinks.filter((link) => link.fromId === node.id);
+        candidates.push({
+          node,
+          incoming: incoming.length,
+          outgoing: outgoing.length,
+          weight: codebaseNodeWeight(node)
+            + outgoing.reduce((sum, link) => sum + codebaseLinkWeight(link), 0)
+            + incoming.reduce((sum, link) => sum + codebaseLinkWeight(link) * 0.15, 0),
+          links: rawLinks,
+        });
+      }
+      return candidates
+        .sort((a, b) => b.weight - a.weight || b.outgoing - a.outgoing || a.incoming - b.incoming)
+        .slice(0, limit);
+    },
+
+    async owners(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphOwnerSummary[]> {
+      const inventoryOptions = typeof projectOrOptions === 'string' ? { project: projectOrOptions } : projectOrOptions ?? {};
+      const limit = inventoryOptions.limit ?? defaultLimit;
+      const nodes = await knowledgeNodes(inventoryOptions.project);
+      const owners = new Map<string, CodebaseGraphOwnerSummary>();
+      for (const node of nodes) {
+        const { owner, type } = topLevelOwner(node);
+        const key = `${type}:${owner}`;
+        const summary = owners.get(key) ?? { owner, type, nodes: 0, files: 0, symbols: 0, packages: 0, averageWeight: 0, paths: [] };
+        const label = (getStringMetadata(node, 'label') ?? '').toLowerCase();
+        const path = getStringMetadata(node, 'path');
+        const previousTotal = summary.averageWeight * summary.nodes;
+        summary.nodes += 1;
+        summary.averageWeight = (previousTotal + codebaseNodeWeight(node)) / summary.nodes;
+        if (label === 'file') summary.files += 1;
+        if (['function', 'class', 'constant', 'symbol'].includes(label)) summary.symbols += 1;
+        if (label === 'package') summary.packages += 1;
+        if (path && !summary.paths.includes(path)) summary.paths.push(path);
+        owners.set(key, summary);
+      }
+      return Array.from(owners.values())
+        .sort((a, b) => (b.nodes * b.averageWeight) - (a.nodes * a.averageWeight) || a.owner.localeCompare(b.owner))
+        .slice(0, limit)
+        .map((owner) => ({ ...owner, averageWeight: Number(owner.averageWeight.toFixed(3)), paths: owner.paths.slice(0, 10) }));
+    },
+
+    async deadzones(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]> {
+      const inventoryOptions = typeof projectOrOptions === 'string' ? { project: projectOrOptions } : projectOrOptions ?? {};
+      const limit = inventoryOptions.limit ?? defaultLimit;
+      const nodes = await knowledgeNodes(inventoryOptions.project);
+      const dead: CodebaseGraphNodeHealth[] = [];
+      for (const node of nodes) {
+        const label = (getStringMetadata(node, 'label') ?? '').toLowerCase();
+        if (!['file', 'function', 'class', 'constant', 'symbol', 'package'].includes(label)) continue;
+        const links = await memory.getLinkedMemories(node.id, { direction: 'both', limit: 100 });
+        const rawLinks = links.map((item) => item.link);
+        const incoming = rawLinks.filter((link) => link.toId === node.id).length;
+        const outgoing = rawLinks.filter((link) => link.fromId === node.id).length;
+        if (incoming === 0 && outgoing === 0) {
+          dead.push({ node, incoming, outgoing, weight: codebaseNodeWeight(node), links: rawLinks });
+        }
+      }
+      return dead.sort((a, b) => b.weight - a.weight).slice(0, limit);
+    },
+
+    async overview(project?: string) {
+      const nodes = await knowledgeNodes(project);
+      const counts: Record<string, number> = {};
+      for (const node of nodes) {
+        const label = getStringMetadata(node, 'label') ?? 'Node';
+        counts[label] = (counts[label] ?? 0) + 1;
+      }
+      return {
+        project,
+        nodes: nodes.length,
+        labels: counts,
+        owners: await this.owners({ project, limit: 10 }),
+        entrypoints: await this.entrypoints({ project, limit: 10 }),
+        deadzones: await this.deadzones({ project, limit: 10 }),
+      };
+    },
+
+    async context(query: string, queryOptions: CodebaseGraphQueryOptions = { limit: defaultLimit }) {
       const response = await this.searchGraph(query, queryOptions);
-      return response.results.map((result) => {
-        const label = typeof result.metadata?.label === 'string' ? result.metadata.label : 'Node';
-        const name = typeof result.metadata?.name === 'string' ? result.metadata.name : result.id;
-        const path = typeof result.metadata?.path === 'string' ? ` ${result.metadata.path}` : '';
-        return `- ${label} ${name}${path}\n  ${result.content.replace(/\n/g, '\n  ')}`;
-      }).join('\n');
+      return formatCodebaseContext(response.results);
     },
   };
 }

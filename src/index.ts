@@ -49,6 +49,7 @@ import {
   type KnowledgeArtifactRegistration,
   type KnowledgeArtifactRegistrationResult,
   type KnowledgeGraphArtifact,
+  type KnowledgeEdge,
   type KnowledgeIngestOptions,
   type KnowledgeIngestResult,
   type KnowledgeNode,
@@ -339,8 +340,10 @@ export class ReMEM {
           if (!neighbor.memory) continue;
 
           const linkWeight = opts.linkTypeWeights?.[neighbor.link.type] ?? this.defaultLinkWeight(neighbor.link.type);
+          const connectionWeight = this.metadataNumericWeight(neighbor.link.metadata, ['graphWeight', 'weight', 'strength'], 1);
+          const nodeWeight = this.metadataNumericWeight(neighbor.memory.metadata ?? {}, ['graphWeight', 'nodeWeight', 'importance'], 1);
           const hopDecay = Math.max(0.2, 0.9 - hop * 0.15);
-          const neighborScore = Math.min(1.5, (item.score || 0.6) * hopDecay * linkWeight);
+          const neighborScore = Math.min(1.5, (item.score || 0.6) * hopDecay * linkWeight * connectionWeight * nodeWeight);
           if (neighborScore < opts.minNeighborScore) continue;
 
           if (opts.includePathDetails) {
@@ -812,6 +815,17 @@ export class ReMEM {
 
   private defaultLinkWeight(type: string): number {
     switch (type) {
+      case 'knowledge:calls':
+      case 'knowledge:http_calls':
+      case 'knowledge:uses':
+        return 1.1;
+      case 'knowledge:imports':
+      case 'knowledge:depends_on':
+        return 1;
+      case 'knowledge:defines':
+        return 0.9;
+      case 'knowledge:contains':
+        return 0.7;
       case 'supports':
       case 'about':
         return 1;
@@ -826,6 +840,16 @@ export class ReMEM {
       default:
         return 0.75;
     }
+  }
+
+  private metadataNumericWeight(metadata: Record<string, unknown>, keys: string[], fallback: number): number {
+    for (const key of keys) {
+      const value = metadata[key];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.max(0, Math.min(2, value));
+      }
+    }
+    return fallback;
   }
 
   /**
@@ -998,6 +1022,7 @@ export class ReMEM {
     let skippedEdges = 0;
 
     for (const node of graph.nodes) {
+      const graphWeight = node.weight ?? this.inferKnowledgeNodeWeight(node);
       const entry = await this._store.store({
         content: this.renderKnowledgeNodeContent(node),
         topics: Array.from(new Set([
@@ -1019,6 +1044,8 @@ export class ReMEM {
           kind: node.kind,
           path: node.path,
           language: node.language,
+          graphWeight,
+          nodeWeight: graphWeight,
           namespace,
           visibility: opts.visibility,
         },
@@ -1034,6 +1061,7 @@ export class ReMEM {
         skippedEdges += 1;
         continue;
       }
+      const graphWeight = edge.weight ?? this.inferKnowledgeEdgeWeight(edge);
       await this._store.createLink({
         fromId,
         toId,
@@ -1046,6 +1074,8 @@ export class ReMEM {
           externalFrom: edge.from,
           externalTo: edge.to,
           externalType: edge.type,
+          graphWeight,
+          weight: graphWeight,
         },
       }, scope);
       edgesLinked += 1;
@@ -1073,6 +1103,38 @@ export class ReMEM {
       node.content,
     ].filter((line): line is string => typeof line === 'string' && line.trim().length > 0);
     return lines.join('\n');
+  }
+
+  private inferKnowledgeNodeWeight(node: KnowledgeNode): number {
+    const label = node.label.toLowerCase();
+    const kind = node.kind?.toLowerCase();
+    if (kind === 'entrypoint' || ['route', 'api', 'command'].includes(label)) return 1.25;
+    if (label === 'project') return 1.15;
+    if (['class', 'function'].includes(label)) return 1.1;
+    if (label === 'file') return 1;
+    if (label === 'package') return 0.9;
+    if (label === 'directory') return 0.75;
+    if (label === 'constant') return 0.85;
+    return 1;
+  }
+
+  private inferKnowledgeEdgeWeight(edge: KnowledgeEdge): number {
+    const type = edge.type.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    switch (type) {
+      case 'http_calls':
+      case 'calls':
+      case 'uses':
+        return 1.2;
+      case 'imports':
+      case 'depends_on':
+        return 1.05;
+      case 'defines':
+        return 0.95;
+      case 'contains':
+        return 0.7;
+      default:
+        return 1;
+    }
   }
 
   private normalizeKnowledgeLinkType(type: string, prefix: string): string {
@@ -2040,7 +2102,19 @@ export {
   createOpenClawAdapter,
   createCodebaseMemoryAdapter,
 } from './adapters.js';
-export type { ReMEMAdapterOptions } from './adapters.js';
+export type {
+  CodebaseGraphAsMemoryOptions,
+  CodebaseGraphConnection,
+  CodebaseGraphDisplayType,
+  CodebaseGraphInventoryOptions,
+  CodebaseGraphMemorySnapshot,
+  CodebaseGraphNodeHealth,
+  CodebaseGraphOwnerSummary,
+  CodebaseGraphQueryOptions,
+  CodebaseGraphSubgraph,
+  CodebaseSubgraphOptions,
+  ReMEMAdapterOptions,
+} from './adapters.js';
 export * from './types.js';
 export * from './identity.js';
 export * from './layers.js';
