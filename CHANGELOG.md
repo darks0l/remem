@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.20.0] - 2026-07-01
+
 ### Added
 
 - Added knowledge resource URI and required-scope metadata for external graph artifacts and imported codebase graphs so MCP/resource bridges can validate resource identity and permissions before exposing graph memory snapshots.
