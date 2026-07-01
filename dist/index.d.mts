@@ -1301,6 +1301,38 @@ declare const namespaceQueryScopeSchema: z.ZodObject<{
     includeDescendants?: boolean | undefined;
 }>;
 type NamespaceQueryScope = z.infer<typeof namespaceQueryScopeSchema>;
+declare const knowledgeResourceUriSchema: z.ZodEffects<z.ZodEffects<z.ZodString, string, string>, string, string>;
+type KnowledgeResourceUri = z.infer<typeof knowledgeResourceUriSchema>;
+declare const knowledgeResourceScopeSchema: z.ZodString;
+type KnowledgeResourceScope = z.infer<typeof knowledgeResourceScopeSchema>;
+declare const knowledgeResourceGrantSchema: z.ZodObject<{
+    resourceUri: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodString, string, string>, string, string>>;
+    source: z.ZodOptional<z.ZodString>;
+    project: z.ZodOptional<z.ZodString>;
+    scopes: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+}, "strip", z.ZodTypeAny, {
+    scopes: string[];
+    source?: string | undefined;
+    project?: string | undefined;
+    resourceUri?: string | undefined;
+}, {
+    source?: string | undefined;
+    project?: string | undefined;
+    resourceUri?: string | undefined;
+    scopes?: string[] | undefined;
+}>;
+type KnowledgeResourceGrant = z.infer<typeof knowledgeResourceGrantSchema>;
+interface KnowledgeResourceAccessResult {
+    allowed: boolean;
+    missingScopes: string[];
+    reason?: 'resource-uri-mismatch' | 'source-mismatch' | 'project-mismatch' | 'missing-scopes';
+}
+declare function authorizeKnowledgeResourceAccess(resource: {
+    resourceUri?: string;
+    source?: string;
+    project?: string;
+    requiredScopes?: string[];
+}, grant: KnowledgeResourceGrant): KnowledgeResourceAccessResult;
 declare const knowledgeNodeSchema: z.ZodObject<{
     id: z.ZodString;
     label: z.ZodDefault<z.ZodString>;
@@ -1362,6 +1394,8 @@ declare const knowledgeGraphArtifactSchema: z.ZodObject<{
     version: z.ZodOptional<z.ZodString>;
     generatedAt: z.ZodOptional<z.ZodNumber>;
     artifactPath: z.ZodOptional<z.ZodString>;
+    resourceUri: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodString, string, string>, string, string>>;
+    requiredScopes: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
     nodes: z.ZodDefault<z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         label: z.ZodDefault<z.ZodString>;
@@ -1418,6 +1452,7 @@ declare const knowledgeGraphArtifactSchema: z.ZodObject<{
     metadata: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>>;
 }, "strip", z.ZodTypeAny, {
     source: string;
+    requiredScopes: string[];
     metadata: Record<string, unknown>;
     nodes: {
         id: string;
@@ -1442,12 +1477,15 @@ declare const knowledgeGraphArtifactSchema: z.ZodObject<{
     version?: string | undefined;
     generatedAt?: number | undefined;
     artifactPath?: string | undefined;
+    resourceUri?: string | undefined;
 }, {
     source?: string | undefined;
     project?: string | undefined;
     version?: string | undefined;
     generatedAt?: number | undefined;
     artifactPath?: string | undefined;
+    resourceUri?: string | undefined;
+    requiredScopes?: string[] | undefined;
     metadata?: Record<string, unknown> | undefined;
     nodes?: {
         id: string;
@@ -1523,6 +1561,8 @@ declare const knowledgeArtifactRegistrationSchema: z.ZodObject<{
     source: z.ZodDefault<z.ZodString>;
     project: z.ZodOptional<z.ZodString>;
     artifactPath: z.ZodString;
+    resourceUri: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodString, string, string>, string, string>>;
+    requiredScopes: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
     format: z.ZodDefault<z.ZodString>;
     compression: z.ZodOptional<z.ZodString>;
     checksum: z.ZodOptional<z.ZodString>;
@@ -1531,10 +1571,12 @@ declare const knowledgeArtifactRegistrationSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     source: string;
     artifactPath: string;
+    requiredScopes: string[];
     metadata: Record<string, unknown>;
     format: string;
     project?: string | undefined;
     generatedAt?: number | undefined;
+    resourceUri?: string | undefined;
     compression?: string | undefined;
     checksum?: string | undefined;
 }, {
@@ -1542,6 +1584,8 @@ declare const knowledgeArtifactRegistrationSchema: z.ZodObject<{
     source?: string | undefined;
     project?: string | undefined;
     generatedAt?: number | undefined;
+    resourceUri?: string | undefined;
+    requiredScopes?: string[] | undefined;
     metadata?: Record<string, unknown> | undefined;
     format?: string | undefined;
     compression?: string | undefined;
@@ -1553,6 +1597,8 @@ type KnowledgeArtifactRegistrationResult = {
     source: string;
     project?: string;
     artifactPath: string;
+    resourceUri?: string;
+    requiredScopes?: string[];
 };
 declare const modelConfigSchema: z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
     type: z.ZodLiteral<"bankr">;
@@ -3954,6 +4000,7 @@ interface CodebaseSubgraphOptions extends Partial<QueryWithNeighborsOptions> {
     connectionTypes?: string[];
     includeConnections?: string[];
     minConnectionWeight?: number;
+    resourceGrant?: KnowledgeResourceGrant;
 }
 interface CodebaseGraphInventoryOptions {
     project?: string;
@@ -4831,4 +4878,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type CodebaseGraphAsMemoryOptions, type CodebaseGraphConnection, type CodebaseGraphDisplayType, type CodebaseGraphInventoryOptions, type CodebaseGraphMemorySnapshot, type CodebaseGraphNodeHealth, type CodebaseGraphOwnerSummary, type CodebaseGraphQueryOptions, type CodebaseGraphSubgraph, type CodebaseSubgraphOptions, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, type ContextPackOptions, type ContextPackResponse, type ContextPackSection, DEFAULT_LAYER_CONFIG, type DreamMemoryLayer, type DreamOptions, type DreamResponse, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type KnowledgeArtifactRegistration, type KnowledgeArtifactRegistrationResult, type KnowledgeEdge, type KnowledgeGraphArtifact, type KnowledgeIngestOptions, type KnowledgeIngestResult, type KnowledgeNode, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryHealthCheck, type MemoryHealthOptions, type MemoryHealthRecommendation, type MemoryHealthResponse, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, type MetadataFilter, type MetadataFilterOperator, type MetadataFilterValue, ModelAbstraction, type ModelConfig, type NamespaceInput, type NamespaceQueryScope, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SmartRecallOptions, type SmartRecallProfile, type SmartRecallResponse, type SmartRecallResult, type SnapshotExport, type SnapshotMeta, type StorageMaintenanceOptions, type StorageMaintenanceResult, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, contextPackOptionsSchema, contextPackResponseSchema, contextPackSectionSchema, createCodebaseMemoryAdapter, createHermesAdapter, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, dreamMemoryLayerSchema, dreamOptionsSchema, dreamResponseSchema, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, knowledgeArtifactRegistrationSchema, knowledgeEdgeSchema, knowledgeGraphArtifactSchema, knowledgeIngestOptionsSchema, knowledgeIngestResultSchema, knowledgeNodeSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryHealthCheckSchema, memoryHealthOptionsSchema, memoryHealthRecommendationSchema, memoryHealthResponseSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, metadataFilterOperatorSchema, metadataFilterSchema, metadataFilterValueSchema, modelConfigSchema, namespaceInputSchema, namespaceQueryScopeSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, smartRecallOptionsSchema, smartRecallProfileSchema, smartRecallResponseSchema, smartRecallResultSchema, storeMemoryInputSchema, uploadPackage };
+export { type Adapter, type CodebaseGraphAsMemoryOptions, type CodebaseGraphConnection, type CodebaseGraphDisplayType, type CodebaseGraphInventoryOptions, type CodebaseGraphMemorySnapshot, type CodebaseGraphNodeHealth, type CodebaseGraphOwnerSummary, type CodebaseGraphQueryOptions, type CodebaseGraphSubgraph, type CodebaseSubgraphOptions, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, type ContextPackOptions, type ContextPackResponse, type ContextPackSection, DEFAULT_LAYER_CONFIG, type DreamMemoryLayer, type DreamOptions, type DreamResponse, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type KnowledgeArtifactRegistration, type KnowledgeArtifactRegistrationResult, type KnowledgeEdge, type KnowledgeGraphArtifact, type KnowledgeIngestOptions, type KnowledgeIngestResult, type KnowledgeNode, type KnowledgeResourceAccessResult, type KnowledgeResourceGrant, type KnowledgeResourceScope, type KnowledgeResourceUri, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryHealthCheck, type MemoryHealthOptions, type MemoryHealthRecommendation, type MemoryHealthResponse, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, type MetadataFilter, type MetadataFilterOperator, type MetadataFilterValue, ModelAbstraction, type ModelConfig, type NamespaceInput, type NamespaceQueryScope, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SmartRecallOptions, type SmartRecallProfile, type SmartRecallResponse, type SmartRecallResult, type SnapshotExport, type SnapshotMeta, type StorageMaintenanceOptions, type StorageMaintenanceResult, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, authorizeKnowledgeResourceAccess, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, contextPackOptionsSchema, contextPackResponseSchema, contextPackSectionSchema, createCodebaseMemoryAdapter, createHermesAdapter, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, dreamMemoryLayerSchema, dreamOptionsSchema, dreamResponseSchema, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, knowledgeArtifactRegistrationSchema, knowledgeEdgeSchema, knowledgeGraphArtifactSchema, knowledgeIngestOptionsSchema, knowledgeIngestResultSchema, knowledgeNodeSchema, knowledgeResourceGrantSchema, knowledgeResourceScopeSchema, knowledgeResourceUriSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryHealthCheckSchema, memoryHealthOptionsSchema, memoryHealthRecommendationSchema, memoryHealthResponseSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, metadataFilterOperatorSchema, metadataFilterSchema, metadataFilterValueSchema, modelConfigSchema, namespaceInputSchema, namespaceQueryScopeSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, smartRecallOptionsSchema, smartRecallProfileSchema, smartRecallResponseSchema, smartRecallResultSchema, storeMemoryInputSchema, uploadPackage };

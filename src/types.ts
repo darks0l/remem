@@ -317,6 +317,82 @@ export type NamespaceQueryScope = z.infer<typeof namespaceQueryScopeSchema>;
 // External Knowledge / Code Graph Types
 // ============================================================================
 
+export const knowledgeResourceUriSchema = z.string()
+  .min(1)
+  .max(2048)
+  .refine((value) => !/[\u0000-\u001f\u007f]/.test(value), {
+    message: 'Knowledge resource URI cannot include control characters',
+  })
+  .refine((value) => {
+    try {
+      const parsed = new URL(value);
+      const scheme = parsed.protocol.slice(0, -1);
+      return /^[a-z][a-z0-9+.-]*$/i.test(scheme) && !parsed.username && !parsed.password;
+    } catch {
+      return false;
+    }
+  }, {
+    message: 'Knowledge resource URI must be an absolute URI without embedded credentials',
+  });
+
+export type KnowledgeResourceUri = z.infer<typeof knowledgeResourceUriSchema>;
+
+export const knowledgeResourceScopeSchema = z.string()
+  .trim()
+  .min(1)
+  .max(120)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9:._/-]*$/, 'Knowledge resource scopes must be token-like strings');
+
+export type KnowledgeResourceScope = z.infer<typeof knowledgeResourceScopeSchema>;
+
+export const knowledgeResourceGrantSchema = z.object({
+  resourceUri: knowledgeResourceUriSchema.optional(),
+  source: z.string().min(1).optional(),
+  project: z.string().min(1).optional(),
+  scopes: z.array(knowledgeResourceScopeSchema).default([]),
+});
+
+export type KnowledgeResourceGrant = z.infer<typeof knowledgeResourceGrantSchema>;
+
+export interface KnowledgeResourceAccessResult {
+  allowed: boolean;
+  missingScopes: string[];
+  reason?: 'resource-uri-mismatch' | 'source-mismatch' | 'project-mismatch' | 'missing-scopes';
+}
+
+export function authorizeKnowledgeResourceAccess(
+  resource: {
+    resourceUri?: string;
+    source?: string;
+    project?: string;
+    requiredScopes?: string[];
+  },
+  grant: KnowledgeResourceGrant
+): KnowledgeResourceAccessResult {
+  const parsedGrant = knowledgeResourceGrantSchema.parse(grant);
+  const parsedResource = {
+    ...resource,
+    ...(resource.resourceUri ? { resourceUri: knowledgeResourceUriSchema.parse(resource.resourceUri) } : {}),
+    requiredScopes: z.array(knowledgeResourceScopeSchema).default([]).parse(resource.requiredScopes ?? []),
+  };
+
+  if (parsedResource.resourceUri && parsedGrant.resourceUri && parsedResource.resourceUri !== parsedGrant.resourceUri) {
+    return { allowed: false, missingScopes: [], reason: 'resource-uri-mismatch' };
+  }
+  if (parsedResource.source && parsedGrant.source && parsedResource.source !== parsedGrant.source) {
+    return { allowed: false, missingScopes: [], reason: 'source-mismatch' };
+  }
+  if (parsedResource.project && parsedGrant.project && parsedResource.project !== parsedGrant.project) {
+    return { allowed: false, missingScopes: [], reason: 'project-mismatch' };
+  }
+
+  const grantedScopes = new Set(parsedGrant.scopes);
+  const missingScopes = parsedResource.requiredScopes.filter((scope) => !grantedScopes.has(scope));
+  return missingScopes.length
+    ? { allowed: false, missingScopes, reason: 'missing-scopes' }
+    : { allowed: true, missingScopes: [] };
+}
+
 export const knowledgeNodeSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1).default('Node'),
@@ -348,6 +424,8 @@ export const knowledgeGraphArtifactSchema = z.object({
   version: z.string().optional(),
   generatedAt: z.number().optional(),
   artifactPath: z.string().optional(),
+  resourceUri: knowledgeResourceUriSchema.optional(),
+  requiredScopes: z.array(knowledgeResourceScopeSchema).optional().default([]),
   nodes: z.array(knowledgeNodeSchema).default([]),
   edges: z.array(knowledgeEdgeSchema).default([]),
   metadata: z.record(z.unknown()).optional().default({}),
@@ -382,6 +460,8 @@ export const knowledgeArtifactRegistrationSchema = z.object({
   source: z.string().min(1).default('external-knowledge'),
   project: z.string().min(1).optional(),
   artifactPath: z.string().min(1),
+  resourceUri: knowledgeResourceUriSchema.optional(),
+  requiredScopes: z.array(knowledgeResourceScopeSchema).optional().default([]),
   format: z.string().min(1).default('json'),
   compression: z.string().min(1).optional(),
   checksum: z.string().optional(),
@@ -396,6 +476,8 @@ export type KnowledgeArtifactRegistrationResult = {
   source: string;
   project?: string;
   artifactPath: string;
+  resourceUri?: string;
+  requiredScopes?: string[];
 };
 
 // ============================================================================

@@ -101,6 +101,8 @@ describe('ReMEM CLI', () => {
     await fs.writeFile(artifact, JSON.stringify({
       source: 'codebase-memory-mcp',
       project: 'remem',
+      resourceUri: 'memory://codebase/remem/imported',
+      requiredScopes: ['codebase:read'],
       nodes: [
         { id: 'fn:ProcessOrder', label: 'Function', name: 'ProcessOrder' },
         { id: 'fn:ChargeCard', label: 'Function', name: 'ChargeCard' },
@@ -116,6 +118,8 @@ describe('ReMEM CLI', () => {
       '--path', '.codebase-memory/graph.db.zst',
       '--source', 'codebase-memory-mcp',
       '--project', 'remem',
+      '--resource-uri', 'memory://codebase/remem/graph',
+      '--required-scopes', 'codebase:read,graph:snapshot',
       '--format', 'sqlite',
       '--compression', 'zstd',
       '--json',
@@ -124,6 +128,8 @@ describe('ReMEM CLI', () => {
     const registeredPayload = JSON.parse(registered.stdout);
     expect(registeredPayload.command).toBe('knowledge-artifact');
     expect(registeredPayload.artifactPath).toBe('.codebase-memory/graph.db.zst');
+    expect(registeredPayload.resourceUri).toBe('memory://codebase/remem/graph');
+    expect(registeredPayload.requiredScopes).toEqual(['codebase:read', 'graph:snapshot']);
 
     const ingested = await invoke([
       'knowledge-ingest',
@@ -138,7 +144,9 @@ describe('ReMEM CLI', () => {
     expect(ingestedPayload.edgesLinked).toBe(1);
 
     const queried = await invoke(['query', '--db', db, '--query', 'ProcessOrder', '--json']);
-    expect(JSON.parse(queried.stdout).results[0].metadata.source).toBe('remem.knowledge.node');
+    const queriedPayload = JSON.parse(queried.stdout);
+    expect(queriedPayload.results[0].metadata.source).toBe('remem.knowledge.node');
+    expect(queriedPayload.results[0].metadata.resourceUri).toBe('memory://codebase/remem/imported');
 
     await fs.rm(artifact, { force: true });
   });

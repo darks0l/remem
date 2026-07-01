@@ -963,9 +963,11 @@ export class ReMEM {
       `External knowledge artifact registered: ${artifact.artifactPath}`,
       `source: ${source}`,
       artifact.project ? `project: ${artifact.project}` : null,
+      artifact.resourceUri ? `resource: ${artifact.resourceUri}` : null,
       `format: ${artifact.format}`,
       artifact.compression ? `compression: ${artifact.compression}` : null,
       artifact.checksum ? `checksum: ${artifact.checksum}` : null,
+      artifact.requiredScopes.length ? `required scopes: ${artifact.requiredScopes.join(', ')}` : null,
     ].filter(Boolean).join('\n');
 
     const entry = await this._store.store({
@@ -977,6 +979,8 @@ export class ReMEM {
         knowledgeSource: source,
         project: artifact.project,
         artifactPath: artifact.artifactPath,
+        resourceUri: artifact.resourceUri,
+        requiredScopes: artifact.requiredScopes,
         format: artifact.format,
         compression: artifact.compression,
         checksum: artifact.checksum,
@@ -994,6 +998,8 @@ export class ReMEM {
       source,
       project: artifact.project,
       artifactPath: artifact.artifactPath,
+      resourceUri: artifact.resourceUri,
+      requiredScopes: artifact.requiredScopes.length ? artifact.requiredScopes : undefined,
     };
   }
 
@@ -1038,6 +1044,8 @@ export class ReMEM {
           source: 'remem.knowledge.node',
           knowledgeSource: source,
           project,
+          resourceUri: graph.resourceUri,
+          requiredScopes: graph.requiredScopes,
           externalId: node.id,
           label: node.label,
           name: node.name,

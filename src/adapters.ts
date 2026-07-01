@@ -9,8 +9,10 @@ import {
   knowledgeGraphArtifactSchema,
   namespaceQueryScopeSchema,
   storeMemoryInputSchema,
+  authorizeKnowledgeResourceAccess,
   type KnowledgeArtifactRegistration,
   type KnowledgeGraphArtifact,
+  type KnowledgeResourceGrant,
   type MemoryLink,
   type NamespaceInput,
   type NamespaceQueryScope,
@@ -39,6 +41,7 @@ export interface CodebaseSubgraphOptions extends Partial<QueryWithNeighborsOptio
   connectionTypes?: string[];
   includeConnections?: string[];
   minConnectionWeight?: number;
+  resourceGrant?: KnowledgeResourceGrant;
 }
 
 export interface CodebaseGraphInventoryOptions {
@@ -160,9 +163,26 @@ function getNumberMetadata(entry: QueryResult, key: string): number | undefined 
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function getStringArrayMetadata(entry: QueryResult, key: string): string[] | undefined {
+  const value = entry.metadata?.[key];
+  if (!Array.isArray(value)) return undefined;
+  const strings = value.filter((item): item is string => typeof item === 'string');
+  return strings.length ? strings : undefined;
+}
+
 function isKnowledgeNode(entry: QueryResult, project?: string): boolean {
   if (entry.metadata?.source !== 'remem.knowledge.node') return false;
   return !project || entry.metadata?.project === project;
+}
+
+function hasKnowledgeResourceAccess(entry: QueryResult, grant?: KnowledgeResourceGrant): boolean {
+  if (!grant) return true;
+  return authorizeKnowledgeResourceAccess({
+    resourceUri: getStringMetadata(entry, 'resourceUri'),
+    source: getStringMetadata(entry, 'knowledgeSource'),
+    project: getStringMetadata(entry, 'project'),
+    requiredScopes: getStringArrayMetadata(entry, 'requiredScopes'),
+  }, grant).allowed;
 }
 
 function codebaseNodeWeight(entry: QueryResult): number {
@@ -715,16 +735,19 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
         neighborLimit: queryOptions.neighborLimit ?? (queryOptions.limit ?? defaultLimit),
         includePathDetails: true,
       });
+      const results = response.results.filter((entry) => hasKnowledgeResourceAccess(entry, queryOptions.resourceGrant));
+      const allowedIds = new Set(results.map((entry) => entry.id));
       const paths = (response.paths ?? [])
         .filter((path) => connectionTypeMatches(path.type, selectedConnectionTypes))
+        .filter((path) => allowedIds.has(path.fromId) && allowedIds.has(path.toId) && allowedIds.has(path.throughId))
         .filter((path) => (queryOptions.minConnectionWeight ?? 0) <= path.score);
       return {
         query,
         project: queryOptions.project,
-        results: response.results,
+        results,
         paths,
-        linksTraversed: paths.length || response.linksTraversed,
-        context: formatCodebaseContext(response.results, queryOptions.maxContextChars ?? 6_000),
+        linksTraversed: paths.length,
+        context: formatCodebaseContext(results, queryOptions.maxContextChars ?? 6_000),
       };
     },
 

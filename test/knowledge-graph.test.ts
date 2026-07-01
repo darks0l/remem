@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { ReMEM, createCodebaseMemoryAdapter, type KnowledgeGraphArtifact } from '../src/index.js';
+import {
+  ReMEM,
+  authorizeKnowledgeResourceAccess,
+  createCodebaseMemoryAdapter,
+  knowledgeGraphArtifactSchema,
+  knowledgeResourceUriSchema,
+  type KnowledgeGraphArtifact,
+} from '../src/index.js';
 
 function graphFixture(): KnowledgeGraphArtifact {
   return {
@@ -58,6 +65,8 @@ describe('knowledge graph ingestion', () => {
       source: 'codebase-memory-mcp',
       project: 'remem',
       artifactPath: '.codebase-memory/graph.db.zst',
+      resourceUri: 'memory://codebase/remem/graph',
+      requiredScopes: ['codebase:read', 'graph:snapshot'],
       format: 'sqlite',
       compression: 'zstd',
       checksum: 'sha256:test',
@@ -67,6 +76,8 @@ describe('knowledge graph ingestion', () => {
       source: 'codebase-memory-mcp',
       project: 'remem',
       artifactPath: '.codebase-memory/graph.db.zst',
+      resourceUri: 'memory://codebase/remem/graph',
+      requiredScopes: ['codebase:read', 'graph:snapshot'],
     });
 
     const query = await memory.query('graph.db.zst', { limit: 1 });
@@ -75,6 +86,40 @@ describe('knowledge graph ingestion', () => {
       knowledgeSource: 'codebase-memory-mcp',
       format: 'sqlite',
       compression: 'zstd',
+      resourceUri: 'memory://codebase/remem/graph',
+      requiredScopes: ['codebase:read', 'graph:snapshot'],
+    });
+  });
+
+  it('validates knowledge resource URIs and checks scoped grants', () => {
+    expect(knowledgeResourceUriSchema.parse('memory://codebase/remem/graph')).toBe('memory://codebase/remem/graph');
+    expect(() => knowledgeResourceUriSchema.parse('https://user:pass@example.com/graph')).toThrow();
+    expect(() => knowledgeResourceUriSchema.parse('not a uri')).toThrow();
+
+    const allowed = authorizeKnowledgeResourceAccess({
+      source: 'codebase-memory-mcp',
+      project: 'remem',
+      resourceUri: 'memory://codebase/remem/graph',
+      requiredScopes: ['codebase:read', 'graph:snapshot'],
+    }, {
+      source: 'codebase-memory-mcp',
+      project: 'remem',
+      resourceUri: 'memory://codebase/remem/graph',
+      scopes: ['codebase:read', 'graph:snapshot', 'graph:inventory'],
+    });
+    expect(allowed).toEqual({ allowed: true, missingScopes: [] });
+
+    const denied = authorizeKnowledgeResourceAccess({
+      resourceUri: 'memory://codebase/remem/graph',
+      requiredScopes: ['codebase:read', 'graph:snapshot'],
+    }, {
+      resourceUri: 'memory://codebase/remem/graph',
+      scopes: ['codebase:read'],
+    });
+    expect(denied).toMatchObject({
+      allowed: false,
+      missingScopes: ['graph:snapshot'],
+      reason: 'missing-scopes',
     });
   });
 
@@ -82,7 +127,11 @@ describe('knowledge graph ingestion', () => {
     const memory = new ReMEM({ storage: 'memory', dbPath: ':memory:' });
     await memory.init();
 
-    const result = await memory.ingestKnowledgeGraph(graphFixture());
+    const result = await memory.ingestKnowledgeGraph({
+      ...graphFixture(),
+      resourceUri: 'memory://codebase/checkout-service/graph',
+      requiredScopes: ['codebase:read'],
+    });
     expect(result).toMatchObject({
       source: 'codebase-memory-mcp',
       project: 'checkout-service',
@@ -98,6 +147,8 @@ describe('knowledge graph ingestion', () => {
       externalId: 'fn:ProcessOrder',
       label: 'Function',
       graphWeight: 1.1,
+      resourceUri: 'memory://codebase/checkout-service/graph',
+      requiredScopes: ['codebase:read'],
       namespace: 'knowledge/codebase-memory-mcp/checkout-service',
       visibility: 'shared',
     });
@@ -110,6 +161,15 @@ describe('knowledge graph ingestion', () => {
 
     const multiTerm = await memory.query('ProcessOrder knowledge graph', { limit: 5 });
     expect(multiTerm.results.map((entry) => entry.metadata?.name)).toContain('ProcessOrder');
+
+    const parsedGraph = knowledgeGraphArtifactSchema.parse({
+      source: 'codebase-memory-mcp',
+      resourceUri: 'git://repo/remem#src/index.ts',
+      requiredScopes: ['codebase:read'],
+      nodes: [],
+      edges: [],
+    });
+    expect(parsedGraph.resourceUri).toBe('git://repo/remem#src/index.ts');
 
     const withNeighbors = await memory.queryWithNeighbors('ProcessOrder', {
       limit: 5,
@@ -194,5 +254,44 @@ describe('knowledge graph ingestion', () => {
 
     const overview = await adapter.overview('checkout-service');
     expect(overview.labels.Function).toBe(3);
+  });
+
+  it('filters codebase graph snapshots by resource grants', async () => {
+    const memory = new ReMEM({ storage: 'memory', dbPath: ':memory:' });
+    await memory.init();
+    const adapter = createCodebaseMemoryAdapter(memory);
+
+    await adapter.ingestGraph({
+      ...graphFixture(),
+      resourceUri: 'memory://codebase/checkout-service/graph',
+      requiredScopes: ['codebase:read'],
+    });
+
+    const denied = await adapter.asMemory('ProcessOrder', {
+      project: 'checkout-service',
+      limit: 5,
+      neighborLimit: 5,
+      resourceGrant: {
+        resourceUri: 'memory://codebase/checkout-service/graph',
+        scopes: [],
+      },
+    });
+    expect(denied.nodes).toHaveLength(0);
+    expect(denied.connections).toHaveLength(0);
+    expect(denied.paths).toHaveLength(0);
+    expect(denied.context).toBe('');
+
+    const allowed = await adapter.asMemory('ProcessOrder', {
+      project: 'checkout-service',
+      limit: 5,
+      neighborLimit: 5,
+      resourceGrant: {
+        resourceUri: 'memory://codebase/checkout-service/graph',
+        scopes: ['codebase:read'],
+      },
+    });
+    expect(allowed.nodes.map((node) => node.metadata?.name)).toContain('ProcessOrder');
+    expect(allowed.connections.length).toBeGreaterThan(0);
+    expect(allowed.context).toContain('ProcessOrder');
   });
 });

@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+- Added knowledge resource URI and required-scope metadata for external graph artifacts and imported codebase graphs so MCP/resource bridges can validate resource identity and permissions before exposing graph memory snapshots.
+- Added `authorizeKnowledgeResourceAccess()` plus URI/scope schemas for lightweight grant checks in host integrations.
+- Added optional `resourceGrant` filtering to codebase graph subgraph and `Codebase Graph as memory` snapshots so adapter output omits graph nodes and links outside the caller's granted scopes.
 
 ## [0.19.0] - 2026-06-29
 

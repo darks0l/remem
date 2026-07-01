@@ -13,6 +13,7 @@ import {
   PostgresMemoryStore,
   QueryEngine,
   ReMEM,
+  authorizeKnowledgeResourceAccess,
   buildIdentityPackage,
   constitutionSchema,
   constitutionStatementSchema,
@@ -48,6 +49,9 @@ import {
   knowledgeIngestOptionsSchema,
   knowledgeIngestResultSchema,
   knowledgeNodeSchema,
+  knowledgeResourceGrantSchema,
+  knowledgeResourceScopeSchema,
+  knowledgeResourceUriSchema,
   layerConfigSchema,
   layeredMemoryEntrySchema,
   linkedMemoryQueryOptionsSchema,
@@ -81,7 +85,7 @@ import {
   smartRecallResultSchema,
   storeMemoryInputSchema,
   uploadPackage
-} from "./chunk-CDYSTCXK.mjs";
+} from "./chunk-ZDUYPZOS.mjs";
 export {
   ConstitutionInjector,
   ConstitutionManager,
@@ -97,6 +101,7 @@ export {
   PostgresMemoryStore,
   QueryEngine,
   ReMEM,
+  authorizeKnowledgeResourceAccess,
   buildIdentityPackage,
   constitutionSchema,
   constitutionStatementSchema,
@@ -132,6 +137,9 @@ export {
   knowledgeIngestOptionsSchema,
   knowledgeIngestResultSchema,
   knowledgeNodeSchema,
+  knowledgeResourceGrantSchema,
+  knowledgeResourceScopeSchema,
+  knowledgeResourceUriSchema,
   layerConfigSchema,
   layeredMemoryEntrySchema,
   linkedMemoryQueryOptionsSchema,

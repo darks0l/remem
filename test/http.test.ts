@@ -143,14 +143,18 @@ describe('HttpAdapter', () => {
         source: 'codebase-memory-mcp',
         project: 'remem',
         artifactPath: '.codebase-memory/graph.db.zst',
+        resourceUri: 'memory://codebase/remem/graph',
+        requiredScopes: ['codebase:read'],
         format: 'sqlite',
         compression: 'zstd',
       }),
     });
     expect(artifact.status).toBe(201);
-    const artifactJson = await readJson(artifact) as { source: string; artifactPath: string };
+    const artifactJson = await readJson(artifact) as { source: string; artifactPath: string; resourceUri?: string; requiredScopes?: string[] };
     expect(artifactJson.source).toBe('codebase-memory-mcp');
     expect(artifactJson.artifactPath).toBe('.codebase-memory/graph.db.zst');
+    expect(artifactJson.resourceUri).toBe('memory://codebase/remem/graph');
+    expect(artifactJson.requiredScopes).toEqual(['codebase:read']);
 
     const knowledgeIngest = await fetch('http://127.0.0.1:18913/knowledge/ingest', {
       method: 'POST',
@@ -159,6 +163,8 @@ describe('HttpAdapter', () => {
         graph: {
           source: 'codebase-memory-mcp',
           project: 'remem',
+          resourceUri: 'memory://codebase/remem/imported',
+          requiredScopes: ['codebase:read'],
           nodes: [
             { id: 'fn:ProcessOrder', label: 'Function', name: 'ProcessOrder' },
             { id: 'fn:ChargeCard', label: 'Function', name: 'ChargeCard' },

@@ -135,6 +135,10 @@ remem storage-maintenance --db ./remem.db --compact --json
 
 Use `knowledge-artifact` and `knowledge-ingest` when another tool already owns the code intelligence layer. ReMEM can either remember the external graph artifact pointer or import a portable node/edge graph so normal memory recall can traverse architecture, route, import, and call relationships. The codebase adapter can then turn those links into scoped search, weighted impact traversal, subgraph context, entrypoint discovery, owner/directory summaries, isolated-node diagnostics, and **Codebase Graph as memory** snapshots.
 
+For MCP or other resource-oriented bridges, knowledge artifacts and graph imports can also carry a validated `resourceUri` plus `requiredScopes`. ReMEM stores those fields on artifact and imported node metadata and exports `authorizeKnowledgeResourceAccess()` for host-side grant checks before returning graph snapshots or subscribed resource reads.
+
+The codebase adapter also accepts `resourceGrant` on subgraph and `Codebase Graph as memory` calls, so a bridge can filter snapshot nodes, paths, and connections to only the resource scopes granted to the current caller.
+
 Portable graph nodes and edges may include `weight` values from `0` to `2`. When weights are omitted, ReMEM infers practical code graph defaults: calls/imports are stronger than containment, symbols and entrypoints carry more context weight than plain directories, and traversal still respects the existing ReMEM hop decay and link-type weighting.
 
 `Codebase Graph as memory` is the agent-facing snapshot mode for full repo ingestion. It lets callers choose which connection types to include (`calls`, `imports`, `contains`, `http_calls`, etc.) and which display mode they need:
@@ -162,6 +166,28 @@ remem knowledge-ingest \
   --source codebase-memory-mcp \
   --project remem \
   --json
+```
+
+```typescript
+import { authorizeKnowledgeResourceAccess } from '@darksol/remem';
+
+const access = authorizeKnowledgeResourceAccess({
+  resourceUri: 'memory://codebase/remem/graph',
+  requiredScopes: ['codebase:read', 'graph:snapshot'],
+}, {
+  resourceUri: 'memory://codebase/remem/graph',
+  scopes: ['codebase:read', 'graph:snapshot'],
+});
+
+if (!access.allowed) throw new Error(`Missing graph access: ${access.missingScopes.join(', ')}`);
+
+const snapshot = await adapter.asMemory('storage adapter', {
+  project: 'remem',
+  resourceGrant: {
+    resourceUri: 'memory://codebase/remem/graph',
+    scopes: ['codebase:read', 'graph:snapshot'],
+  },
+});
 ```
 
 This keeps ReMEM focused on durable agent memory while letting specialized code graph systems handle tree-sitter, LSP, indexing, and watcher work.

@@ -133,7 +133,7 @@ Usage:
   remem stats [--db <path>] [--json]
   remem health [--db <path>] [--json]
   remem storage-maintenance [--dry-run] [--compact] [--json]
-  remem knowledge-artifact --path <file> [--source codebase-memory-mcp] [--project <name>] [--format sqlite] [--compression zstd] [--json]
+  remem knowledge-artifact --path <file> [--source codebase-memory-mcp] [--project <name>] [--resource-uri <uri>] [--required-scopes a,b] [--format sqlite] [--compression zstd] [--json]
   remem knowledge-ingest --artifact <graph.json|graph.json.gz> [--source <name>] [--project <name>] [--namespace team/code] [--visibility shared|private] [--json]
   remem store --content <text> [--topics a,b] [--metadata '{"kind":"note"}']
   remem query --query <text> [--limit 8]
@@ -630,6 +630,8 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
         source: asString(options.source, 'codebase-memory-mcp'),
         project: asString(options.project) || undefined,
         artifactPath,
+        resourceUri: asString(options['resource-uri']) || undefined,
+        requiredScopes: asCsv(options['required-scopes']),
         format: asString(options.format, artifactPath.endsWith('.zst') ? 'sqlite' : 'json'),
         compression: asString(options.compression, artifactPath.endsWith('.zst') ? 'zstd' : '') || undefined,
         checksum: asString(options.checksum) || undefined,

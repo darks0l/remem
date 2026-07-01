@@ -44,6 +44,7 @@ __export(index_exports, {
   PostgresMemoryStore: () => PostgresMemoryStore,
   QueryEngine: () => QueryEngine,
   ReMEM: () => ReMEM,
+  authorizeKnowledgeResourceAccess: () => authorizeKnowledgeResourceAccess,
   buildIdentityPackage: () => buildIdentityPackage,
   constitutionSchema: () => constitutionSchema,
   constitutionStatementSchema: () => constitutionStatementSchema,
@@ -79,6 +80,9 @@ __export(index_exports, {
   knowledgeIngestOptionsSchema: () => knowledgeIngestOptionsSchema,
   knowledgeIngestResultSchema: () => knowledgeIngestResultSchema,
   knowledgeNodeSchema: () => knowledgeNodeSchema,
+  knowledgeResourceGrantSchema: () => knowledgeResourceGrantSchema,
+  knowledgeResourceScopeSchema: () => knowledgeResourceScopeSchema,
+  knowledgeResourceUriSchema: () => knowledgeResourceUriSchema,
   layerConfigSchema: () => layerConfigSchema,
   layeredMemoryEntrySchema: () => layeredMemoryEntrySchema,
   linkedMemoryQueryOptionsSchema: () => linkedMemoryQueryOptionsSchema,
@@ -336,6 +340,46 @@ var namespaceQueryScopeSchema = import_zod.z.object({
   visibility: import_zod.z.enum(["private", "shared", "all"]).default("all"),
   includeDescendants: import_zod.z.boolean().default(false)
 });
+var knowledgeResourceUriSchema = import_zod.z.string().min(1).max(2048).refine((value) => !/[\u0000-\u001f\u007f]/.test(value), {
+  message: "Knowledge resource URI cannot include control characters"
+}).refine((value) => {
+  try {
+    const parsed = new URL(value);
+    const scheme = parsed.protocol.slice(0, -1);
+    return /^[a-z][a-z0-9+.-]*$/i.test(scheme) && !parsed.username && !parsed.password;
+  } catch {
+    return false;
+  }
+}, {
+  message: "Knowledge resource URI must be an absolute URI without embedded credentials"
+});
+var knowledgeResourceScopeSchema = import_zod.z.string().trim().min(1).max(120).regex(/^[a-zA-Z0-9][a-zA-Z0-9:._/-]*$/, "Knowledge resource scopes must be token-like strings");
+var knowledgeResourceGrantSchema = import_zod.z.object({
+  resourceUri: knowledgeResourceUriSchema.optional(),
+  source: import_zod.z.string().min(1).optional(),
+  project: import_zod.z.string().min(1).optional(),
+  scopes: import_zod.z.array(knowledgeResourceScopeSchema).default([])
+});
+function authorizeKnowledgeResourceAccess(resource, grant) {
+  const parsedGrant = knowledgeResourceGrantSchema.parse(grant);
+  const parsedResource = {
+    ...resource,
+    ...resource.resourceUri ? { resourceUri: knowledgeResourceUriSchema.parse(resource.resourceUri) } : {},
+    requiredScopes: import_zod.z.array(knowledgeResourceScopeSchema).default([]).parse(resource.requiredScopes ?? [])
+  };
+  if (parsedResource.resourceUri && parsedGrant.resourceUri && parsedResource.resourceUri !== parsedGrant.resourceUri) {
+    return { allowed: false, missingScopes: [], reason: "resource-uri-mismatch" };
+  }
+  if (parsedResource.source && parsedGrant.source && parsedResource.source !== parsedGrant.source) {
+    return { allowed: false, missingScopes: [], reason: "source-mismatch" };
+  }
+  if (parsedResource.project && parsedGrant.project && parsedResource.project !== parsedGrant.project) {
+    return { allowed: false, missingScopes: [], reason: "project-mismatch" };
+  }
+  const grantedScopes = new Set(parsedGrant.scopes);
+  const missingScopes = parsedResource.requiredScopes.filter((scope) => !grantedScopes.has(scope));
+  return missingScopes.length ? { allowed: false, missingScopes, reason: "missing-scopes" } : { allowed: true, missingScopes: [] };
+}
 var knowledgeNodeSchema = import_zod.z.object({
   id: import_zod.z.string().min(1),
   label: import_zod.z.string().min(1).default("Node"),
@@ -361,6 +405,8 @@ var knowledgeGraphArtifactSchema = import_zod.z.object({
   version: import_zod.z.string().optional(),
   generatedAt: import_zod.z.number().optional(),
   artifactPath: import_zod.z.string().optional(),
+  resourceUri: knowledgeResourceUriSchema.optional(),
+  requiredScopes: import_zod.z.array(knowledgeResourceScopeSchema).optional().default([]),
   nodes: import_zod.z.array(knowledgeNodeSchema).default([]),
   edges: import_zod.z.array(knowledgeEdgeSchema).default([]),
   metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
@@ -386,6 +432,8 @@ var knowledgeArtifactRegistrationSchema = import_zod.z.object({
   source: import_zod.z.string().min(1).default("external-knowledge"),
   project: import_zod.z.string().min(1).optional(),
   artifactPath: import_zod.z.string().min(1),
+  resourceUri: knowledgeResourceUriSchema.optional(),
+  requiredScopes: import_zod.z.array(knowledgeResourceScopeSchema).optional().default([]),
   format: import_zod.z.string().min(1).default("json"),
   compression: import_zod.z.string().min(1).optional(),
   checksum: import_zod.z.string().optional(),
@@ -5933,9 +5981,24 @@ function getNumberMetadata(entry, key) {
   const value = entry.metadata?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : void 0;
 }
+function getStringArrayMetadata(entry, key) {
+  const value = entry.metadata?.[key];
+  if (!Array.isArray(value)) return void 0;
+  const strings = value.filter((item) => typeof item === "string");
+  return strings.length ? strings : void 0;
+}
 function isKnowledgeNode(entry, project) {
   if (entry.metadata?.source !== "remem.knowledge.node") return false;
   return !project || entry.metadata?.project === project;
+}
+function hasKnowledgeResourceAccess(entry, grant) {
+  if (!grant) return true;
+  return authorizeKnowledgeResourceAccess({
+    resourceUri: getStringMetadata(entry, "resourceUri"),
+    source: getStringMetadata(entry, "knowledgeSource"),
+    project: getStringMetadata(entry, "project"),
+    requiredScopes: getStringArrayMetadata(entry, "requiredScopes")
+  }, grant).allowed;
 }
 function codebaseNodeWeight(entry) {
   return getNumberMetadata(entry, "graphWeight") ?? getNumberMetadata(entry, "nodeWeight") ?? 1;
@@ -6341,14 +6404,16 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
         neighborLimit: queryOptions.neighborLimit ?? (queryOptions.limit ?? defaultLimit),
         includePathDetails: true
       });
-      const paths = (response.paths ?? []).filter((path) => connectionTypeMatches(path.type, selectedConnectionTypes)).filter((path) => (queryOptions.minConnectionWeight ?? 0) <= path.score);
+      const results = response.results.filter((entry) => hasKnowledgeResourceAccess(entry, queryOptions.resourceGrant));
+      const allowedIds = new Set(results.map((entry) => entry.id));
+      const paths = (response.paths ?? []).filter((path) => connectionTypeMatches(path.type, selectedConnectionTypes)).filter((path) => allowedIds.has(path.fromId) && allowedIds.has(path.toId) && allowedIds.has(path.throughId)).filter((path) => (queryOptions.minConnectionWeight ?? 0) <= path.score);
       return {
         query,
         project: queryOptions.project,
-        results: response.results,
+        results,
         paths,
-        linksTraversed: paths.length || response.linksTraversed,
-        context: formatCodebaseContext(response.results, queryOptions.maxContextChars ?? 6e3)
+        linksTraversed: paths.length,
+        context: formatCodebaseContext(results, queryOptions.maxContextChars ?? 6e3)
       };
     },
     async asMemory(query, queryOptions = {}) {
@@ -7212,9 +7277,11 @@ profile: ${profile}
       `External knowledge artifact registered: ${artifact.artifactPath}`,
       `source: ${source}`,
       artifact.project ? `project: ${artifact.project}` : null,
+      artifact.resourceUri ? `resource: ${artifact.resourceUri}` : null,
       `format: ${artifact.format}`,
       artifact.compression ? `compression: ${artifact.compression}` : null,
-      artifact.checksum ? `checksum: ${artifact.checksum}` : null
+      artifact.checksum ? `checksum: ${artifact.checksum}` : null,
+      artifact.requiredScopes.length ? `required scopes: ${artifact.requiredScopes.join(", ")}` : null
     ].filter(Boolean).join("\n");
     const entry = await this._store.store({
       content,
@@ -7225,6 +7292,8 @@ profile: ${profile}
         knowledgeSource: source,
         project: artifact.project,
         artifactPath: artifact.artifactPath,
+        resourceUri: artifact.resourceUri,
+        requiredScopes: artifact.requiredScopes,
         format: artifact.format,
         compression: artifact.compression,
         checksum: artifact.checksum,
@@ -7240,7 +7309,9 @@ profile: ${profile}
       id: entry.id,
       source,
       project: artifact.project,
-      artifactPath: artifact.artifactPath
+      artifactPath: artifact.artifactPath,
+      resourceUri: artifact.resourceUri,
+      requiredScopes: artifact.requiredScopes.length ? artifact.requiredScopes : void 0
     };
   }
   /**
@@ -7280,6 +7351,8 @@ profile: ${profile}
           source: "remem.knowledge.node",
           knowledgeSource: source,
           project,
+          resourceUri: graph.resourceUri,
+          requiredScopes: graph.requiredScopes,
           externalId: node.id,
           label: node.label,
           name: node.name,
@@ -8144,6 +8217,7 @@ profile: ${profile}
   PostgresMemoryStore,
   QueryEngine,
   ReMEM,
+  authorizeKnowledgeResourceAccess,
   buildIdentityPackage,
   constitutionSchema,
   constitutionStatementSchema,
@@ -8179,6 +8253,9 @@ profile: ${profile}
   knowledgeIngestOptionsSchema,
   knowledgeIngestResultSchema,
   knowledgeNodeSchema,
+  knowledgeResourceGrantSchema,
+  knowledgeResourceScopeSchema,
+  knowledgeResourceUriSchema,
   layerConfigSchema,
   layeredMemoryEntrySchema,
   linkedMemoryQueryOptionsSchema,
