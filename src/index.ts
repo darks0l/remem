@@ -77,6 +77,51 @@ import {
   storeMemoryInputSchema,
 } from './types.js';
 
+export interface MemoryGraphOptions extends Omit<QueryOptions, 'limit'> {
+  query?: string;
+  limit?: number;
+  includeIsolated?: boolean;
+  maxLinks?: number;
+}
+
+export interface MemoryGraphNode {
+  id: string;
+  label: string;
+  content: string;
+  topics: string[];
+  metadata: Record<string, unknown>;
+  createdAt: number;
+  accessedAt: number;
+  accessCount: number;
+  weight: number;
+}
+
+export interface MemoryGraphLink {
+  id: string;
+  fromId: string;
+  toId: string;
+  type: string;
+  weight: number;
+  metadata: Record<string, unknown>;
+  createdAt: number;
+}
+
+export interface MemoryGraphTopicCluster {
+  topic: string;
+  count: number;
+  nodeIds: string[];
+}
+
+export interface MemoryGraphSnapshot {
+  name: 'ReMEM Memory Graph';
+  query?: string;
+  nodes: MemoryGraphNode[];
+  links: MemoryGraphLink[];
+  topics: MemoryGraphTopicCluster[];
+  dot: string;
+  generatedAt: number;
+}
+
 /**
  * ReMEM — RLM-Style Memory System
  *
@@ -136,6 +181,16 @@ export class ReMEM {
     }
 
     return metadata;
+  }
+
+  private graphNodeLabel(entry: QueryResult): string {
+    const metadataName = entry.metadata?.name;
+    if (typeof metadataName === 'string' && metadataName.trim()) return metadataName.trim();
+    return entry.content.split('\n')[0]?.trim().slice(0, 80) || entry.id;
+  }
+
+  private dotEscape(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
   }
 
   constructor(config: ReMEMConfig) {
@@ -933,6 +988,100 @@ export class ReMEM {
       layers: this.getLayerStats(),
       oldestMemoryAt,
       newestMemoryAt,
+    };
+  }
+
+  /**
+   * Build a visualization-ready snapshot of the current memory graph.
+   * Returns weighted nodes, internal links, topic clusters, and Graphviz DOT.
+   */
+  async graph(options: MemoryGraphOptions = {}): Promise<MemoryGraphSnapshot> {
+    const limit = Math.min(Math.max(options.limit ?? 100, 1), 100);
+    const topics = options.topics?.filter(Boolean);
+    const metadata = options.metadata && Object.keys(options.metadata).length > 0
+      ? options.metadata
+      : undefined;
+    const queryOptions: QueryOptions = {
+      limit,
+      ...(topics && topics.length > 0 ? { topics } : {}),
+      ...(metadata ? { metadata } : {}),
+      minAccessCount: options.minAccessCount,
+      since: options.since,
+      until: options.until,
+    };
+    const response = await this.query(options.query ?? '', queryOptions);
+    const initialNodes: MemoryGraphNode[] = response.results.map((entry) => ({
+      id: entry.id,
+      label: this.graphNodeLabel(entry),
+      content: entry.content,
+      topics: entry.topics,
+      metadata: entry.metadata ?? {},
+      createdAt: entry.createdAt,
+      accessedAt: entry.accessedAt,
+      accessCount: entry.accessCount,
+      weight: Number(((entry.relevanceScore ?? 0) + Math.min(1, entry.accessCount * 0.05) + Math.min(1, entry.topics.length * 0.08)).toFixed(4)),
+    }));
+    const nodeIds = new Set(initialNodes.map((node) => node.id));
+    const linksById = new Map<string, MemoryGraphLink>();
+    const maxLinks = Math.min(Math.max(options.maxLinks ?? 250, 0), 1_000);
+
+    for (const node of initialNodes) {
+      if (linksById.size >= maxLinks) break;
+      const linked = await this.getLinkedMemories(node.id, { direction: 'both', limit: 100 });
+      for (const item of linked) {
+        if (linksById.size >= maxLinks) break;
+        const link = item.link;
+        if (!nodeIds.has(link.fromId) || !nodeIds.has(link.toId)) continue;
+        linksById.set(link.id, {
+          id: link.id,
+          fromId: link.fromId,
+          toId: link.toId,
+          type: link.type,
+          weight: this.metadataNumericWeight(link.metadata ?? {}, ['graphWeight', 'weight', 'strength'], this.defaultLinkWeight(link.type)),
+          metadata: link.metadata ?? {},
+          createdAt: link.createdAt,
+        });
+      }
+    }
+
+    const links = Array.from(linksById.values())
+      .sort((a, b) => b.weight - a.weight || a.type.localeCompare(b.type));
+    const connectedIds = new Set(links.flatMap((link) => [link.fromId, link.toId]));
+    const nodes = options.includeIsolated === false
+      ? initialNodes.filter((node) => connectedIds.has(node.id))
+      : initialNodes;
+    const finalNodeIds = new Set(nodes.map((node) => node.id));
+    const finalLinks = links.filter((link) => finalNodeIds.has(link.fromId) && finalNodeIds.has(link.toId));
+    const topicMap = new Map<string, Set<string>>();
+
+    for (const node of nodes) {
+      for (const topic of node.topics) {
+        if (!topicMap.has(topic)) topicMap.set(topic, new Set());
+        topicMap.get(topic)!.add(node.id);
+      }
+    }
+
+    const topicClusters = Array.from(topicMap.entries())
+      .map(([topic, ids]) => ({ topic, count: ids.size, nodeIds: Array.from(ids).sort() }))
+      .sort((a, b) => b.count - a.count || a.topic.localeCompare(b.topic));
+    const dotLines = [
+      'digraph remem_memory {',
+      '  graph [rankdir=LR];',
+      '  node [shape=box, style="rounded,filled", fillcolor="#111827", fontcolor="#f9fafb", color="#374151"];',
+      '  edge [color="#6b7280", fontcolor="#9ca3af"];',
+      ...nodes.map((node) => `  "${this.dotEscape(node.id)}" [label="${this.dotEscape(node.label)}\\n${this.dotEscape(node.topics.slice(0, 3).join(', '))}"];`),
+      ...finalLinks.map((link) => `  "${this.dotEscape(link.fromId)}" -> "${this.dotEscape(link.toId)}" [label="${this.dotEscape(link.type)}", penwidth="${Math.max(1, link.weight).toFixed(2)}"];`),
+      '}',
+    ];
+
+    return {
+      name: 'ReMEM Memory Graph',
+      ...(options.query ? { query: options.query } : {}),
+      nodes,
+      links: finalLinks,
+      topics: topicClusters,
+      dot: dotLines.join('\n'),
+      generatedAt: Date.now(),
     };
   }
 

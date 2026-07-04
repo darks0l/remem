@@ -221,8 +221,8 @@ declare const queryOptionsSchema: z.ZodObject<{
         lte?: number | undefined;
         exists?: boolean | undefined;
     } | null> | undefined;
-    topics?: string[] | undefined;
     limit?: number | undefined;
+    topics?: string[] | undefined;
     minAccessCount?: number | undefined;
     since?: number | undefined;
     until?: number | undefined;
@@ -468,8 +468,8 @@ declare const queryWithNeighborsOptionsSchema: z.ZodObject<{
         lte?: number | undefined;
         exists?: boolean | undefined;
     } | null> | undefined;
-    topics?: string[] | undefined;
     limit?: number | undefined;
+    topics?: string[] | undefined;
     minAccessCount?: number | undefined;
     since?: number | undefined;
     until?: number | undefined;
@@ -612,8 +612,8 @@ declare const smartRecallOptionsSchema: z.ZodObject<{
         lte?: number | undefined;
         exists?: boolean | undefined;
     } | null> | undefined;
-    topics?: string[] | undefined;
     limit?: number | undefined;
+    topics?: string[] | undefined;
     minAccessCount?: number | undefined;
     since?: number | undefined;
     until?: number | undefined;
@@ -653,7 +653,7 @@ declare const smartRecallResultSchema: z.ZodObject<{
     accessedAt: number;
     accessCount: number;
     reasons: string[];
-    sourceLane: "recent" | "semantic" | "procedural" | "graph";
+    sourceLane: "graph" | "recent" | "semantic" | "procedural";
     combinedScore: number;
     relevanceScore?: number | undefined;
 }, {
@@ -663,7 +663,7 @@ declare const smartRecallResultSchema: z.ZodObject<{
     createdAt: number;
     accessedAt: number;
     accessCount: number;
-    sourceLane: "recent" | "semantic" | "procedural" | "graph";
+    sourceLane: "graph" | "recent" | "semantic" | "procedural";
     combinedScore: number;
     metadata?: Record<string, unknown> | undefined;
     relevanceScore?: number | undefined;
@@ -693,7 +693,7 @@ declare const smartRecallResponseSchema: z.ZodObject<{
         accessedAt: number;
         accessCount: number;
         reasons: string[];
-        sourceLane: "recent" | "semantic" | "procedural" | "graph";
+        sourceLane: "graph" | "recent" | "semantic" | "procedural";
         combinedScore: number;
         relevanceScore?: number | undefined;
     }, {
@@ -703,7 +703,7 @@ declare const smartRecallResponseSchema: z.ZodObject<{
         createdAt: number;
         accessedAt: number;
         accessCount: number;
-        sourceLane: "recent" | "semantic" | "procedural" | "graph";
+        sourceLane: "graph" | "recent" | "semantic" | "procedural";
         combinedScore: number;
         metadata?: Record<string, unknown> | undefined;
         relevanceScore?: number | undefined;
@@ -719,15 +719,15 @@ declare const smartRecallResponseSchema: z.ZodObject<{
         procedural: z.ZodNumber;
         recent: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
+        graph: number;
         recent: number;
         semantic: number;
         procedural: number;
-        graph: number;
     }, {
+        graph: number;
         recent: number;
         semantic: number;
         procedural: number;
-        graph: number;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: string;
@@ -740,7 +740,7 @@ declare const smartRecallResponseSchema: z.ZodObject<{
         accessedAt: number;
         accessCount: number;
         reasons: string[];
-        sourceLane: "recent" | "semantic" | "procedural" | "graph";
+        sourceLane: "graph" | "recent" | "semantic" | "procedural";
         combinedScore: number;
         relevanceScore?: number | undefined;
     }[];
@@ -748,10 +748,10 @@ declare const smartRecallResponseSchema: z.ZodObject<{
     tookMs: number;
     profile: "fast" | "deep" | "agent-safe" | "ops-debug";
     lanes: {
+        graph: number;
         recent: number;
         semantic: number;
         procedural: number;
-        graph: number;
     };
 }, {
     query: string;
@@ -762,7 +762,7 @@ declare const smartRecallResponseSchema: z.ZodObject<{
         createdAt: number;
         accessedAt: number;
         accessCount: number;
-        sourceLane: "recent" | "semantic" | "procedural" | "graph";
+        sourceLane: "graph" | "recent" | "semantic" | "procedural";
         combinedScore: number;
         metadata?: Record<string, unknown> | undefined;
         relevanceScore?: number | undefined;
@@ -772,10 +772,10 @@ declare const smartRecallResponseSchema: z.ZodObject<{
     tookMs: number;
     profile: "fast" | "deep" | "agent-safe" | "ops-debug";
     lanes: {
+        graph: number;
         recent: number;
         semantic: number;
         procedural: number;
-        graph: number;
     };
 }>;
 type SmartRecallResponse = z.infer<typeof smartRecallResponseSchema>;
@@ -1009,8 +1009,8 @@ declare const contextPackOptionsSchema: z.ZodObject<{
         lte?: number | undefined;
         exists?: boolean | undefined;
     } | null> | undefined;
-    topics?: string[] | undefined;
     limit?: number | undefined;
+    topics?: string[] | undefined;
     minAccessCount?: number | undefined;
     since?: number | undefined;
     until?: number | undefined;
@@ -2461,8 +2461,8 @@ declare const proceduralTriggerSchema: z.ZodObject<{
     priority: z.ZodDefault<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
     match: "any" | "all";
-    priority: number;
     topics: string[];
+    priority: number;
     terms: string[];
     phrases: string[];
     excludeTerms: string[];
@@ -2470,8 +2470,8 @@ declare const proceduralTriggerSchema: z.ZodObject<{
     regex?: string | undefined;
 }, {
     match?: "any" | "all" | undefined;
-    priority?: number | undefined;
     topics?: string[] | undefined;
+    priority?: number | undefined;
     terms?: string[] | undefined;
     phrases?: string[] | undefined;
     excludeTerms?: string[] | undefined;
@@ -4005,6 +4005,7 @@ interface CodebaseSubgraphOptions extends Partial<QueryWithNeighborsOptions> {
 interface CodebaseGraphInventoryOptions {
     project?: string;
     limit?: number;
+    resourceGrant?: KnowledgeResourceGrant;
 }
 interface CodebaseGraphOwnerSummary {
     owner: string;
@@ -4022,6 +4023,9 @@ interface CodebaseGraphNodeHealth {
     outgoing: number;
     weight: number;
     links: MemoryLink[];
+    incomingWeight?: number;
+    outgoingWeight?: number;
+    relationTypes?: string[];
 }
 interface CodebaseGraphSubgraph {
     query: string;
@@ -4059,6 +4063,7 @@ interface CodebaseGraphMemorySnapshot {
     inventory?: {
         owners: CodebaseGraphOwnerSummary[];
         entrypoints: CodebaseGraphNodeHealth[];
+        hotspots: CodebaseGraphNodeHealth[];
         deadzones: CodebaseGraphNodeHealth[];
     };
 }
@@ -4307,13 +4312,15 @@ declare function createCodebaseMemoryAdapter(memory: ReMEM, options?: ReMEMAdapt
     }>;
     entrypoints(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]>;
     owners(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphOwnerSummary[]>;
+    hotspots(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]>;
     deadzones(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]>;
-    overview(project?: string): Promise<{
+    overview(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<{
         project: string | undefined;
         nodes: number;
         labels: Record<string, number>;
         owners: CodebaseGraphOwnerSummary[];
         entrypoints: CodebaseGraphNodeHealth[];
+        hotspots: CodebaseGraphNodeHealth[];
         deadzones: CodebaseGraphNodeHealth[];
     }>;
     context(query: string, queryOptions?: CodebaseGraphQueryOptions): Promise<string>;
@@ -4473,6 +4480,46 @@ declare function infectFromServer(params: {
     config: InfectionConfig;
 }): Promise<InfectionResult>;
 
+interface MemoryGraphOptions extends Omit<QueryOptions, 'limit'> {
+    query?: string;
+    limit?: number;
+    includeIsolated?: boolean;
+    maxLinks?: number;
+}
+interface MemoryGraphNode {
+    id: string;
+    label: string;
+    content: string;
+    topics: string[];
+    metadata: Record<string, unknown>;
+    createdAt: number;
+    accessedAt: number;
+    accessCount: number;
+    weight: number;
+}
+interface MemoryGraphLink {
+    id: string;
+    fromId: string;
+    toId: string;
+    type: string;
+    weight: number;
+    metadata: Record<string, unknown>;
+    createdAt: number;
+}
+interface MemoryGraphTopicCluster {
+    topic: string;
+    count: number;
+    nodeIds: string[];
+}
+interface MemoryGraphSnapshot {
+    name: 'ReMEM Memory Graph';
+    query?: string;
+    nodes: MemoryGraphNode[];
+    links: MemoryGraphLink[];
+    topics: MemoryGraphTopicCluster[];
+    dot: string;
+    generatedAt: number;
+}
 /**
  * ReMEM — RLM-Style Memory System
  *
@@ -4501,6 +4548,8 @@ declare class ReMEM {
     private normalizeNamespace;
     private namespaceTopicTrail;
     private buildScopedMetadataFilters;
+    private graphNodeLabel;
+    private dotEscape;
     constructor(config: ReMEMConfig);
     /**
      * Initialize the memory store. Must be called before use.
@@ -4577,6 +4626,11 @@ declare class ReMEM {
         oldestMemoryAt: number | null;
         newestMemoryAt: number | null;
     }>;
+    /**
+     * Build a visualization-ready snapshot of the current memory graph.
+     * Returns weighted nodes, internal links, topic clusters, and Graphviz DOT.
+     */
+    graph(options?: MemoryGraphOptions): Promise<MemoryGraphSnapshot>;
     /**
      * Run storage maintenance for the configured memory scope.
      * Use dryRun first to inspect expired layers and dangling storage rows before pruning.
@@ -4878,4 +4932,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type CodebaseGraphAsMemoryOptions, type CodebaseGraphConnection, type CodebaseGraphDisplayType, type CodebaseGraphInventoryOptions, type CodebaseGraphMemorySnapshot, type CodebaseGraphNodeHealth, type CodebaseGraphOwnerSummary, type CodebaseGraphQueryOptions, type CodebaseGraphSubgraph, type CodebaseSubgraphOptions, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, type ContextPackOptions, type ContextPackResponse, type ContextPackSection, DEFAULT_LAYER_CONFIG, type DreamMemoryLayer, type DreamOptions, type DreamResponse, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type KnowledgeArtifactRegistration, type KnowledgeArtifactRegistrationResult, type KnowledgeEdge, type KnowledgeGraphArtifact, type KnowledgeIngestOptions, type KnowledgeIngestResult, type KnowledgeNode, type KnowledgeResourceAccessResult, type KnowledgeResourceGrant, type KnowledgeResourceScope, type KnowledgeResourceUri, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryHealthCheck, type MemoryHealthOptions, type MemoryHealthRecommendation, type MemoryHealthResponse, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, type MetadataFilter, type MetadataFilterOperator, type MetadataFilterValue, ModelAbstraction, type ModelConfig, type NamespaceInput, type NamespaceQueryScope, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SmartRecallOptions, type SmartRecallProfile, type SmartRecallResponse, type SmartRecallResult, type SnapshotExport, type SnapshotMeta, type StorageMaintenanceOptions, type StorageMaintenanceResult, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, authorizeKnowledgeResourceAccess, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, contextPackOptionsSchema, contextPackResponseSchema, contextPackSectionSchema, createCodebaseMemoryAdapter, createHermesAdapter, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, dreamMemoryLayerSchema, dreamOptionsSchema, dreamResponseSchema, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, knowledgeArtifactRegistrationSchema, knowledgeEdgeSchema, knowledgeGraphArtifactSchema, knowledgeIngestOptionsSchema, knowledgeIngestResultSchema, knowledgeNodeSchema, knowledgeResourceGrantSchema, knowledgeResourceScopeSchema, knowledgeResourceUriSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryHealthCheckSchema, memoryHealthOptionsSchema, memoryHealthRecommendationSchema, memoryHealthResponseSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, metadataFilterOperatorSchema, metadataFilterSchema, metadataFilterValueSchema, modelConfigSchema, namespaceInputSchema, namespaceQueryScopeSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, smartRecallOptionsSchema, smartRecallProfileSchema, smartRecallResponseSchema, smartRecallResultSchema, storeMemoryInputSchema, uploadPackage };
+export { type Adapter, type CodebaseGraphAsMemoryOptions, type CodebaseGraphConnection, type CodebaseGraphDisplayType, type CodebaseGraphInventoryOptions, type CodebaseGraphMemorySnapshot, type CodebaseGraphNodeHealth, type CodebaseGraphOwnerSummary, type CodebaseGraphQueryOptions, type CodebaseGraphSubgraph, type CodebaseSubgraphOptions, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, type ContextPackOptions, type ContextPackResponse, type ContextPackSection, DEFAULT_LAYER_CONFIG, type DreamMemoryLayer, type DreamOptions, type DreamResponse, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type KnowledgeArtifactRegistration, type KnowledgeArtifactRegistrationResult, type KnowledgeEdge, type KnowledgeGraphArtifact, type KnowledgeIngestOptions, type KnowledgeIngestResult, type KnowledgeNode, type KnowledgeResourceAccessResult, type KnowledgeResourceGrant, type KnowledgeResourceScope, type KnowledgeResourceUri, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryGraphLink, type MemoryGraphNode, type MemoryGraphOptions, type MemoryGraphSnapshot, type MemoryGraphTopicCluster, type MemoryHealthCheck, type MemoryHealthOptions, type MemoryHealthRecommendation, type MemoryHealthResponse, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, type MetadataFilter, type MetadataFilterOperator, type MetadataFilterValue, ModelAbstraction, type ModelConfig, type NamespaceInput, type NamespaceQueryScope, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SmartRecallOptions, type SmartRecallProfile, type SmartRecallResponse, type SmartRecallResult, type SnapshotExport, type SnapshotMeta, type StorageMaintenanceOptions, type StorageMaintenanceResult, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, authorizeKnowledgeResourceAccess, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, contextPackOptionsSchema, contextPackResponseSchema, contextPackSectionSchema, createCodebaseMemoryAdapter, createHermesAdapter, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, dreamMemoryLayerSchema, dreamOptionsSchema, dreamResponseSchema, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, knowledgeArtifactRegistrationSchema, knowledgeEdgeSchema, knowledgeGraphArtifactSchema, knowledgeIngestOptionsSchema, knowledgeIngestResultSchema, knowledgeNodeSchema, knowledgeResourceGrantSchema, knowledgeResourceScopeSchema, knowledgeResourceUriSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryHealthCheckSchema, memoryHealthOptionsSchema, memoryHealthRecommendationSchema, memoryHealthResponseSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, metadataFilterOperatorSchema, metadataFilterSchema, metadataFilterValueSchema, modelConfigSchema, namespaceInputSchema, namespaceQueryScopeSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, smartRecallOptionsSchema, smartRecallProfileSchema, smartRecallResponseSchema, smartRecallResultSchema, storeMemoryInputSchema, uploadPackage };

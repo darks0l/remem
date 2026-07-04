@@ -236,6 +236,8 @@ describe('knowledge graph ingestion', () => {
       neighborLimit: 5,
     });
     expect(inventorySnapshot.inventory?.owners.some((owner) => owner.owner === 'src')).toBe(true);
+    expect(inventorySnapshot.inventory?.hotspots[0].node.metadata?.name).toBe('ProcessOrder');
+    expect(inventorySnapshot.inventory?.hotspots[0].relationTypes).toContain('knowledge:calls');
     expect(inventorySnapshot.connections.every((connection) => ['knowledge:http_calls', 'knowledge:calls'].includes(connection.type))).toBe(true);
 
     const explanation = await adapter.explain('ProcessOrder', { project: 'checkout-service' });
@@ -248,12 +250,18 @@ describe('knowledge graph ingestion', () => {
     expect(entrypoints.some((entry) => entry.node.metadata?.label === 'Route')).toBe(true);
     expect(entrypoints[0].weight).toBeGreaterThan(1);
 
+    const hotspots = await adapter.hotspots({ project: 'checkout-service', limit: 5 });
+    expect(hotspots[0].node.metadata?.name).toBe('ProcessOrder');
+    expect(hotspots[0].incomingWeight).toBeGreaterThan(0);
+    expect(hotspots[0].outgoingWeight).toBeGreaterThan(0);
+
     const deadzones = await adapter.deadzones({ project: 'checkout-service', limit: 5 });
     expect(deadzones.some((entry) => entry.node.metadata?.name === 'UnusedCoupon')).toBe(true);
     expect(deadzones[0].weight).toBe(1.6);
 
     const overview = await adapter.overview('checkout-service');
     expect(overview.labels.Function).toBe(3);
+    expect(overview.hotspots[0].node.metadata?.name).toBe('ProcessOrder');
   });
 
   it('filters codebase graph snapshots by resource grants', async () => {
@@ -280,6 +288,21 @@ describe('knowledge graph ingestion', () => {
     expect(denied.connections).toHaveLength(0);
     expect(denied.paths).toHaveLength(0);
     expect(denied.context).toBe('');
+
+    const deniedInventory = await adapter.graphAsMemory('ProcessOrder', {
+      project: 'checkout-service',
+      displayType: 'inventory',
+      limit: 5,
+      neighborLimit: 5,
+      resourceGrant: {
+        resourceUri: 'memory://codebase/checkout-service/graph',
+        scopes: [],
+      },
+    });
+    expect(deniedInventory.inventory?.owners).toHaveLength(0);
+    expect(deniedInventory.inventory?.entrypoints).toHaveLength(0);
+    expect(deniedInventory.inventory?.hotspots).toHaveLength(0);
+    expect(deniedInventory.inventory?.deadzones).toHaveLength(0);
 
     const allowed = await adapter.asMemory('ProcessOrder', {
       project: 'checkout-service',

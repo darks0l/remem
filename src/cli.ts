@@ -131,6 +131,7 @@ Usage:
   remem init [same flags as ui] [--runtime openclaw|hermes|generic] [--out-dir <path>] [--json]
   remem status [--db <path>]
   remem stats [--db <path>] [--json]
+  remem graph [--query <text>] [--limit 100] [--dot] [--json]
   remem health [--db <path>] [--json]
   remem storage-maintenance [--dry-run] [--compact] [--json]
   remem knowledge-artifact --path <file> [--source codebase-memory-mcp] [--project <name>] [--resource-uri <uri>] [--required-scopes a,b] [--format sqlite] [--compression zstd] [--json]
@@ -542,6 +543,43 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
             `snapshots: ${stats.snapshotCount}`,
             `events: ${stats.eventCount}`,
             `top topics: ${topTopics}`,
+            '',
+          ].join('\n')
+        );
+      }
+    });
+    return 0;
+  }
+
+  if (command === 'graph') {
+    await withMemory(options, async (memory, context) => {
+      const metadata = parseMaybeJson(options.metadata) as QueryOptions['metadata'];
+      const graph = await memory.graph({
+        query: asString(options.query) || undefined,
+        limit: asNumber(options.limit, 100),
+        topics: asCsv(options.topics),
+        metadata,
+        includeIsolated: !options['hide-isolated'],
+        maxLinks: asNumber(options['max-links'], 250),
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...graph,
+      };
+      if (options.dot) emitText(runtime, `${graph.dot}\n`);
+      else if (jsonMode) emitJson(runtime, payload);
+      else {
+        const topTopics = graph.topics.slice(0, 8).map((item) => `${item.topic}:${item.count}`).join(', ') || 'none';
+        emitText(
+          runtime,
+          [
+            `memory graph: ${graph.nodes.length} nodes, ${graph.links.length} links`,
+            `top topics: ${topTopics}`,
+            `dot: remem graph --dot${graph.query ? ` --query "${graph.query}"` : ''}`,
             '',
           ].join('\n')
         );

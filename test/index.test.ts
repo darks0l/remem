@@ -257,6 +257,27 @@ describe('ReMEM', () => {
     expect(neighbors[0].memory?.id).toBe(toId);
   });
 
+  it('builds visualization-ready memory graph snapshots', async () => {
+    await memory.store({ content: 'Meta likes dark mode', topics: ['preferences', 'ui'] });
+    await memory.store({ content: 'Dark mode belongs in project obsidian', topics: ['project-obsidian', 'ui'] });
+    await memory.store({ content: 'Unrelated archive note', topics: ['archive'] });
+
+    const base = await memory.query('dark mode', { limit: 10 });
+    const fromId = base.results.find((entry) => entry.content.includes('Meta likes'))!.id;
+    const toId = base.results.find((entry) => entry.content.includes('project obsidian'))!.id;
+    await memory.linkMemories(fromId, toId, 'about', { weight: 1.2 });
+
+    const graph = await memory.graph({ query: 'dark mode', limit: 10, includeIsolated: false });
+    expect(graph.name).toBe('ReMEM Memory Graph');
+    expect(graph.nodes.map((node) => node.id)).toEqual(expect.arrayContaining([fromId, toId]));
+    expect(graph.links).toHaveLength(1);
+    expect(graph.links[0]).toMatchObject({ fromId, toId, type: 'about', weight: 1.2 });
+    expect(graph.topics.some((topic) => topic.topic === 'ui' && topic.count === 2)).toBe(true);
+    expect(graph.dot).toContain('digraph remem_memory');
+    expect(graph.dot).toContain('about');
+    expect(graph.nodes.some((node) => node.content.includes('Unrelated'))).toBe(false);
+  });
+
   it('expands query results with linked neighbors', async () => {
     await memory.store({ content: 'Primary memory about Meta', topics: ['meta'] });
     const linked = await memory.storeInLayer({ content: 'Layered follow-up detail', topics: ['meta-detail'] }, 'semantic');

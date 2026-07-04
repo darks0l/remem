@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No unreleased changes yet.
 
+## [0.21.0] - 2026-07-04
+
+### Added
+
+- Added `hotspots()` to the codebase graph adapter to rank high-signal graph nodes by weighted inbound/outbound connectivity and relation diversity.
+- Added hotspots to `Codebase Graph as memory` inventory snapshots and `overview()` results.
+- Added `resourceGrant` support to codebase graph inventory helpers (`owners`, `entrypoints`, `hotspots`, `deadzones`, and `overview`) so graph diagnostics can respect the same resource boundaries as graph snapshots.
+- Added `memory.graph()` for visualization-ready memory graph snapshots with weighted nodes, internal links, topic clusters, and Graphviz DOT output.
+- Added `remem graph` with JSON and DOT modes so agents can inspect or render a memory scope from the CLI.
+
 ## [0.20.0] - 2026-07-01
 
 ### Added

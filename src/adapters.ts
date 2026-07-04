@@ -47,6 +47,7 @@ export interface CodebaseSubgraphOptions extends Partial<QueryWithNeighborsOptio
 export interface CodebaseGraphInventoryOptions {
   project?: string;
   limit?: number;
+  resourceGrant?: KnowledgeResourceGrant;
 }
 
 export interface CodebaseGraphOwnerSummary {
@@ -66,6 +67,9 @@ export interface CodebaseGraphNodeHealth {
   outgoing: number;
   weight: number;
   links: MemoryLink[];
+  incomingWeight?: number;
+  outgoingWeight?: number;
+  relationTypes?: string[];
 }
 
 export interface CodebaseGraphSubgraph {
@@ -108,6 +112,7 @@ export interface CodebaseGraphMemorySnapshot {
   inventory?: {
     owners: CodebaseGraphOwnerSummary[];
     entrypoints: CodebaseGraphNodeHealth[];
+    hotspots: CodebaseGraphNodeHealth[];
     deadzones: CodebaseGraphNodeHealth[];
   };
 }
@@ -621,6 +626,31 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
     return entries.filter((entry) => isKnowledgeNode(entry, project));
   };
 
+  const scopedKnowledgeNodes = async (inventoryOptions: CodebaseGraphInventoryOptions): Promise<QueryResult[]> => {
+    const nodes = await knowledgeNodes(inventoryOptions.project);
+    return nodes.filter((node) => hasKnowledgeResourceAccess(node, inventoryOptions.resourceGrant));
+  };
+
+  const nodeHealth = async (node: QueryResult): Promise<CodebaseGraphNodeHealth> => {
+    const links = await memory.getLinkedMemories(node.id, { direction: 'both', limit: 100 });
+    const rawLinks = links.map((item) => item.link);
+    const incomingLinks = rawLinks.filter((link) => link.toId === node.id);
+    const outgoingLinks = rawLinks.filter((link) => link.fromId === node.id);
+    const incomingWeight = incomingLinks.reduce((sum, link) => sum + codebaseLinkWeight(link), 0);
+    const outgoingWeight = outgoingLinks.reduce((sum, link) => sum + codebaseLinkWeight(link), 0);
+    const relationTypes = Array.from(new Set(rawLinks.map((link) => link.type))).sort();
+    return {
+      node,
+      incoming: incomingLinks.length,
+      outgoing: outgoingLinks.length,
+      incomingWeight,
+      outgoingWeight,
+      relationTypes,
+      weight: codebaseNodeWeight(node) + (outgoingWeight * 1.25) + (incomingWeight * 0.35) + (relationTypes.length * 0.1),
+      links: rawLinks,
+    };
+  };
+
   const collectConnections = async (
     nodes: QueryResult[],
     options: {
@@ -773,6 +803,7 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
       });
       const relationTypes = Array.from(new Set(connections.map((connection) => connection.type))).sort();
       const project = queryOptions.project;
+      const inventoryOptions = { project, resourceGrant: queryOptions.resourceGrant, limit: 10 };
       const summary = `${queryOptions.snapshotName ?? 'Codebase Graph as memory'} captured ${nodes.length} nodes and ${connections.length} selected connections${project ? ` for ${project}` : ''}${relationTypes.length ? ` (${relationTypes.join(', ')})` : ''}.`;
 
       return {
@@ -791,9 +822,10 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
         ...(displayType === 'inventory'
           ? {
               inventory: {
-                owners: await this.owners({ project, limit: 10 }),
-                entrypoints: await this.entrypoints({ project, limit: 10 }),
-                deadzones: await this.deadzones({ project, limit: 10 }),
+                owners: await this.owners(inventoryOptions),
+                entrypoints: await this.entrypoints(inventoryOptions),
+                hotspots: await this.hotspots(inventoryOptions),
+                deadzones: await this.deadzones(inventoryOptions),
               },
             }
           : {}),
@@ -822,7 +854,7 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
     async entrypoints(projectOrOptions?: string | CodebaseGraphInventoryOptions) {
       const inventoryOptions = typeof projectOrOptions === 'string' ? { project: projectOrOptions } : projectOrOptions ?? {};
       const limit = inventoryOptions.limit ?? defaultLimit;
-      const nodes = await knowledgeNodes(inventoryOptions.project);
+      const nodes = await scopedKnowledgeNodes(inventoryOptions);
       const candidates: CodebaseGraphNodeHealth[] = [];
       for (const node of nodes) {
         const label = (getStringMetadata(node, 'label') ?? '').toLowerCase();
@@ -831,19 +863,7 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
         const looksLikeEntrypoint = ['project', 'route', 'command', 'entrypoint', 'api'].includes(label)
           || (label === 'file' && /\b(cli|server|index|main|app|route|command)s?\b/i.test(`${path} ${name}`));
         if (!looksLikeEntrypoint) continue;
-        const links = await memory.getLinkedMemories(node.id, { direction: 'both', limit: 100 });
-        const rawLinks = links.map((item) => item.link);
-        const incoming = rawLinks.filter((link) => link.toId === node.id);
-        const outgoing = rawLinks.filter((link) => link.fromId === node.id);
-        candidates.push({
-          node,
-          incoming: incoming.length,
-          outgoing: outgoing.length,
-          weight: codebaseNodeWeight(node)
-            + outgoing.reduce((sum, link) => sum + codebaseLinkWeight(link), 0)
-            + incoming.reduce((sum, link) => sum + codebaseLinkWeight(link) * 0.15, 0),
-          links: rawLinks,
-        });
+        candidates.push(await nodeHealth(node));
       }
       return candidates
         .sort((a, b) => b.weight - a.weight || b.outgoing - a.outgoing || a.incoming - b.incoming)
@@ -853,7 +873,7 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
     async owners(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphOwnerSummary[]> {
       const inventoryOptions = typeof projectOrOptions === 'string' ? { project: projectOrOptions } : projectOrOptions ?? {};
       const limit = inventoryOptions.limit ?? defaultLimit;
-      const nodes = await knowledgeNodes(inventoryOptions.project);
+      const nodes = await scopedKnowledgeNodes(inventoryOptions);
       const owners = new Map<string, CodebaseGraphOwnerSummary>();
       for (const node of nodes) {
         const { owner, type } = topLevelOwner(node);
@@ -876,39 +896,52 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
         .map((owner) => ({ ...owner, averageWeight: Number(owner.averageWeight.toFixed(3)), paths: owner.paths.slice(0, 10) }));
     },
 
+    async hotspots(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]> {
+      const inventoryOptions = typeof projectOrOptions === 'string' ? { project: projectOrOptions } : projectOrOptions ?? {};
+      const limit = inventoryOptions.limit ?? defaultLimit;
+      const nodes = await scopedKnowledgeNodes(inventoryOptions);
+      const scored = await Promise.all(nodes.map((node) => nodeHealth(node)));
+      return scored
+        .filter((entry) => entry.incoming > 0 || entry.outgoing > 0)
+        .sort((a, b) => b.weight - a.weight || b.outgoing - a.outgoing || b.incoming - a.incoming)
+        .slice(0, limit);
+    },
+
     async deadzones(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]> {
       const inventoryOptions = typeof projectOrOptions === 'string' ? { project: projectOrOptions } : projectOrOptions ?? {};
       const limit = inventoryOptions.limit ?? defaultLimit;
-      const nodes = await knowledgeNodes(inventoryOptions.project);
+      const nodes = await scopedKnowledgeNodes(inventoryOptions);
       const dead: CodebaseGraphNodeHealth[] = [];
       for (const node of nodes) {
         const label = (getStringMetadata(node, 'label') ?? '').toLowerCase();
         if (!['file', 'function', 'class', 'constant', 'symbol', 'package'].includes(label)) continue;
-        const links = await memory.getLinkedMemories(node.id, { direction: 'both', limit: 100 });
-        const rawLinks = links.map((item) => item.link);
-        const incoming = rawLinks.filter((link) => link.toId === node.id).length;
-        const outgoing = rawLinks.filter((link) => link.fromId === node.id).length;
-        if (incoming === 0 && outgoing === 0) {
-          dead.push({ node, incoming, outgoing, weight: codebaseNodeWeight(node), links: rawLinks });
+        const health = await nodeHealth(node);
+        if (health.incoming === 0 && health.outgoing === 0) {
+          dead.push({
+            ...health,
+            weight: codebaseNodeWeight(node),
+          });
         }
       }
       return dead.sort((a, b) => b.weight - a.weight).slice(0, limit);
     },
 
-    async overview(project?: string) {
-      const nodes = await knowledgeNodes(project);
+    async overview(projectOrOptions?: string | CodebaseGraphInventoryOptions) {
+      const inventoryOptions = typeof projectOrOptions === 'string' ? { project: projectOrOptions } : projectOrOptions ?? {};
+      const nodes = await scopedKnowledgeNodes(inventoryOptions);
       const counts: Record<string, number> = {};
       for (const node of nodes) {
         const label = getStringMetadata(node, 'label') ?? 'Node';
         counts[label] = (counts[label] ?? 0) + 1;
       }
       return {
-        project,
+        project: inventoryOptions.project,
         nodes: nodes.length,
         labels: counts,
-        owners: await this.owners({ project, limit: 10 }),
-        entrypoints: await this.entrypoints({ project, limit: 10 }),
-        deadzones: await this.deadzones({ project, limit: 10 }),
+        owners: await this.owners({ ...inventoryOptions, limit: 10 }),
+        entrypoints: await this.entrypoints({ ...inventoryOptions, limit: 10 }),
+        hotspots: await this.hotspots({ ...inventoryOptions, limit: 10 }),
+        deadzones: await this.deadzones({ ...inventoryOptions, limit: 10 }),
       };
     },
 

@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.20.0](https://img.shields.io/badge/v0.20.0-scoped--knowledge--resource--access-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.21.0](https://img.shields.io/badge/v0.21.0-memory--graph--visualization-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -78,6 +78,7 @@ There is also a direct CLI surface for agent-facing operations:
 remem status --db ./remem.db
 remem stats --db ./remem.db --json
 remem health --db ./remem.db --json
+remem graph --db ./remem.db --query "release context" --dot > memory.dot
 remem storage-maintenance --db ./remem.db --dry-run --json
 remem knowledge-artifact --db ./remem.db --path .codebase-memory/graph.db.zst --source codebase-memory-mcp --project remem --format sqlite --compression zstd --json
 remem knowledge-ingest --db ./remem.db --artifact ./code-graph.json --source codebase-memory-mcp --project remem --json
@@ -111,6 +112,8 @@ Use `doctor` when you want package/runtime/config/storage/snapshot checks in one
 
 Use `stats` when an agent needs a compact inventory of the memory scope before deciding whether to recall, consolidate, snapshot, or prune.
 
+Use `graph` when an agent needs a visualization-ready map of a memory scope. It returns weighted memory nodes, internal links, topic clusters, and Graphviz DOT so you can inspect recall shape before pruning, consolidation, or handoff.
+
 Use `health` when an agent needs a maintenance plan, not just counts. It scores the current memory scope and flags missing/stale snapshots, duplicate memories, stale unaccessed entries, weak topic coverage, and long-memory layer pressure.
 
 ```bash
@@ -133,7 +136,7 @@ remem storage-maintenance --db ./remem.db --dry-run --json
 remem storage-maintenance --db ./remem.db --compact --json
 ```
 
-Use `knowledge-artifact` and `knowledge-ingest` when another tool already owns the code intelligence layer. ReMEM can either remember the external graph artifact pointer or import a portable node/edge graph so normal memory recall can traverse architecture, route, import, and call relationships. The codebase adapter can then turn those links into scoped search, weighted impact traversal, subgraph context, entrypoint discovery, owner/directory summaries, isolated-node diagnostics, and **Codebase Graph as memory** snapshots.
+Use `knowledge-artifact` and `knowledge-ingest` when another tool already owns the code intelligence layer. ReMEM can either remember the external graph artifact pointer or import a portable node/edge graph so normal memory recall can traverse architecture, route, import, and call relationships. The codebase adapter can then turn those links into scoped search, weighted impact traversal, subgraph context, entrypoint discovery, owner/directory summaries, hotspot ranking, isolated-node diagnostics, and **Codebase Graph as memory** snapshots.
 
 For MCP or other resource-oriented bridges, knowledge artifacts and graph imports can also carry a validated `resourceUri` plus `requiredScopes`. ReMEM stores those fields on artifact and imported node metadata and exports `authorizeKnowledgeResourceAccess()` for host-side grant checks before returning graph snapshots or subscribed resource reads.
 
@@ -146,7 +149,7 @@ Portable graph nodes and edges may include `weight` values from `0` to `2`. When
 - `memory` - balanced default with nodes, selected connections, traversal paths, and prompt context
 - `graph` - visualization-friendly nodes and connections for dense screenshots or UI rendering
 - `context` - LLM-ready context text backed by the selected graph neighborhood
-- `inventory` - graph snapshot plus owners, entrypoints, and deadzone diagnostics
+- `inventory` - graph snapshot plus owners, entrypoints, hotspots, and deadzone diagnostics
 
 ```bash
 # Register a compressed code graph produced by another local tool.
@@ -258,6 +261,7 @@ ReMEM does something different:
 - **Shared memory namespaces** (v0.12.0) - Store reusable memory inside explicit team/project lanes with private/shared visibility controls and scoped recall
 - **Smart recall** (v0.12.0) - Fuse semantic, graph, procedural, and recent-context lanes into one higher-signal retrieval pass
 - **Context packs** (v0.14.0) - Generate bounded, prompt-ready recall packets from smart recall, recent context, procedural signals, and optional dream synthesis
+- **Memory graph visualization** - Export weighted memory nodes, links, topic clusters, and Graphviz DOT from `memory.graph()` or `remem graph`
 - **Consolidation workflows** (v0.12.5) - Run full memory curation passes that deduplicate, resolve conflicts, promote durable summaries, and optionally turn repeated patterns into procedures
 - **External knowledge graph ingestion** (v0.18.0) - Register compressed graph artifacts or ingest portable node/edge graphs from codebase intelligence tools as ReMEM memories and traversable links
 - **Memory links + neighbor-aware retrieval** (v0.8.0, expanded in v0.8.5) - Explicit typed links between memories (`about`, `supports`, `contradicts`, etc.), weighted graph-adjacent recall, and optional traversal path details

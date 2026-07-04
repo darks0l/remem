@@ -53,6 +53,27 @@ describe('ReMEM CLI', () => {
     expect(payload.topics[0]).toEqual({ topic: 'stats', count: 2 });
   });
 
+  it('returns memory graph snapshots as JSON and DOT', async () => {
+    const db = `./.tmp-cli-graph-${Date.now()}-${Math.random().toString(16).slice(2)}.db`;
+    await fs.rm(db, { force: true });
+    await invoke(['store', '--db', db, '--content', 'Graph memory one for visualization', '--topics', 'graph,viz', '--json']);
+    await invoke(['store', '--db', db, '--content', 'Graph memory two for visualization', '--topics', 'graph', '--json']);
+
+    const jsonResult = await invoke(['graph', '--db', db, '--query', 'visualization', '--json']);
+    expect(jsonResult.exitCode).toBe(0);
+    const payload = JSON.parse(jsonResult.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.command).toBe('graph');
+    expect(payload.name).toBe('ReMEM Memory Graph');
+    expect(payload.nodes.length).toBe(2);
+    expect(payload.topics[0]).toMatchObject({ topic: 'graph', count: 2 });
+
+    const dotResult = await invoke(['graph', '--db', db, '--query', 'visualization', '--dot']);
+    expect(dotResult.exitCode).toBe(0);
+    expect(dotResult.stdout).toContain('digraph remem_memory');
+    expect(dotResult.stdout).toContain('Graph memory one');
+  });
+
   it('returns memory health through the CLI JSON contract', async () => {
     const db = `./.tmp-cli-health-${Date.now()}-${Math.random().toString(16).slice(2)}.db`;
     await fs.rm(db, { force: true });

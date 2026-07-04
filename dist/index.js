@@ -6310,6 +6310,29 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
     const entries = await memory.getStore().getAllEntries();
     return entries.filter((entry) => isKnowledgeNode(entry, project));
   };
+  const scopedKnowledgeNodes = async (inventoryOptions) => {
+    const nodes = await knowledgeNodes(inventoryOptions.project);
+    return nodes.filter((node) => hasKnowledgeResourceAccess(node, inventoryOptions.resourceGrant));
+  };
+  const nodeHealth = async (node) => {
+    const links = await memory.getLinkedMemories(node.id, { direction: "both", limit: 100 });
+    const rawLinks = links.map((item) => item.link);
+    const incomingLinks = rawLinks.filter((link) => link.toId === node.id);
+    const outgoingLinks = rawLinks.filter((link) => link.fromId === node.id);
+    const incomingWeight = incomingLinks.reduce((sum, link) => sum + codebaseLinkWeight(link), 0);
+    const outgoingWeight = outgoingLinks.reduce((sum, link) => sum + codebaseLinkWeight(link), 0);
+    const relationTypes = Array.from(new Set(rawLinks.map((link) => link.type))).sort();
+    return {
+      node,
+      incoming: incomingLinks.length,
+      outgoing: outgoingLinks.length,
+      incomingWeight,
+      outgoingWeight,
+      relationTypes,
+      weight: codebaseNodeWeight(node) + outgoingWeight * 1.25 + incomingWeight * 0.35 + relationTypes.length * 0.1,
+      links: rawLinks
+    };
+  };
   const collectConnections = async (nodes, options2 = {}) => {
     const byId = new Map(nodes.map((node) => [node.id, node]));
     const allowedTypes = normalizeCodebaseConnectionTypes(options2.connectionTypes);
@@ -6436,6 +6459,7 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
       });
       const relationTypes = Array.from(new Set(connections.map((connection) => connection.type))).sort();
       const project = queryOptions.project;
+      const inventoryOptions = { project, resourceGrant: queryOptions.resourceGrant, limit: 10 };
       const summary = `${queryOptions.snapshotName ?? "Codebase Graph as memory"} captured ${nodes.length} nodes and ${connections.length} selected connections${project ? ` for ${project}` : ""}${relationTypes.length ? ` (${relationTypes.join(", ")})` : ""}.`;
       return {
         name: "Codebase Graph as memory",
@@ -6450,9 +6474,10 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
         context: displayType === "graph" ? formatCodebaseContext(nodes, queryOptions.maxContextChars ?? 4e3) : subgraph.context,
         ...displayType === "inventory" ? {
           inventory: {
-            owners: await this.owners({ project, limit: 10 }),
-            entrypoints: await this.entrypoints({ project, limit: 10 }),
-            deadzones: await this.deadzones({ project, limit: 10 })
+            owners: await this.owners(inventoryOptions),
+            entrypoints: await this.entrypoints(inventoryOptions),
+            hotspots: await this.hotspots(inventoryOptions),
+            deadzones: await this.deadzones(inventoryOptions)
           }
         } : {}
       };
@@ -6475,7 +6500,7 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
     async entrypoints(projectOrOptions) {
       const inventoryOptions = typeof projectOrOptions === "string" ? { project: projectOrOptions } : projectOrOptions ?? {};
       const limit = inventoryOptions.limit ?? defaultLimit;
-      const nodes = await knowledgeNodes(inventoryOptions.project);
+      const nodes = await scopedKnowledgeNodes(inventoryOptions);
       const candidates = [];
       for (const node of nodes) {
         const label = (getStringMetadata(node, "label") ?? "").toLowerCase();
@@ -6483,24 +6508,14 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
         const name = getStringMetadata(node, "name") ?? "";
         const looksLikeEntrypoint = ["project", "route", "command", "entrypoint", "api"].includes(label) || label === "file" && /\b(cli|server|index|main|app|route|command)s?\b/i.test(`${path} ${name}`);
         if (!looksLikeEntrypoint) continue;
-        const links = await memory.getLinkedMemories(node.id, { direction: "both", limit: 100 });
-        const rawLinks = links.map((item) => item.link);
-        const incoming = rawLinks.filter((link) => link.toId === node.id);
-        const outgoing = rawLinks.filter((link) => link.fromId === node.id);
-        candidates.push({
-          node,
-          incoming: incoming.length,
-          outgoing: outgoing.length,
-          weight: codebaseNodeWeight(node) + outgoing.reduce((sum, link) => sum + codebaseLinkWeight(link), 0) + incoming.reduce((sum, link) => sum + codebaseLinkWeight(link) * 0.15, 0),
-          links: rawLinks
-        });
+        candidates.push(await nodeHealth(node));
       }
       return candidates.sort((a, b) => b.weight - a.weight || b.outgoing - a.outgoing || a.incoming - b.incoming).slice(0, limit);
     },
     async owners(projectOrOptions) {
       const inventoryOptions = typeof projectOrOptions === "string" ? { project: projectOrOptions } : projectOrOptions ?? {};
       const limit = inventoryOptions.limit ?? defaultLimit;
-      const nodes = await knowledgeNodes(inventoryOptions.project);
+      const nodes = await scopedKnowledgeNodes(inventoryOptions);
       const owners = /* @__PURE__ */ new Map();
       for (const node of nodes) {
         const { owner, type } = topLevelOwner(node);
@@ -6519,38 +6534,47 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
       }
       return Array.from(owners.values()).sort((a, b) => b.nodes * b.averageWeight - a.nodes * a.averageWeight || a.owner.localeCompare(b.owner)).slice(0, limit).map((owner) => ({ ...owner, averageWeight: Number(owner.averageWeight.toFixed(3)), paths: owner.paths.slice(0, 10) }));
     },
+    async hotspots(projectOrOptions) {
+      const inventoryOptions = typeof projectOrOptions === "string" ? { project: projectOrOptions } : projectOrOptions ?? {};
+      const limit = inventoryOptions.limit ?? defaultLimit;
+      const nodes = await scopedKnowledgeNodes(inventoryOptions);
+      const scored = await Promise.all(nodes.map((node) => nodeHealth(node)));
+      return scored.filter((entry) => entry.incoming > 0 || entry.outgoing > 0).sort((a, b) => b.weight - a.weight || b.outgoing - a.outgoing || b.incoming - a.incoming).slice(0, limit);
+    },
     async deadzones(projectOrOptions) {
       const inventoryOptions = typeof projectOrOptions === "string" ? { project: projectOrOptions } : projectOrOptions ?? {};
       const limit = inventoryOptions.limit ?? defaultLimit;
-      const nodes = await knowledgeNodes(inventoryOptions.project);
+      const nodes = await scopedKnowledgeNodes(inventoryOptions);
       const dead = [];
       for (const node of nodes) {
         const label = (getStringMetadata(node, "label") ?? "").toLowerCase();
         if (!["file", "function", "class", "constant", "symbol", "package"].includes(label)) continue;
-        const links = await memory.getLinkedMemories(node.id, { direction: "both", limit: 100 });
-        const rawLinks = links.map((item) => item.link);
-        const incoming = rawLinks.filter((link) => link.toId === node.id).length;
-        const outgoing = rawLinks.filter((link) => link.fromId === node.id).length;
-        if (incoming === 0 && outgoing === 0) {
-          dead.push({ node, incoming, outgoing, weight: codebaseNodeWeight(node), links: rawLinks });
+        const health = await nodeHealth(node);
+        if (health.incoming === 0 && health.outgoing === 0) {
+          dead.push({
+            ...health,
+            weight: codebaseNodeWeight(node)
+          });
         }
       }
       return dead.sort((a, b) => b.weight - a.weight).slice(0, limit);
     },
-    async overview(project) {
-      const nodes = await knowledgeNodes(project);
+    async overview(projectOrOptions) {
+      const inventoryOptions = typeof projectOrOptions === "string" ? { project: projectOrOptions } : projectOrOptions ?? {};
+      const nodes = await scopedKnowledgeNodes(inventoryOptions);
       const counts = {};
       for (const node of nodes) {
         const label = getStringMetadata(node, "label") ?? "Node";
         counts[label] = (counts[label] ?? 0) + 1;
       }
       return {
-        project,
+        project: inventoryOptions.project,
         nodes: nodes.length,
         labels: counts,
-        owners: await this.owners({ project, limit: 10 }),
-        entrypoints: await this.entrypoints({ project, limit: 10 }),
-        deadzones: await this.deadzones({ project, limit: 10 })
+        owners: await this.owners({ ...inventoryOptions, limit: 10 }),
+        entrypoints: await this.entrypoints({ ...inventoryOptions, limit: 10 }),
+        hotspots: await this.hotspots({ ...inventoryOptions, limit: 10 }),
+        deadzones: await this.deadzones({ ...inventoryOptions, limit: 10 })
       };
     },
     async context(query, queryOptions = { limit: defaultLimit }) {
@@ -6595,6 +6619,14 @@ var ReMEM = class {
       metadata.visibility = { in: ["private", "shared"] };
     }
     return metadata;
+  }
+  graphNodeLabel(entry) {
+    const metadataName = entry.metadata?.name;
+    if (typeof metadataName === "string" && metadataName.trim()) return metadataName.trim();
+    return entry.content.split("\n")[0]?.trim().slice(0, 80) || entry.id;
+  }
+  dotEscape(value) {
+    return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
   }
   constructor(config) {
     const validated = rememConfigSchema.parse(config);
@@ -7249,6 +7281,87 @@ profile: ${profile}
       layers: this.getLayerStats(),
       oldestMemoryAt,
       newestMemoryAt
+    };
+  }
+  /**
+   * Build a visualization-ready snapshot of the current memory graph.
+   * Returns weighted nodes, internal links, topic clusters, and Graphviz DOT.
+   */
+  async graph(options = {}) {
+    const limit = Math.min(Math.max(options.limit ?? 100, 1), 100);
+    const topics = options.topics?.filter(Boolean);
+    const metadata = options.metadata && Object.keys(options.metadata).length > 0 ? options.metadata : void 0;
+    const queryOptions = {
+      limit,
+      ...topics && topics.length > 0 ? { topics } : {},
+      ...metadata ? { metadata } : {},
+      minAccessCount: options.minAccessCount,
+      since: options.since,
+      until: options.until
+    };
+    const response = await this.query(options.query ?? "", queryOptions);
+    const initialNodes = response.results.map((entry) => ({
+      id: entry.id,
+      label: this.graphNodeLabel(entry),
+      content: entry.content,
+      topics: entry.topics,
+      metadata: entry.metadata ?? {},
+      createdAt: entry.createdAt,
+      accessedAt: entry.accessedAt,
+      accessCount: entry.accessCount,
+      weight: Number(((entry.relevanceScore ?? 0) + Math.min(1, entry.accessCount * 0.05) + Math.min(1, entry.topics.length * 0.08)).toFixed(4))
+    }));
+    const nodeIds = new Set(initialNodes.map((node) => node.id));
+    const linksById = /* @__PURE__ */ new Map();
+    const maxLinks = Math.min(Math.max(options.maxLinks ?? 250, 0), 1e3);
+    for (const node of initialNodes) {
+      if (linksById.size >= maxLinks) break;
+      const linked = await this.getLinkedMemories(node.id, { direction: "both", limit: 100 });
+      for (const item of linked) {
+        if (linksById.size >= maxLinks) break;
+        const link = item.link;
+        if (!nodeIds.has(link.fromId) || !nodeIds.has(link.toId)) continue;
+        linksById.set(link.id, {
+          id: link.id,
+          fromId: link.fromId,
+          toId: link.toId,
+          type: link.type,
+          weight: this.metadataNumericWeight(link.metadata ?? {}, ["graphWeight", "weight", "strength"], this.defaultLinkWeight(link.type)),
+          metadata: link.metadata ?? {},
+          createdAt: link.createdAt
+        });
+      }
+    }
+    const links = Array.from(linksById.values()).sort((a, b) => b.weight - a.weight || a.type.localeCompare(b.type));
+    const connectedIds = new Set(links.flatMap((link) => [link.fromId, link.toId]));
+    const nodes = options.includeIsolated === false ? initialNodes.filter((node) => connectedIds.has(node.id)) : initialNodes;
+    const finalNodeIds = new Set(nodes.map((node) => node.id));
+    const finalLinks = links.filter((link) => finalNodeIds.has(link.fromId) && finalNodeIds.has(link.toId));
+    const topicMap = /* @__PURE__ */ new Map();
+    for (const node of nodes) {
+      for (const topic of node.topics) {
+        if (!topicMap.has(topic)) topicMap.set(topic, /* @__PURE__ */ new Set());
+        topicMap.get(topic).add(node.id);
+      }
+    }
+    const topicClusters = Array.from(topicMap.entries()).map(([topic, ids]) => ({ topic, count: ids.size, nodeIds: Array.from(ids).sort() })).sort((a, b) => b.count - a.count || a.topic.localeCompare(b.topic));
+    const dotLines = [
+      "digraph remem_memory {",
+      "  graph [rankdir=LR];",
+      '  node [shape=box, style="rounded,filled", fillcolor="#111827", fontcolor="#f9fafb", color="#374151"];',
+      '  edge [color="#6b7280", fontcolor="#9ca3af"];',
+      ...nodes.map((node) => `  "${this.dotEscape(node.id)}" [label="${this.dotEscape(node.label)}\\n${this.dotEscape(node.topics.slice(0, 3).join(", "))}"];`),
+      ...finalLinks.map((link) => `  "${this.dotEscape(link.fromId)}" -> "${this.dotEscape(link.toId)}" [label="${this.dotEscape(link.type)}", penwidth="${Math.max(1, link.weight).toFixed(2)}"];`),
+      "}"
+    ];
+    return {
+      name: "ReMEM Memory Graph",
+      ...options.query ? { query: options.query } : {},
+      nodes,
+      links: finalLinks,
+      topics: topicClusters,
+      dot: dotLines.join("\n"),
+      generatedAt: Date.now()
     };
   }
   /**
