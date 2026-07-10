@@ -327,12 +327,21 @@ export class MemoryStore implements MemoryStoreLike {
       .map((entry) => ({
         entry,
         relevanceScore: this.simpleRelevance(entry.content, text),
+        exactScore: this.exactTokenRelevance(entry.content, text),
       }))
       .filter((scored) => terms.length === 0 || scored.relevanceScore > 0)
+      // Primary ordering is unchanged (substring relevance), and the existing
+      // access-count / recency tie-breaks still decide genuine relevance ties
+      // (a popular substring hit is not demoted). Only among entries ALSO tied on
+      // those does an exact whole-token match win over a substring collision
+      // (e.g. `fact-16` beats `fact-1681`), with id as a final stable total order
+      // so identical scores never resolve non-deterministically across runs.
       .sort((a, b) =>
         b.relevanceScore - a.relevanceScore ||
         b.entry.accessCount - a.entry.accessCount ||
-        b.entry.accessedAt - a.entry.accessedAt
+        b.exactScore - a.exactScore ||
+        b.entry.accessedAt - a.entry.accessedAt ||
+        (a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0)
       );
 
     const totalAvailable = scoredEntries.length;
@@ -1467,5 +1476,20 @@ export class MemoryStore implements MemoryStoreLike {
     const terms = query.toLowerCase().split(/\s+/);
     const matches = terms.filter((t) => lower.includes(t)).length;
     return matches / terms.length;
+  }
+
+  /**
+   * Fraction of query terms that appear in the content as whole tokens
+   * (word-boundary matches), not just substrings. Used only as a tie-break
+   * alongside simpleRelevance so that an exact token match (`fact-16`) ranks
+   * above a substring collision (`fact-1681`). Deterministic and dependency-free.
+   */
+  private exactTokenRelevance(content: string, query: string): number {
+    const tokenize = (s: string) => s.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean);
+    const queryTokens = tokenize(query);
+    if (queryTokens.length === 0) return 0;
+    const contentTokens = new Set(tokenize(content));
+    const matches = queryTokens.filter((t) => contentTokens.has(t)).length;
+    return matches / queryTokens.length;
   }
 }

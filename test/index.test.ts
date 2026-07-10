@@ -57,6 +57,22 @@ describe('ReMEM', () => {
     expect(exactQuery.results[0].content).toContain('Exact fact match');
   });
 
+  it('ranks an exact id-token match above substring-collision siblings', async () => {
+    // A short id token (`fact-16`) is a substring of longer ids
+    // (`fact-160`, `fact-1600`, `fact-1681`), so all four score identically under
+    // substring relevance. The target is stored FIRST (oldest), so the previous
+    // recency tie-break would rank it last; the exact-token tie-break must float
+    // it back to the top. Content is identical apart from the id.
+    await memory.store({ content: 'FACT_ID fact-16: card record codename ghost', topics: ['card'] });
+    await memory.store({ content: 'FACT_ID fact-160: card record codename ghost', topics: ['card'] });
+    await memory.store({ content: 'FACT_ID fact-1600: card record codename ghost', topics: ['card'] });
+    await memory.store({ content: 'FACT_ID fact-1681: card record codename ghost', topics: ['card'] });
+
+    const results = await memory.query('record for fact-16');
+    expect(results.results[0].content).toContain('fact-16:');
+    expect(results.results[0].content).not.toContain('fact-160');
+  });
+
   it('respects query options', async () => {
     for (let i = 0; i < 15; i++) {
       await memory.store({ content: `Memory ${i}`, topics: ['test'] });
