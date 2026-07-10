@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.21.1] - 2026-07-10
+
 ### Added
 
 - Added Cytoscape-compatible elements to `memory.graph()` / `remem graph --json` snapshots so browser graph views can render ReMEM memory maps without parsing DOT.
