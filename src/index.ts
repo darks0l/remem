@@ -46,6 +46,7 @@ import {
   type MemoryHealthRecommendation,
   type MemoryHealthResponse,
   type LayeredMemoryEntry,
+  type MemoryEntry,
   type KnowledgeArtifactRegistration,
   type KnowledgeArtifactRegistrationResult,
   type KnowledgeGraphArtifact,
@@ -260,7 +261,7 @@ export class ReMEM {
    * If layers are enabled, also persists to the appropriate layer in SQLite.
    * If embeddings are enabled, generates a vector embedding in the background.
    */
-  async store(input: StoreMemoryInput): Promise<void> {
+  async store(input: StoreMemoryInput): Promise<MemoryEntry> {
     const normalized = storeMemoryInputSchema.parse(input);
 
     // Store in the underlying store to get the entry ID for embedding
@@ -302,6 +303,8 @@ export class ReMEM {
           .catch((err) => console.warn(`[ReMEM] Async embed failed for ${stored.id}: ${err}`));
       }
     }
+
+    return stored;
   }
 
   /**

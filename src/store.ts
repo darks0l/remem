@@ -17,6 +17,7 @@
 
 import initSqlJs, { type Database as SqlJsDatabase } from 'sql.js';
 import { createHash, randomUUID } from 'crypto';
+import { writeFileSync, renameSync } from 'node:fs';
 import {
   type LinkedMemoryQueryOptions,
   type MemoryLink,
@@ -1271,7 +1272,6 @@ export class MemoryStore implements MemoryStoreLike {
     if (!this.db || this.dbPath === ':memory:') return;
     try {
       // Atomic write: write to .tmp, then rename. Prevents corruption on crash.
-      const { writeFileSync, renameSync } = require('fs');
       const data = this.db.export();
       const buffer = Buffer.from(data);
       const tmpPath = `${this.dbPath}.tmp`;
