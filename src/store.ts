@@ -17,6 +17,7 @@
 
 import initSqlJs, { type Database as SqlJsDatabase } from 'sql.js';
 import { createHash, randomUUID } from 'crypto';
+import { writeFileSync, renameSync } from 'node:fs';
 import {
   type LinkedMemoryQueryOptions,
   type MemoryLink,
@@ -327,12 +328,15 @@ export class MemoryStore implements MemoryStoreLike {
       .map((entry) => ({
         entry,
         relevanceScore: this.simpleRelevance(entry.content, text),
+        exactScore: this.exactTokenRelevance(entry.content, text),
       }))
       .filter((scored) => terms.length === 0 || scored.relevanceScore > 0)
       .sort((a, b) =>
         b.relevanceScore - a.relevanceScore ||
         b.entry.accessCount - a.entry.accessCount ||
-        b.entry.accessedAt - a.entry.accessedAt
+        b.exactScore - a.exactScore ||
+        b.entry.accessedAt - a.entry.accessedAt ||
+        (a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0)
       );
 
     const totalAvailable = scoredEntries.length;
@@ -860,12 +864,8 @@ export class MemoryStore implements MemoryStoreLike {
       throw new Error(`Snapshot checksum mismatch: ${snapshotId}`);
     }
 
-    // Filter by agent/user scope
-    const scopedEntries = data.layerEntries.filter((e) => {
-      if (opts?.agentId && e.metadata?.agentId !== opts.agentId) return false;
-      if (opts?.userId && e.metadata?.userId !== opts.userId) return false;
-      return true;
-    });
+    // Snapshots are already scoped when created; restore them into the requested scope.
+    const scopedEntries = data.layerEntries;
     const scopedCoreEntries = data.coreEntries ?? [];
 
     // Clear current scoped entries
@@ -1271,7 +1271,6 @@ export class MemoryStore implements MemoryStoreLike {
     if (!this.db || this.dbPath === ':memory:') return;
     try {
       // Atomic write: write to .tmp, then rename. Prevents corruption on crash.
-      const { writeFileSync, renameSync } = require('fs');
       const data = this.db.export();
       const buffer = Buffer.from(data);
       const tmpPath = `${this.dbPath}.tmp`;
@@ -1467,5 +1466,15 @@ export class MemoryStore implements MemoryStoreLike {
     const terms = query.toLowerCase().split(/\s+/);
     const matches = terms.filter((t) => lower.includes(t)).length;
     return matches / terms.length;
+  }
+
+  private exactTokenRelevance(content: string, query: string): number {
+    const tokenize = (value: string) => value.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean);
+    const queryTokens = tokenize(query);
+    if (queryTokens.length === 0) return 0;
+
+    const contentTokens = new Set(tokenize(content));
+    const matches = queryTokens.filter((token) => contentTokens.has(token)).length;
+    return matches / queryTokens.length;
   }
 }

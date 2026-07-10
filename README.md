@@ -112,7 +112,7 @@ Use `doctor` when you want package/runtime/config/storage/snapshot checks in one
 
 Use `stats` when an agent needs a compact inventory of the memory scope before deciding whether to recall, consolidate, snapshot, or prune.
 
-Use `graph` when an agent needs a visualization-ready map of a memory scope. It returns weighted memory nodes, internal links, topic clusters, and Graphviz DOT so you can inspect recall shape before pruning, consolidation, or handoff.
+Use `graph` when an agent needs a visualization-ready map of a memory scope. It returns weighted memory nodes, internal links, topic clusters, Graphviz DOT, and Cytoscape-compatible elements so you can inspect recall shape before pruning, consolidation, handoff, or web rendering.
 
 Use `health` when an agent needs a maintenance plan, not just counts. It scores the current memory scope and flags missing/stale snapshots, duplicate memories, stale unaccessed entries, weak topic coverage, and long-memory layer pressure.
 
@@ -261,7 +261,7 @@ ReMEM does something different:
 - **Shared memory namespaces** (v0.12.0) - Store reusable memory inside explicit team/project lanes with private/shared visibility controls and scoped recall
 - **Smart recall** (v0.12.0) - Fuse semantic, graph, procedural, and recent-context lanes into one higher-signal retrieval pass
 - **Context packs** (v0.14.0) - Generate bounded, prompt-ready recall packets from smart recall, recent context, procedural signals, and optional dream synthesis
-- **Memory graph visualization** - Export weighted memory nodes, links, topic clusters, and Graphviz DOT from `memory.graph()` or `remem graph`
+- **Memory graph visualization** - Export weighted memory nodes, links, topic clusters, Graphviz DOT, and Cytoscape-ready elements from `memory.graph()` or `remem graph`
 - **Consolidation workflows** (v0.12.5) - Run full memory curation passes that deduplicate, resolve conflicts, promote durable summaries, and optionally turn repeated patterns into procedures
 - **External knowledge graph ingestion** (v0.18.0) - Register compressed graph artifacts or ingest portable node/edge graphs from codebase intelligence tools as ReMEM memories and traversable links
 - **Memory links + neighbor-aware retrieval** (v0.8.0, expanded in v0.8.5) - Explicit typed links between memories (`about`, `supports`, `contradicts`, etc.), weighted graph-adjacent recall, and optional traversal path details

@@ -46,6 +46,7 @@ import {
   type MemoryHealthRecommendation,
   type MemoryHealthResponse,
   type LayeredMemoryEntry,
+  type MemoryEntry,
   type KnowledgeArtifactRegistration,
   type KnowledgeArtifactRegistrationResult,
   type KnowledgeGraphArtifact,
@@ -112,6 +113,39 @@ export interface MemoryGraphTopicCluster {
   nodeIds: string[];
 }
 
+export interface MemoryGraphCytoscapeNode {
+  group: 'nodes';
+  data: {
+    id: string;
+    label: string;
+    content: string;
+    topics: string[];
+    weight: number;
+    metadata: Record<string, unknown>;
+    createdAt: number;
+    accessedAt: number;
+    accessCount: number;
+  };
+}
+
+export interface MemoryGraphCytoscapeEdge {
+  group: 'edges';
+  data: {
+    id: string;
+    source: string;
+    target: string;
+    label: string;
+    type: string;
+    weight: number;
+    metadata: Record<string, unknown>;
+    createdAt: number;
+  };
+}
+
+export interface MemoryGraphCytoscapeExport {
+  elements: Array<MemoryGraphCytoscapeNode | MemoryGraphCytoscapeEdge>;
+}
+
 export interface MemoryGraphSnapshot {
   name: 'ReMEM Memory Graph';
   query?: string;
@@ -119,6 +153,7 @@ export interface MemoryGraphSnapshot {
   links: MemoryGraphLink[];
   topics: MemoryGraphTopicCluster[];
   dot: string;
+  cytoscape: MemoryGraphCytoscapeExport;
   generatedAt: number;
 }
 
@@ -145,6 +180,7 @@ export class ReMEM {
   private _embeddingEnabled: boolean = false;
   private _identityEnabled: boolean = false;
   private _layersEnabled: boolean = false;
+  private _layerConfig?: Partial<LayerConfig>;
   private _agentId?: string;
   private _userId?: string;
 
@@ -260,7 +296,7 @@ export class ReMEM {
    * If layers are enabled, also persists to the appropriate layer in SQLite.
    * If embeddings are enabled, generates a vector embedding in the background.
    */
-  async store(input: StoreMemoryInput): Promise<void> {
+  async store(input: StoreMemoryInput): Promise<MemoryEntry> {
     const normalized = storeMemoryInputSchema.parse(input);
 
     // Store in the underlying store to get the entry ID for embedding
@@ -302,6 +338,8 @@ export class ReMEM {
           .catch((err) => console.warn(`[ReMEM] Async embed failed for ${stored.id}: ${err}`));
       }
     }
+
+    return stored;
   }
 
   /**
@@ -1073,6 +1111,37 @@ export class ReMEM {
       ...finalLinks.map((link) => `  "${this.dotEscape(link.fromId)}" -> "${this.dotEscape(link.toId)}" [label="${this.dotEscape(link.type)}", penwidth="${Math.max(1, link.weight).toFixed(2)}"];`),
       '}',
     ];
+    const cytoscape: MemoryGraphCytoscapeExport = {
+      elements: [
+        ...nodes.map((node): MemoryGraphCytoscapeNode => ({
+          group: 'nodes',
+          data: {
+            id: node.id,
+            label: node.label,
+            content: node.content,
+            topics: node.topics,
+            weight: node.weight,
+            metadata: node.metadata,
+            createdAt: node.createdAt,
+            accessedAt: node.accessedAt,
+            accessCount: node.accessCount,
+          },
+        })),
+        ...finalLinks.map((link): MemoryGraphCytoscapeEdge => ({
+          group: 'edges',
+          data: {
+            id: link.id,
+            source: link.fromId,
+            target: link.toId,
+            label: link.type,
+            type: link.type,
+            weight: link.weight,
+            metadata: link.metadata,
+            createdAt: link.createdAt,
+          },
+        })),
+      ],
+    };
 
     return {
       name: 'ReMEM Memory Graph',
@@ -1081,6 +1150,7 @@ export class ReMEM {
       links: finalLinks,
       topics: topicClusters,
       dot: dotLines.join('\n'),
+      cytoscape,
       generatedAt: Date.now(),
     };
   }
@@ -1736,8 +1806,9 @@ export class ReMEM {
    * Layers are persisted to SQLite — they survive process restarts.
    */
   async enableLayers(config?: Partial<LayerConfig>): Promise<void> {
+    this._layerConfig = config ?? this._layerConfig;
     // Wire EmbeddingService into LayerManager if available
-    this.layers = new LayerManager(config ?? DEFAULT_LAYER_CONFIG, this.embeddingService);
+    this.layers = new LayerManager(this._layerConfig ?? DEFAULT_LAYER_CONFIG, this.embeddingService);
     this._layersEnabled = true;
 
     // Restore persisted layer entries from SQLite after init
@@ -1889,6 +1960,9 @@ export class ReMEM {
       agentId: this._agentId,
       userId: this._userId,
     });
+    for (const entry of entries) {
+      await this._store.forgetLayerEntry(entry.id);
+    }
 
     return {
       compressedEntryId: result.compressedEntry.id,
@@ -2010,10 +2084,14 @@ export class ReMEM {
    * @returns Number of entries restored
    */
   async restoreSnapshot(snapshotId: string): Promise<number> {
-    return this._store.restoreSnapshot(snapshotId, {
+    const restored = await this._store.restoreSnapshot(snapshotId, {
       agentId: this._agentId,
       userId: this._userId,
     });
+    if (this._layersEnabled) {
+      await this.enableLayers(this._layerConfig);
+    }
+    return restored;
   }
 
   /**

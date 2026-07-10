@@ -14,7 +14,7 @@
  *   await consolidator.promoteFrequentEpisodic();
  */
 
-import type { LayeredMemoryEntry, MemoryLayer, ProceduralTrigger, QueryResult, StoreMemoryInput } from './types.js';
+import type { LayeredMemoryEntry, MemoryEntry, MemoryLayer, ProceduralTrigger, QueryResult, StoreMemoryInput } from './types.js';
 import type { EmbeddingService } from './embeddings.js';
 
 export interface ConsolidationOptions {
@@ -103,7 +103,7 @@ const DEFAULT_OPTIONS: Required<ConsolidationOptions> = {
  */
 export class MemoryConsolidator {
   private remem: {
-    store(input: StoreMemoryInput, layer?: MemoryLayer): LayeredMemoryEntry | Promise<void>;
+    store(input: StoreMemoryInput, layer?: MemoryLayer): LayeredMemoryEntry | Promise<void | MemoryEntry>;
     storeInLayer?(input: StoreMemoryInput, layer: MemoryLayer): Promise<QueryResult | null>;
     storeProcedural?(input: StoreMemoryInput, trigger: string | Partial<ProceduralTrigger>): Promise<QueryResult | null>;
     getLayerManager?(): {

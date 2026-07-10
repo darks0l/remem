@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+- Added Cytoscape-compatible elements to `memory.graph()` / `remem graph --json` snapshots so browser graph views can render ReMEM memory maps without parsing DOT.
+
+### Fixed
+
+- Fixed `memory.query()` ranking so exact id-like token matches beat substring-collision siblings when relevance and popularity would otherwise tie.
 
 ## [0.21.0] - 2026-07-04
 

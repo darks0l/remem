@@ -192,6 +192,23 @@ function isJsonMode(options: Record<string, string | boolean>) {
   return Boolean(options.json);
 }
 
+function emitError(runtime: CliRuntime, jsonMode: boolean, message: string) {
+  if (jsonMode) {
+    writeStderr(runtime, `${JSON.stringify({ ok: false, error: message })}\n`);
+  } else {
+    writeStderr(runtime, `Error: ${message}\n`);
+  }
+}
+
+function requireOption(value: string | boolean | undefined, name: string, jsonMode: boolean, runtime: CliRuntime): string | null {
+  const str = asString(value);
+  if (!str) {
+    emitError(runtime, jsonMode, `Missing required option: --${name}`);
+    return null;
+  }
+  return str;
+}
+
 function writeStdout(runtime: CliRuntime, chunk: string) {
   (runtime.writeStdout ?? ((value) => process.stdout.write(value)))(chunk);
 }
@@ -663,7 +680,8 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
 
   if (command === 'knowledge-artifact') {
     await withMemory(options, async (memory, context) => {
-      const artifactPath = asString(options.path);
+      const artifactPath = requireOption(options.path, 'path', jsonMode, runtime);
+      if (artifactPath === null) return;
       const registration = knowledgeArtifactRegistrationSchema.parse({
         source: asString(options.source, 'codebase-memory-mcp'),
         project: asString(options.project) || undefined,
@@ -693,7 +711,19 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
 
   if (command === 'knowledge-ingest') {
     await withMemory(options, async (memory, context) => {
-      const artifactPath = asString(options.artifact);
+      const artifactPath = requireOption(options.artifact, 'artifact', jsonMode, runtime);
+      if (artifactPath === null) return;
+      const resolved = path.resolve(artifactPath);
+      try {
+        const stat = await fs.stat(resolved);
+        if (!stat.isFile()) {
+          emitError(runtime, jsonMode, `Path is not a file: ${resolved}`);
+          return;
+        }
+      } catch {
+        emitError(runtime, jsonMode, `File not found: ${resolved}`);
+        return;
+      }
       const graph = await readKnowledgeGraphFile(artifactPath);
       const visibility = asString(options.visibility, 'shared') === 'private' ? 'private' : 'shared';
       const result = await memory.ingestKnowledgeGraph(graph, {
@@ -723,8 +753,10 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
 
   if (command === 'store') {
     await withMemory(options, async (memory) => {
+      const content = requireOption(options.content, 'content', jsonMode, runtime);
+      if (content === null) return;
       await memory.store({
-        content: asString(options.content),
+        content,
         topics: asCsv(options.topics),
         metadata: parseMaybeJson(options.metadata),
       });
@@ -763,7 +795,8 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
 
   if (command === 'layer-store') {
     await withMemory(options, async (memory) => {
-      const layer = asString(options.layer, 'semantic') as MemoryLayer;
+      const layer = requireOption(options.layer, 'layer', jsonMode, runtime);
+      if (layer === null) return;
       const payload = {
         ok: true,
         command,
@@ -772,7 +805,7 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
           content: asString(options.content),
           topics: asCsv(options.topics),
           metadata: parseMaybeJson(options.metadata),
-        }, layer),
+        }, layer as MemoryLayer),
       };
       if (jsonMode) emitJson(runtime, payload);
       else emitText(runtime, `Stored layered memory in ${layer}.\n`);
@@ -782,6 +815,8 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
 
   if (command === 'procedural-store') {
     await withMemory(options, async (memory) => {
+      const trigger = requireOption(options.trigger, 'trigger', jsonMode, runtime);
+      if (trigger === null) return;
       const payload = {
         ok: true,
         command,
@@ -789,7 +824,7 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
           content: asString(options.content),
           topics: asCsv(options.topics),
           metadata: parseMaybeJson(options.metadata),
-        }, asString(options.trigger)),
+        }, trigger),
       };
       if (jsonMode) emitJson(runtime, payload);
       else emitText(runtime, 'Stored procedural memory.\n');
@@ -808,8 +843,13 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
 
   if (command === 'shared-store') {
     await withMemory(options, async (memory) => {
+      const ns = asNamespace(options.namespace);
+      if (!ns.length) {
+        emitError(runtime, jsonMode, 'Missing required option: --namespace');
+        return;
+      }
       await memory.storeShared({
-        namespace: asNamespace(options.namespace),
+        namespace: ns,
         visibility: asString(options.visibility, 'shared') === 'private' ? 'private' : 'shared',
         content: asString(options.content),
         topics: asCsv(options.topics),
@@ -823,12 +863,17 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
 
   if (command === 'namespace-query') {
     await withMemory(options, async (memory) => {
+      const ns = asNamespace(options.namespace);
+      if (!ns.length) {
+        emitError(runtime, jsonMode, 'Missing required option: --namespace');
+        return;
+      }
       const visibility = asString(options.visibility, 'all');
       const payload = {
         ok: true,
         command,
         ...(await memory.queryNamespace(
-          asNamespace(options.namespace),
+          ns,
           asString(options.query),
           { limit: Number(asString(options.limit, '8')) || 8 },
           {
@@ -845,12 +890,17 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
 
   if (command === 'namespace-recent') {
     await withMemory(options, async (memory) => {
+      const ns = asNamespace(options.namespace);
+      if (!ns.length) {
+        emitError(runtime, jsonMode, 'Missing required option: --namespace');
+        return;
+      }
       const visibility = asString(options.visibility, 'all');
       const payload = {
         ok: true,
         command,
         results: await memory.getRecentInNamespace(
-          asNamespace(options.namespace),
+          ns,
           Number(asString(options.limit, '10')) || 10,
           {
             visibility: visibility === 'shared' ? 'shared' : visibility === 'private' ? 'private' : 'all',
@@ -1043,7 +1093,13 @@ async function main() {
   try {
     process.exitCode = await runCli(process.argv);
   } catch (error) {
-    writeStderr({}, `${JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) })}\n`);
+    const jsonMode = process.argv.includes('--json');
+    const message = error instanceof Error ? error.message : String(error);
+    if (jsonMode) {
+      writeStderr({}, `${JSON.stringify({ ok: false, error: message })}\n`);
+    } else {
+      writeStderr({}, `Error: ${message}\n`);
+    }
     process.exitCode = 1;
   }
 }

@@ -122,6 +122,7 @@ module.exports = __toCommonJS(index_exports);
 // src/store.ts
 var import_sql = __toESM(require("sql.js"));
 var import_crypto2 = require("crypto");
+var import_node_fs = require("fs");
 
 // src/types.ts
 var import_zod = require("zod");
@@ -1019,9 +1020,10 @@ var MemoryStore = class {
     const filteredEntries = rows.map((row) => memoryEntrySchema.parse(row)).filter((entry) => !opts.topics || this.matchTopics(entry.topics, opts.topics)).filter((entry) => !opts.minAccessCount || entry.accessCount >= opts.minAccessCount).filter((entry) => !opts.metadata || this.matchMetadata(entry.metadata, opts.metadata));
     const scoredEntries = filteredEntries.map((entry) => ({
       entry,
-      relevanceScore: this.simpleRelevance(entry.content, text)
+      relevanceScore: this.simpleRelevance(entry.content, text),
+      exactScore: this.exactTokenRelevance(entry.content, text)
     })).filter((scored) => terms.length === 0 || scored.relevanceScore > 0).sort(
-      (a, b) => b.relevanceScore - a.relevanceScore || b.entry.accessCount - a.entry.accessCount || b.entry.accessedAt - a.entry.accessedAt
+      (a, b) => b.relevanceScore - a.relevanceScore || b.entry.accessCount - a.entry.accessCount || b.exactScore - a.exactScore || b.entry.accessedAt - a.entry.accessedAt || (a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0)
     );
     const totalAvailable = scoredEntries.length;
     const results = scoredEntries.slice(0, opts.limit).map(({ entry, relevanceScore }) => ({
@@ -1469,11 +1471,7 @@ var MemoryStore = class {
     if (expectedChecksum && this.snapshotChecksum(data) !== expectedChecksum) {
       throw new Error(`Snapshot checksum mismatch: ${snapshotId}`);
     }
-    const scopedEntries = data.layerEntries.filter((e) => {
-      if (opts?.agentId && e.metadata?.agentId !== opts.agentId) return false;
-      if (opts?.userId && e.metadata?.userId !== opts.userId) return false;
-      return true;
-    });
+    const scopedEntries = data.layerEntries;
     const scopedCoreEntries = data.coreEntries ?? [];
     if (opts?.agentId || opts?.userId) {
       const conditions = [];
@@ -1812,12 +1810,11 @@ var MemoryStore = class {
   persist() {
     if (!this.db || this.dbPath === ":memory:") return;
     try {
-      const { writeFileSync, renameSync } = require("fs");
       const data = this.db.export();
       const buffer = Buffer.from(data);
       const tmpPath = `${this.dbPath}.tmp`;
-      writeFileSync(tmpPath, buffer);
-      renameSync(tmpPath, this.dbPath);
+      (0, import_node_fs.writeFileSync)(tmpPath, buffer);
+      (0, import_node_fs.renameSync)(tmpPath, this.dbPath);
     } catch {
     }
   }
@@ -1981,6 +1978,14 @@ var MemoryStore = class {
     const terms = query.toLowerCase().split(/\s+/);
     const matches = terms.filter((t) => lower.includes(t)).length;
     return matches / terms.length;
+  }
+  exactTokenRelevance(content, query) {
+    const tokenize = (value) => value.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean);
+    const queryTokens = tokenize(query);
+    if (queryTokens.length === 0) return 0;
+    const contentTokens = new Set(tokenize(content));
+    const matches = queryTokens.filter((token) => contentTokens.has(token)).length;
+    return matches / queryTokens.length;
   }
 };
 
@@ -6595,6 +6600,7 @@ var ReMEM = class {
   _embeddingEnabled = false;
   _identityEnabled = false;
   _layersEnabled = false;
+  _layerConfig;
   _agentId;
   _userId;
   normalizeNamespace(namespace) {
@@ -6709,6 +6715,7 @@ var ReMEM = class {
         }).catch((err) => console.warn(`[ReMEM] Async embed failed for ${stored.id}: ${err}`));
       }
     }
+    return stored;
   }
   /**
    * Query memory using natural language.
@@ -7354,6 +7361,37 @@ profile: ${profile}
       ...finalLinks.map((link) => `  "${this.dotEscape(link.fromId)}" -> "${this.dotEscape(link.toId)}" [label="${this.dotEscape(link.type)}", penwidth="${Math.max(1, link.weight).toFixed(2)}"];`),
       "}"
     ];
+    const cytoscape = {
+      elements: [
+        ...nodes.map((node) => ({
+          group: "nodes",
+          data: {
+            id: node.id,
+            label: node.label,
+            content: node.content,
+            topics: node.topics,
+            weight: node.weight,
+            metadata: node.metadata,
+            createdAt: node.createdAt,
+            accessedAt: node.accessedAt,
+            accessCount: node.accessCount
+          }
+        })),
+        ...finalLinks.map((link) => ({
+          group: "edges",
+          data: {
+            id: link.id,
+            source: link.fromId,
+            target: link.toId,
+            label: link.type,
+            type: link.type,
+            weight: link.weight,
+            metadata: link.metadata,
+            createdAt: link.createdAt
+          }
+        }))
+      ]
+    };
     return {
       name: "ReMEM Memory Graph",
       ...options.query ? { query: options.query } : {},
@@ -7361,6 +7399,7 @@ profile: ${profile}
       links: finalLinks,
       topics: topicClusters,
       dot: dotLines.join("\n"),
+      cytoscape,
       generatedAt: Date.now()
     };
   }
@@ -7921,7 +7960,8 @@ profile: ${profile}
    * Layers are persisted to SQLite — they survive process restarts.
    */
   async enableLayers(config) {
-    this.layers = new LayerManager(config ?? DEFAULT_LAYER_CONFIG, this.embeddingService);
+    this._layerConfig = config ?? this._layerConfig;
+    this.layers = new LayerManager(this._layerConfig ?? DEFAULT_LAYER_CONFIG, this.embeddingService);
     this._layersEnabled = true;
     if (this._store) {
       try {
@@ -8038,6 +8078,9 @@ profile: ${profile}
       agentId: this._agentId,
       userId: this._userId
     });
+    for (const entry of entries) {
+      await this._store.forgetLayerEntry(entry.id);
+    }
     return {
       compressedEntryId: result.compressedEntry.id,
       summary: result.compressedEntry.content,
@@ -8138,10 +8181,14 @@ profile: ${profile}
    * @returns Number of entries restored
    */
   async restoreSnapshot(snapshotId) {
-    return this._store.restoreSnapshot(snapshotId, {
+    const restored = await this._store.restoreSnapshot(snapshotId, {
       agentId: this._agentId,
       userId: this._userId
     });
+    if (this._layersEnabled) {
+      await this.enableLayers(this._layerConfig);
+    }
+    return restored;
   }
   /**
    * List available snapshots.

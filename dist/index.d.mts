@@ -3575,6 +3575,7 @@ declare class MemoryStore implements MemoryStoreLike {
     private matchMetadataValue;
     private matchTopics;
     private simpleRelevance;
+    private exactTokenRelevance;
 }
 
 interface PostgresStoreConfig {
@@ -4511,6 +4512,36 @@ interface MemoryGraphTopicCluster {
     count: number;
     nodeIds: string[];
 }
+interface MemoryGraphCytoscapeNode {
+    group: 'nodes';
+    data: {
+        id: string;
+        label: string;
+        content: string;
+        topics: string[];
+        weight: number;
+        metadata: Record<string, unknown>;
+        createdAt: number;
+        accessedAt: number;
+        accessCount: number;
+    };
+}
+interface MemoryGraphCytoscapeEdge {
+    group: 'edges';
+    data: {
+        id: string;
+        source: string;
+        target: string;
+        label: string;
+        type: string;
+        weight: number;
+        metadata: Record<string, unknown>;
+        createdAt: number;
+    };
+}
+interface MemoryGraphCytoscapeExport {
+    elements: Array<MemoryGraphCytoscapeNode | MemoryGraphCytoscapeEdge>;
+}
 interface MemoryGraphSnapshot {
     name: 'ReMEM Memory Graph';
     query?: string;
@@ -4518,6 +4549,7 @@ interface MemoryGraphSnapshot {
     links: MemoryGraphLink[];
     topics: MemoryGraphTopicCluster[];
     dot: string;
+    cytoscape: MemoryGraphCytoscapeExport;
     generatedAt: number;
 }
 /**
@@ -4543,6 +4575,7 @@ declare class ReMEM {
     private _embeddingEnabled;
     private _identityEnabled;
     private _layersEnabled;
+    private _layerConfig?;
     private _agentId?;
     private _userId?;
     private normalizeNamespace;
@@ -4561,7 +4594,7 @@ declare class ReMEM {
      * If layers are enabled, also persists to the appropriate layer in SQLite.
      * If embeddings are enabled, generates a vector embedding in the background.
      */
-    store(input: StoreMemoryInput): Promise<void>;
+    store(input: StoreMemoryInput): Promise<MemoryEntry>;
     /**
      * Query memory using natural language.
      * Uses semantic search (cosine similarity) when embeddings are enabled,
@@ -4932,4 +4965,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type CodebaseGraphAsMemoryOptions, type CodebaseGraphConnection, type CodebaseGraphDisplayType, type CodebaseGraphInventoryOptions, type CodebaseGraphMemorySnapshot, type CodebaseGraphNodeHealth, type CodebaseGraphOwnerSummary, type CodebaseGraphQueryOptions, type CodebaseGraphSubgraph, type CodebaseSubgraphOptions, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, type ContextPackOptions, type ContextPackResponse, type ContextPackSection, DEFAULT_LAYER_CONFIG, type DreamMemoryLayer, type DreamOptions, type DreamResponse, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type KnowledgeArtifactRegistration, type KnowledgeArtifactRegistrationResult, type KnowledgeEdge, type KnowledgeGraphArtifact, type KnowledgeIngestOptions, type KnowledgeIngestResult, type KnowledgeNode, type KnowledgeResourceAccessResult, type KnowledgeResourceGrant, type KnowledgeResourceScope, type KnowledgeResourceUri, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryGraphLink, type MemoryGraphNode, type MemoryGraphOptions, type MemoryGraphSnapshot, type MemoryGraphTopicCluster, type MemoryHealthCheck, type MemoryHealthOptions, type MemoryHealthRecommendation, type MemoryHealthResponse, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, type MetadataFilter, type MetadataFilterOperator, type MetadataFilterValue, ModelAbstraction, type ModelConfig, type NamespaceInput, type NamespaceQueryScope, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SmartRecallOptions, type SmartRecallProfile, type SmartRecallResponse, type SmartRecallResult, type SnapshotExport, type SnapshotMeta, type StorageMaintenanceOptions, type StorageMaintenanceResult, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, authorizeKnowledgeResourceAccess, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, contextPackOptionsSchema, contextPackResponseSchema, contextPackSectionSchema, createCodebaseMemoryAdapter, createHermesAdapter, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, dreamMemoryLayerSchema, dreamOptionsSchema, dreamResponseSchema, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, knowledgeArtifactRegistrationSchema, knowledgeEdgeSchema, knowledgeGraphArtifactSchema, knowledgeIngestOptionsSchema, knowledgeIngestResultSchema, knowledgeNodeSchema, knowledgeResourceGrantSchema, knowledgeResourceScopeSchema, knowledgeResourceUriSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryHealthCheckSchema, memoryHealthOptionsSchema, memoryHealthRecommendationSchema, memoryHealthResponseSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, metadataFilterOperatorSchema, metadataFilterSchema, metadataFilterValueSchema, modelConfigSchema, namespaceInputSchema, namespaceQueryScopeSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, smartRecallOptionsSchema, smartRecallProfileSchema, smartRecallResponseSchema, smartRecallResultSchema, storeMemoryInputSchema, uploadPackage };
+export { type Adapter, type CodebaseGraphAsMemoryOptions, type CodebaseGraphConnection, type CodebaseGraphDisplayType, type CodebaseGraphInventoryOptions, type CodebaseGraphMemorySnapshot, type CodebaseGraphNodeHealth, type CodebaseGraphOwnerSummary, type CodebaseGraphQueryOptions, type CodebaseGraphSubgraph, type CodebaseSubgraphOptions, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, type ContextPackOptions, type ContextPackResponse, type ContextPackSection, DEFAULT_LAYER_CONFIG, type DreamMemoryLayer, type DreamOptions, type DreamResponse, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type KnowledgeArtifactRegistration, type KnowledgeArtifactRegistrationResult, type KnowledgeEdge, type KnowledgeGraphArtifact, type KnowledgeIngestOptions, type KnowledgeIngestResult, type KnowledgeNode, type KnowledgeResourceAccessResult, type KnowledgeResourceGrant, type KnowledgeResourceScope, type KnowledgeResourceUri, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryGraphCytoscapeEdge, type MemoryGraphCytoscapeExport, type MemoryGraphCytoscapeNode, type MemoryGraphLink, type MemoryGraphNode, type MemoryGraphOptions, type MemoryGraphSnapshot, type MemoryGraphTopicCluster, type MemoryHealthCheck, type MemoryHealthOptions, type MemoryHealthRecommendation, type MemoryHealthResponse, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, type MetadataFilter, type MetadataFilterOperator, type MetadataFilterValue, ModelAbstraction, type ModelConfig, type NamespaceInput, type NamespaceQueryScope, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SmartRecallOptions, type SmartRecallProfile, type SmartRecallResponse, type SmartRecallResult, type SnapshotExport, type SnapshotMeta, type StorageMaintenanceOptions, type StorageMaintenanceResult, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, authorizeKnowledgeResourceAccess, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, contextPackOptionsSchema, contextPackResponseSchema, contextPackSectionSchema, createCodebaseMemoryAdapter, createHermesAdapter, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, dreamMemoryLayerSchema, dreamOptionsSchema, dreamResponseSchema, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, knowledgeArtifactRegistrationSchema, knowledgeEdgeSchema, knowledgeGraphArtifactSchema, knowledgeIngestOptionsSchema, knowledgeIngestResultSchema, knowledgeNodeSchema, knowledgeResourceGrantSchema, knowledgeResourceScopeSchema, knowledgeResourceUriSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryHealthCheckSchema, memoryHealthOptionsSchema, memoryHealthRecommendationSchema, memoryHealthResponseSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, metadataFilterOperatorSchema, metadataFilterSchema, metadataFilterValueSchema, modelConfigSchema, namespaceInputSchema, namespaceQueryScopeSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, smartRecallOptionsSchema, smartRecallProfileSchema, smartRecallResponseSchema, smartRecallResultSchema, storeMemoryInputSchema, uploadPackage };

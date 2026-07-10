@@ -57,6 +57,18 @@ describe('ReMEM', () => {
     expect(exactQuery.results[0].content).toContain('Exact fact match');
   });
 
+  it('ranks an exact id-token match above substring-collision siblings', async () => {
+    await memory.store({ content: 'FACT_ID fact-16: card record codename ghost', topics: ['card'] });
+    await memory.store({ content: 'FACT_ID fact-160: card record codename ghost', topics: ['card'] });
+    await memory.store({ content: 'FACT_ID fact-1600: card record codename ghost', topics: ['card'] });
+    await memory.store({ content: 'FACT_ID fact-1681: card record codename ghost', topics: ['card'] });
+
+    const results = await memory.query('record for fact-16');
+
+    expect(results.results[0].content).toContain('fact-16:');
+    expect(results.results[0].content).not.toContain('fact-160');
+  });
+
   it('respects query options', async () => {
     for (let i = 0; i < 15; i++) {
       await memory.store({ content: `Memory ${i}`, topics: ['test'] });
@@ -275,6 +287,18 @@ describe('ReMEM', () => {
     expect(graph.topics.some((topic) => topic.topic === 'ui' && topic.count === 2)).toBe(true);
     expect(graph.dot).toContain('digraph remem_memory');
     expect(graph.dot).toContain('about');
+    expect(graph.cytoscape.elements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          group: 'nodes',
+          data: expect.objectContaining({ id: fromId, label: expect.stringContaining('Meta likes') }),
+        }),
+        expect.objectContaining({
+          group: 'edges',
+          data: expect.objectContaining({ source: fromId, target: toId, type: 'about', weight: 1.2 }),
+        }),
+      ])
+    );
     expect(graph.nodes.some((node) => node.content.includes('Unrelated'))).toBe(false);
   });
 
@@ -574,6 +598,55 @@ describe('MemoryStore', () => {
     store.close();
   });
 
+  it('restores scoped layered memories from SQLite snapshots', async () => {
+    const store = new MemoryStore(':memory:');
+    await store.init();
+
+    const layered = {
+      id: '11111111-1111-4111-8111-111111111111',
+      content: 'Scoped layered memory',
+      topics: ['scope'],
+      metadata: {},
+      layer: 'semantic' as const,
+      createdAt: Date.now(),
+      accessedAt: Date.now(),
+      accessCount: 0,
+      expiresAt: Date.now() + 1_000_000,
+      importance: 0.5,
+    };
+
+    await store.persistLayerEntry(layered, { agentId: 'agent-a', userId: 'user-a' });
+    const snapshot = await store.createSnapshot('scoped-layer-checkpoint', { agentId: 'agent-a', userId: 'user-a' });
+    expect(await store.forgetLayerEntry(layered.id)).toBe(true);
+
+    const restored = await store.restoreSnapshot(snapshot.id, { agentId: 'agent-a', userId: 'user-a' });
+    const entries = await store.loadAllLayerEntries({ agentId: 'agent-a', userId: 'user-a' });
+
+    expect(restored).toBe(1);
+    expect(entries.map((entry) => entry.id)).toContain(layered.id);
+
+    store.close();
+  });
+
+  it('rehydrates enabled layers after ReMEM snapshot restore', async () => {
+    const memory = new ReMEM({ storage: 'memory', dbPath: ':memory:' });
+    await memory.init();
+    await memory.enableLayers();
+    const stored = await memory.storeInLayer({ content: 'Layer snapshot restore target', topics: ['restore-target'] }, 'semantic');
+    expect(stored).not.toBeNull();
+    const snapshot = await memory.createSnapshot('layer-restore');
+
+    expect(memory.getLayerManager()?.forget(stored!.id)).toBe(true);
+    expect((await memory.queryLayers('restore target', { layers: ['semantic'] }))?.results).toHaveLength(0);
+
+    const restored = await memory.restoreSnapshot(snapshot.id);
+    const queried = await memory.queryLayers('restore target', { layers: ['semantic'] });
+
+    expect(restored).toBe(1);
+    expect(queried?.results.some((entry) => entry.id === stored!.id)).toBe(true);
+    await memory.close();
+  });
+
   it('exports and imports snapshots with checksum verification', async () => {
     const source = new MemoryStore(':memory:');
     await source.init();
@@ -597,6 +670,30 @@ describe('MemoryStore', () => {
 
     source.close();
     target.close();
+  });
+
+  it('removes compressed episodic sources from persisted layer storage', async () => {
+    const memory = new ReMEM({ storage: 'memory', dbPath: ':memory:' });
+    await memory.init();
+    await memory.enableLayers();
+    const fakeModel = {
+      config: { type: 'ollama', baseUrl: 'http://localhost:11434', model: 'test-model' } as const,
+      name: () => 'ollama:test-model',
+      chat: async () => ({
+        content: '{"summary":"Compressed durable memory","topics":["compress"],"keyFacts":["old entries compressed"]}',
+      }),
+    };
+    (memory as unknown as { model: typeof fakeModel }).model = fakeModel;
+
+    const first = await memory.storeInLayer({ content: 'Old episodic one', topics: ['compress'] }, 'episodic');
+    const second = await memory.storeInLayer({ content: 'Old episodic two', topics: ['compress'] }, 'episodic');
+    const compressed = await memory.compressEpisodic(2);
+    const persisted = await memory.getStore().loadAllLayerEntries({});
+
+    expect(compressed?.entriesEvicted).toBe(2);
+    expect(persisted.map((entry) => entry.id)).toContain(compressed?.compressedEntryId);
+    expect(persisted.some((entry) => entry.id === first?.id || entry.id === second?.id)).toBe(false);
+    await memory.close();
   });
 
   it('constructs postgres storage without connecting until init', () => {
