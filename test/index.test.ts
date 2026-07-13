@@ -76,6 +76,45 @@ describe('ReMEM', () => {
     await fs.rm(`${dbPath}.tmp`, { force: true });
   });
 
+  it('classifies, scores, and stores high-signal memories through remember()', async () => {
+    const remembered = await memory.remember({
+      content: 'We decided to ship ReMEM with an intake pipeline before the next npm release.',
+      topics: ['release', 'roadmap'],
+      source: 'planning',
+    });
+
+    expect(remembered.action).toBe('stored');
+    expect(remembered.kind).toBe('decision');
+    expect(remembered.layer).toBe('semantic');
+    expect(remembered.score).toBeGreaterThanOrEqual(remembered.threshold);
+    expect(remembered.entry?.metadata.memoryKind).toBe('decision');
+    expect(remembered.entry?.metadata.source).toBe('planning');
+  });
+
+  it('skips low-signal chat filler through remember()', async () => {
+    const remembered = await memory.remember({
+      content: 'ok',
+    });
+
+    expect(remembered.action).toBe('skipped_low_signal');
+    expect(remembered.score).toBeLessThan(remembered.threshold);
+  });
+
+  it('skips near-duplicate intake memories through remember()', async () => {
+    const first = await memory.remember({
+      content: 'Meta prefers direct replies with durable memory context.',
+      topics: ['preference'],
+    });
+    const second = await memory.remember({
+      content: 'Meta prefers direct replies with durable memory context.',
+      topics: ['preference'],
+    });
+
+    expect(first.action).toBe('stored');
+    expect(second.action).toBe('skipped_duplicate');
+    expect(second.duplicateOf).toBe(first.entry?.id);
+  });
+
   it('returns recent memories', async () => {
     await memory.store({ content: 'First memory', topics: ['test'] });
     await memory.store({ content: 'Second memory', topics: ['test'] });

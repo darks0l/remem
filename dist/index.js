@@ -110,6 +110,10 @@ __export(index_exports, {
   queryResultSchema: () => queryResultSchema,
   queryWithNeighborsOptionsSchema: () => queryWithNeighborsOptionsSchema,
   rememConfigSchema: () => rememConfigSchema,
+  rememberActionSchema: () => rememberActionSchema,
+  rememberInputSchema: () => rememberInputSchema,
+  rememberKindSchema: () => rememberKindSchema,
+  rememberResultSchema: () => rememberResultSchema,
   smartRecallOptionsSchema: () => smartRecallOptionsSchema,
   smartRecallProfileSchema: () => smartRecallProfileSchema,
   smartRecallResponseSchema: () => smartRecallResponseSchema,
@@ -141,6 +145,40 @@ var storeMemoryInputSchema = import_zod.z.object({
   content: import_zod.z.string().min(1),
   topics: import_zod.z.array(import_zod.z.string()).optional().default([]),
   metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
+});
+var rememberKindSchema = import_zod.z.enum([
+  "fact",
+  "preference",
+  "decision",
+  "procedure",
+  "recent-event",
+  "artifact-note"
+]);
+var rememberActionSchema = import_zod.z.enum([
+  "stored",
+  "skipped_duplicate",
+  "skipped_low_signal",
+  "preview"
+]);
+var rememberInputSchema = storeMemoryInputSchema.extend({
+  kind: rememberKindSchema.optional(),
+  source: import_zod.z.string().min(1).optional(),
+  dryRun: import_zod.z.boolean().default(false),
+  forceStore: import_zod.z.boolean().default(false)
+});
+var rememberResultSchema = import_zod.z.object({
+  action: rememberActionSchema,
+  kind: rememberKindSchema,
+  layer: import_zod.z.enum(["episodic", "semantic", "identity", "procedural"]),
+  score: import_zod.z.number().min(0).max(1),
+  threshold: import_zod.z.number().min(0).max(1),
+  reason: import_zod.z.string(),
+  duplicateOf: import_zod.z.string().optional(),
+  conflictIds: import_zod.z.array(import_zod.z.string()).default([]),
+  topics: import_zod.z.array(import_zod.z.string()),
+  metadata: import_zod.z.record(import_zod.z.unknown()).default({}),
+  entry: memoryEntrySchema.optional(),
+  trigger: import_zod.z.unknown().optional()
 });
 var metadataFilterValueSchema = import_zod.z.union([import_zod.z.string(), import_zod.z.number(), import_zod.z.boolean(), import_zod.z.null()]);
 var metadataFilterOperatorSchema = import_zod.z.object({
@@ -4193,6 +4231,10 @@ Respond with ONLY a JSON object:
    * Auto-assign layer based on content analysis.
    */
   autoAssignLayer(input) {
+    const metadataLayerHint = typeof input.metadata?.intakeLayerHint === "string" ? input.metadata.intakeLayerHint : void 0;
+    if (metadataLayerHint === "episodic" || metadataLayerHint === "semantic" || metadataLayerHint === "identity" || metadataLayerHint === "procedural") {
+      return metadataLayerHint;
+    }
     const text = `${input.content} ${(input.topics ?? []).join(" ")}`.toLowerCase();
     const identityKeywords = ["i am", "i prefer", "my values", "my goals", "my boundaries", "i always", "i never"];
     if (identityKeywords.some((k) => text.includes(k))) return "identity";
@@ -5399,6 +5441,15 @@ var HttpAdapter = class {
       const input = storeMemoryInputSchema.parse(JSON.parse(body));
       await this.engine.store(input);
       return { status: 201, body: { ok: true, message: "Memory stored" } };
+    }
+    if (method === "POST" && path === "/memory/remember") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      if (!body) return { status: 400, body: { error: "Empty request body" } };
+      const input = rememberInputSchema.parse(JSON.parse(body));
+      const result = await this.memory.remember(input);
+      return { status: result.action === "stored" ? 201 : 200, body: result };
     }
     if (method === "POST" && path === "/memory/shared") {
       if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
@@ -6626,6 +6677,120 @@ var ReMEM = class {
     }
     return metadata;
   }
+  normalizeRememberContent(content) {
+    return content.trim().replace(/\s+/g, " ").toLowerCase();
+  }
+  rememberTokenSet(content) {
+    return new Set(
+      this.normalizeRememberContent(content).split(/[^a-z0-9_:/.-]+/i).filter((token) => token.length >= 3)
+    );
+  }
+  inferRememberKind(input) {
+    if (input.kind) return input.kind;
+    const text = `${input.content} ${(input.topics ?? []).join(" ")}`.toLowerCase();
+    const metadata = input.metadata ?? {};
+    if (["artifactPath", "resourceUri", "url", "filePath", "checksum"].some((key) => typeof metadata[key] === "string")) {
+      return "artifact-note";
+    }
+    if (/\b(prefer|preference|likes|dislikes|favorite|style|tone|settings?)\b/i.test(text)) {
+      return "preference";
+    }
+    if (/\b(decided|decision|agreed|we will|ship with|going with|resolved|chosen)\b/i.test(text)) {
+      return "decision";
+    }
+    if (/\b(always|never|when|if)\b/i.test(text) || /\b(checklist|runbook|procedure|playbook|must|should)\b/i.test(text)) {
+      return "procedure";
+    }
+    if (/\b(today|just|observed|incident|happened|ran into|saw|noticed|error|failed|met with)\b/i.test(text)) {
+      return "recent-event";
+    }
+    return "fact";
+  }
+  rememberLayerForKind(kind) {
+    switch (kind) {
+      case "procedure":
+        return "procedural";
+      case "recent-event":
+        return "episodic";
+      case "preference":
+        return "identity";
+      case "decision":
+      case "artifact-note":
+      case "fact":
+      default:
+        return "semantic";
+    }
+  }
+  rememberScore(kind, content, topics, metadata) {
+    const normalized = this.normalizeRememberContent(content);
+    const tokenCount = normalized.split(/\s+/).filter(Boolean).length;
+    let score = {
+      fact: 0.6,
+      preference: 0.74,
+      decision: 0.82,
+      procedure: 0.86,
+      "recent-event": 0.62,
+      "artifact-note": 0.78
+    }[kind];
+    if (content.length >= 40) score += 0.05;
+    if (content.length >= 90) score += 0.04;
+    if (topics.length > 0) score += Math.min(0.08, topics.length * 0.02);
+    if (Object.keys(metadata).length > 0) score += 0.05;
+    if (/\b(because|due to|so that|resolved|root cause|owner|release|version)\b/i.test(content)) score += 0.04;
+    if (/\d/.test(content) || /https?:\/\//i.test(content)) score += 0.03;
+    if (tokenCount <= 3) score -= 0.25;
+    if (content.length < 18) score -= 0.18;
+    if (/^(ok|okay|thanks|nice|cool|sounds good|got it|lol|yep|yup)[.! ]*$/i.test(normalized)) score -= 0.55;
+    const threshold = kind === "recent-event" ? 0.55 : 0.58;
+    const bounded = Math.max(0, Math.min(1, Number(score.toFixed(3))));
+    const reason = bounded >= threshold ? `High-signal ${kind} memory` : `Below intake threshold for ${kind}`;
+    return { score: bounded, threshold, reason };
+  }
+  rememberDuplicate(entries, content, topics) {
+    const normalized = this.normalizeRememberContent(content);
+    const nextTokens = this.rememberTokenSet(content);
+    const nextTopicKey = [...topics].sort().join("|");
+    for (const entry of entries) {
+      const existing = this.normalizeRememberContent(entry.content);
+      if (existing === normalized) return entry;
+      const existingTokens = this.rememberTokenSet(entry.content);
+      const union = /* @__PURE__ */ new Set([...nextTokens, ...existingTokens]);
+      const intersection = [...nextTokens].filter((token) => existingTokens.has(token)).length;
+      const tokenSimilarity = union.size === 0 ? 0 : intersection / union.size;
+      const existingTopicKey = [...entry.topics].sort().join("|");
+      if (tokenSimilarity >= 0.92 && (!nextTopicKey || !existingTopicKey || nextTopicKey === existingTopicKey)) {
+        return entry;
+      }
+    }
+    return null;
+  }
+  rememberConflicts(entries, content, topics) {
+    const normalized = this.normalizeRememberContent(content);
+    const contradictionSignal = /\b(not|no longer|instead|switched|changed to|moved to|replaced)\b/i.test(normalized);
+    if (!contradictionSignal || topics.length === 0) return [];
+    const nextTokens = this.rememberTokenSet(content);
+    return entries.filter((entry) => entry.topics.some((topic) => topics.includes(topic))).filter((entry) => {
+      const existingTokens = this.rememberTokenSet(entry.content);
+      const union = /* @__PURE__ */ new Set([...nextTokens, ...existingTokens]);
+      const intersection = [...nextTokens].filter((token) => existingTokens.has(token)).length;
+      return union.size > 0 && intersection / union.size >= 0.35;
+    }).map((entry) => entry.id).slice(0, 5);
+  }
+  buildProcedureTrigger(input) {
+    const existing = input.metadata.trigger;
+    if (existing && typeof existing === "object") return existing;
+    const stopwords = /* @__PURE__ */ new Set(["the", "and", "that", "with", "from", "this", "when", "then", "before", "after", "always", "never", "should", "must"]);
+    const terms = Array.from(this.rememberTokenSet(input.content)).filter((token) => !stopwords.has(token)).slice(0, 6);
+    const phrase = input.content.trim().split(/\s+/).slice(0, 6).join(" ");
+    return {
+      terms,
+      phrases: phrase ? [phrase] : [],
+      topics: input.topics.slice(0, 6),
+      match: "any",
+      minScore: 0.2,
+      priority: 0.7
+    };
+  }
   graphNodeLabel(entry) {
     const metadataName = entry.metadata?.name;
     if (typeof metadataName === "string" && metadataName.trim()) return metadataName.trim();
@@ -6716,6 +6881,90 @@ var ReMEM = class {
       }
     }
     return stored;
+  }
+  async remember(input) {
+    const normalized = rememberInputSchema.parse(input);
+    const kind = this.inferRememberKind(normalized);
+    const layer = this.rememberLayerForKind(kind);
+    const topics = Array.from(/* @__PURE__ */ new Set([...normalized.topics ?? [], kind, layer]));
+    const metadata = {
+      ...normalized.metadata ?? {},
+      memoryKind: kind,
+      intakeLayerHint: layer,
+      rememberedAt: Date.now(),
+      ...normalized.source ? { source: normalized.source } : {}
+    };
+    const { score, threshold, reason } = this.rememberScore(kind, normalized.content, topics, metadata);
+    const recent = await this.getRecent(50);
+    const duplicate2 = this.rememberDuplicate(recent, normalized.content, topics);
+    const conflictIds = this.rememberConflicts(recent, normalized.content, topics);
+    if (duplicate2) {
+      return {
+        action: normalized.dryRun ? "preview" : "skipped_duplicate",
+        kind,
+        layer,
+        score,
+        threshold,
+        reason: "Near-identical memory already exists in recent recall.",
+        duplicateOf: duplicate2.id,
+        conflictIds,
+        topics,
+        metadata
+      };
+    }
+    if (!normalized.forceStore && score < threshold) {
+      return {
+        action: normalized.dryRun ? "preview" : "skipped_low_signal",
+        kind,
+        layer,
+        score,
+        threshold,
+        reason,
+        conflictIds,
+        topics,
+        metadata
+      };
+    }
+    const trigger = kind === "procedure" ? this.buildProcedureTrigger({ content: normalized.content, topics, metadata }) : void 0;
+    const finalMetadata = {
+      ...metadata,
+      intakeScore: score,
+      intakeReason: reason,
+      ...trigger ? { trigger } : {},
+      ...conflictIds.length > 0 ? { conflictIds } : {}
+    };
+    if (normalized.dryRun) {
+      return {
+        action: "preview",
+        kind,
+        layer,
+        score,
+        threshold,
+        reason,
+        conflictIds,
+        topics,
+        metadata: finalMetadata,
+        ...trigger ? { trigger } : {}
+      };
+    }
+    const entry = await this.store({
+      content: normalized.content,
+      topics,
+      metadata: finalMetadata
+    });
+    return {
+      action: "stored",
+      kind,
+      layer,
+      score,
+      threshold,
+      reason,
+      conflictIds,
+      topics,
+      metadata: finalMetadata,
+      entry,
+      ...trigger ? { trigger } : {}
+    };
   }
   /**
    * Query memory using natural language.
@@ -8443,6 +8692,10 @@ profile: ${profile}
   queryResultSchema,
   queryWithNeighborsOptionsSchema,
   rememConfigSchema,
+  rememberActionSchema,
+  rememberInputSchema,
+  rememberKindSchema,
+  rememberResultSchema,
   smartRecallOptionsSchema,
   smartRecallProfileSchema,
   smartRecallResponseSchema,

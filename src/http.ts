@@ -17,6 +17,8 @@ import type {
   KnowledgeArtifactRegistration,
   KnowledgeGraphArtifact,
   KnowledgeIngestOptions,
+  RememberInput,
+  RememberResult,
 } from './types.js';
 import {
   knowledgeArtifactRegistrationSchema,
@@ -25,6 +27,7 @@ import {
   namespaceInputSchema,
   namespaceQueryScopeSchema,
   queryWithNeighborsOptionsSchema,
+  rememberInputSchema,
   storeMemoryInputSchema,
 } from './types.js';
 import type { MemoryStoreLike, StorageMaintenanceOptions, StorageMaintenanceResult } from './storage-types.js';
@@ -32,6 +35,7 @@ import { ModelAbstraction } from './model.js';
 import { QueryEngine } from './query.js';
 
 export interface AdvancedMemoryRuntime {
+  remember(input: RememberInput): Promise<RememberResult>;
   queryWithNeighbors(query: string, options?: QueryWithNeighborsOptions): Promise<QueryResponse & { linksTraversed: number; paths?: NeighborPath[] }>;
   smartRecall(query: string, options?: import('./types.js').SmartRecallOptions): Promise<import('./types.js').SmartRecallResponse>;
   contextPack(query: string, options?: import('./types.js').ContextPackOptions): Promise<import('./types.js').ContextPackResponse>;
@@ -154,6 +158,17 @@ export class HttpAdapter {
       const input = storeMemoryInputSchema.parse(JSON.parse(body));
       await this.engine.store(input);
       return { status: 201, body: { ok: true, message: 'Memory stored' } };
+    }
+
+    // POST /memory/remember — classified intake with scoring/dedupe
+    if (method === 'POST' && path === '/memory/remember') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      if (!body) return { status: 400, body: { error: 'Empty request body' } };
+      const input = rememberInputSchema.parse(JSON.parse(body));
+      const result = await this.memory.remember(input);
+      return { status: result.action === 'stored' ? 201 : 200, body: result };
     }
 
     // POST /memory/shared — store a shared/private namespaced entry

@@ -29,6 +29,7 @@ import {
   knowledgeIngestOptionsSchema,
   queryWithNeighborsOptionsSchema,
   rememConfigSchema,
+  rememberInputSchema,
   smartRecallOptionsSchema,
   dreamOptionsSchema,
   contextPackOptionsSchema,
@@ -58,6 +59,9 @@ import {
   type ProceduralMatch,
   type ProceduralTrigger,
   type QueryWithNeighborsOptions,
+  type RememberInput,
+  type RememberKind,
+  type RememberResult,
   type ReMEMConfig,
   type SmartRecallOptions,
   type SmartRecallResult,
@@ -219,6 +223,152 @@ export class ReMEM {
     return metadata;
   }
 
+  private normalizeRememberContent(content: string): string {
+    return content.trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+
+  private rememberTokenSet(content: string): Set<string> {
+    return new Set(
+      this.normalizeRememberContent(content)
+        .split(/[^a-z0-9_:/.-]+/i)
+        .filter((token) => token.length >= 3)
+    );
+  }
+
+  private inferRememberKind(input: { content: string; topics?: string[]; metadata?: Record<string, unknown>; kind?: RememberKind }): RememberKind {
+    if (input.kind) return input.kind;
+    const text = `${input.content} ${(input.topics ?? []).join(' ')}`.toLowerCase();
+    const metadata = input.metadata ?? {};
+
+    if (['artifactPath', 'resourceUri', 'url', 'filePath', 'checksum'].some((key) => typeof metadata[key] === 'string')) {
+      return 'artifact-note';
+    }
+    if (/\b(prefer|preference|likes|dislikes|favorite|style|tone|settings?)\b/i.test(text)) {
+      return 'preference';
+    }
+    if (/\b(decided|decision|agreed|we will|ship with|going with|resolved|chosen)\b/i.test(text)) {
+      return 'decision';
+    }
+    if (/\b(always|never|when|if)\b/i.test(text) || /\b(checklist|runbook|procedure|playbook|must|should)\b/i.test(text)) {
+      return 'procedure';
+    }
+    if (/\b(today|just|observed|incident|happened|ran into|saw|noticed|error|failed|met with)\b/i.test(text)) {
+      return 'recent-event';
+    }
+    return 'fact';
+  }
+
+  private rememberLayerForKind(kind: RememberKind): MemoryLayer {
+    switch (kind) {
+      case 'procedure':
+        return 'procedural';
+      case 'recent-event':
+        return 'episodic';
+      case 'preference':
+        return 'identity';
+      case 'decision':
+      case 'artifact-note':
+      case 'fact':
+      default:
+        return 'semantic';
+    }
+  }
+
+  private rememberScore(kind: RememberKind, content: string, topics: string[], metadata: Record<string, unknown>): { score: number; threshold: number; reason: string } {
+    const normalized = this.normalizeRememberContent(content);
+    const tokenCount = normalized.split(/\s+/).filter(Boolean).length;
+    let score = ({
+      fact: 0.6,
+      preference: 0.74,
+      decision: 0.82,
+      procedure: 0.86,
+      'recent-event': 0.62,
+      'artifact-note': 0.78,
+    } satisfies Record<RememberKind, number>)[kind];
+
+    if (content.length >= 40) score += 0.05;
+    if (content.length >= 90) score += 0.04;
+    if (topics.length > 0) score += Math.min(0.08, topics.length * 0.02);
+    if (Object.keys(metadata).length > 0) score += 0.05;
+    if (/\b(because|due to|so that|resolved|root cause|owner|release|version)\b/i.test(content)) score += 0.04;
+    if (/\d/.test(content) || /https?:\/\//i.test(content)) score += 0.03;
+    if (tokenCount <= 3) score -= 0.25;
+    if (content.length < 18) score -= 0.18;
+    if (/^(ok|okay|thanks|nice|cool|sounds good|got it|lol|yep|yup)[.! ]*$/i.test(normalized)) score -= 0.55;
+
+    const threshold = kind === 'recent-event' ? 0.55 : 0.58;
+    const bounded = Math.max(0, Math.min(1, Number(score.toFixed(3))));
+    const reason = bounded >= threshold
+      ? `High-signal ${kind} memory`
+      : `Below intake threshold for ${kind}`;
+    return { score: bounded, threshold, reason };
+  }
+
+  private rememberDuplicate(entries: QueryResult[], content: string, topics: string[]): QueryResult | null {
+    const normalized = this.normalizeRememberContent(content);
+    const nextTokens = this.rememberTokenSet(content);
+    const nextTopicKey = [...topics].sort().join('|');
+
+    for (const entry of entries) {
+      const existing = this.normalizeRememberContent(entry.content);
+      if (existing === normalized) return entry;
+
+      const existingTokens = this.rememberTokenSet(entry.content);
+      const union = new Set([...nextTokens, ...existingTokens]);
+      const intersection = [...nextTokens].filter((token) => existingTokens.has(token)).length;
+      const tokenSimilarity = union.size === 0 ? 0 : intersection / union.size;
+      const existingTopicKey = [...entry.topics].sort().join('|');
+
+      if (tokenSimilarity >= 0.92 && (!nextTopicKey || !existingTopicKey || nextTopicKey === existingTopicKey)) {
+        return entry;
+      }
+    }
+
+    return null;
+  }
+
+  private rememberConflicts(entries: QueryResult[], content: string, topics: string[]): string[] {
+    const normalized = this.normalizeRememberContent(content);
+    const contradictionSignal = /\b(not|no longer|instead|switched|changed to|moved to|replaced)\b/i.test(normalized);
+    if (!contradictionSignal || topics.length === 0) return [];
+
+    const nextTokens = this.rememberTokenSet(content);
+    return entries
+      .filter((entry) => entry.topics.some((topic) => topics.includes(topic)))
+      .filter((entry) => {
+        const existingTokens = this.rememberTokenSet(entry.content);
+        const union = new Set([...nextTokens, ...existingTokens]);
+        const intersection = [...nextTokens].filter((token) => existingTokens.has(token)).length;
+        return union.size > 0 && intersection / union.size >= 0.35;
+      })
+      .map((entry) => entry.id)
+      .slice(0, 5);
+  }
+
+  private buildProcedureTrigger(input: { content: string; topics: string[]; metadata: Record<string, unknown> }) {
+    const existing = input.metadata.trigger;
+    if (existing && typeof existing === 'object') return existing;
+
+    const stopwords = new Set(['the', 'and', 'that', 'with', 'from', 'this', 'when', 'then', 'before', 'after', 'always', 'never', 'should', 'must']);
+    const terms = Array.from(this.rememberTokenSet(input.content))
+      .filter((token) => !stopwords.has(token))
+      .slice(0, 6);
+    const phrase = input.content
+      .trim()
+      .split(/\s+/)
+      .slice(0, 6)
+      .join(' ');
+
+    return {
+      terms,
+      phrases: phrase ? [phrase] : [],
+      topics: input.topics.slice(0, 6),
+      match: 'any' as const,
+      minScore: 0.2,
+      priority: 0.7,
+    };
+  }
+
   private graphNodeLabel(entry: QueryResult): string {
     const metadataName = entry.metadata?.name;
     if (typeof metadataName === 'string' && metadataName.trim()) return metadataName.trim();
@@ -340,6 +490,99 @@ export class ReMEM {
     }
 
     return stored;
+  }
+
+  async remember(input: RememberInput): Promise<RememberResult> {
+    const normalized = rememberInputSchema.parse(input);
+    const kind = this.inferRememberKind(normalized);
+    const layer = this.rememberLayerForKind(kind);
+    const topics = Array.from(new Set([...(normalized.topics ?? []), kind, layer]));
+    const metadata = {
+      ...(normalized.metadata ?? {}),
+      memoryKind: kind,
+      intakeLayerHint: layer,
+      rememberedAt: Date.now(),
+      ...(normalized.source ? { source: normalized.source } : {}),
+    } as Record<string, unknown>;
+    const { score, threshold, reason } = this.rememberScore(kind, normalized.content, topics, metadata);
+    const recent = await this.getRecent(50);
+    const duplicate = this.rememberDuplicate(recent, normalized.content, topics);
+    const conflictIds = this.rememberConflicts(recent, normalized.content, topics);
+
+    if (duplicate) {
+      return {
+        action: normalized.dryRun ? 'preview' : 'skipped_duplicate',
+        kind,
+        layer,
+        score,
+        threshold,
+        reason: 'Near-identical memory already exists in recent recall.',
+        duplicateOf: duplicate.id,
+        conflictIds,
+        topics,
+        metadata,
+      };
+    }
+
+    if (!normalized.forceStore && score < threshold) {
+      return {
+        action: normalized.dryRun ? 'preview' : 'skipped_low_signal',
+        kind,
+        layer,
+        score,
+        threshold,
+        reason,
+        conflictIds,
+        topics,
+        metadata,
+      };
+    }
+
+    const trigger = kind === 'procedure'
+      ? this.buildProcedureTrigger({ content: normalized.content, topics, metadata })
+      : undefined;
+    const finalMetadata = {
+      ...metadata,
+      intakeScore: score,
+      intakeReason: reason,
+      ...(trigger ? { trigger } : {}),
+      ...(conflictIds.length > 0 ? { conflictIds } : {}),
+    } as Record<string, unknown>;
+
+    if (normalized.dryRun) {
+      return {
+        action: 'preview',
+        kind,
+        layer,
+        score,
+        threshold,
+        reason,
+        conflictIds,
+        topics,
+        metadata: finalMetadata,
+        ...(trigger ? { trigger } : {}),
+      };
+    }
+
+    const entry = await this.store({
+      content: normalized.content,
+      topics,
+      metadata: finalMetadata,
+    });
+
+    return {
+      action: 'stored',
+      kind,
+      layer,
+      score,
+      threshold,
+      reason,
+      conflictIds,
+      topics,
+      metadata: finalMetadata,
+      entry,
+      ...(trigger ? { trigger } : {}),
+    };
   }
 
   /**

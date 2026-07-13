@@ -40,6 +40,34 @@ describe('HttpAdapter', () => {
     store.close();
   });
 
+  it('classifies intake memories over HTTP when advanced runtime is configured', async () => {
+    const memory = new ReMEM({ storage: 'memory', dbPath: ':memory:' });
+    await memory.init();
+    await memory.enableLayers();
+
+    const adapter = new HttpAdapter({ port: 18914, store: memory.getStore(), memory });
+    adapters.push(adapter);
+    await adapter.start();
+
+    const remembered = await fetch('http://127.0.0.1:18914/memory/remember', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: 'We decided to ship ReMEM intake memory before the next release.',
+        topics: ['release', 'roadmap'],
+        source: 'http-test',
+      }),
+    });
+    expect(remembered.status).toBe(201);
+    const rememberJson = await readJson(remembered) as { action: string; kind: string; layer: string; entry?: { metadata: Record<string, unknown> } };
+    expect(rememberJson.action).toBe('stored');
+    expect(rememberJson.kind).toBe('decision');
+    expect(rememberJson.layer).toBe('semantic');
+    expect(rememberJson.entry?.metadata.source).toBe('http-test');
+
+    memory.close();
+  });
+
   it('requires bearer auth when authToken is configured', async () => {
     const store = new MemoryStore(':memory:');
     await store.init();

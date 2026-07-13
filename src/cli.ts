@@ -7,7 +7,7 @@ import { ReMEM, type StorageMaintenanceOptions } from './index.js';
 import { runSmokeChecks } from './smoke.js';
 import { generateInitArtifacts, type RuntimeFocus } from './setup.js';
 import { launchTerminalUi } from './ui.js';
-import { knowledgeArtifactRegistrationSchema, knowledgeGraphArtifactSchema, rememConfigSchema, type ContextPackOptions, type MemoryHealthOptions, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions } from './types.js';
+import { knowledgeArtifactRegistrationSchema, knowledgeGraphArtifactSchema, rememConfigSchema, type ContextPackOptions, type MemoryHealthOptions, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions, type RememberKind } from './types.js';
 
 const gunzipAsync = promisify(gunzip);
 
@@ -137,6 +137,7 @@ Usage:
   remem knowledge-artifact --path <file> [--source codebase-memory-mcp] [--project <name>] [--resource-uri <uri>] [--required-scopes a,b] [--format sqlite] [--compression zstd] [--json]
   remem knowledge-ingest --artifact <graph.json|graph.json.gz> [--source <name>] [--project <name>] [--namespace team/code] [--visibility shared|private] [--json]
   remem store --content <text> [--topics a,b] [--metadata '{"kind":"note"}']
+  remem remember --content <text> [--kind fact|preference|decision|procedure|recent-event|artifact-note] [--topics a,b] [--source <name>] [--dry-run]
   remem query --query <text> [--limit 8]
   remem recent [--limit 10]
   remem topic --topic <name> [--limit 10]
@@ -762,6 +763,26 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
       });
       if (jsonMode) emitJson(runtime, { ok: true, command, stored: true });
       else emitText(runtime, 'Stored memory entry.\n');
+    });
+    return 0;
+  }
+
+  if (command === 'remember') {
+    await withMemory(options, async (memory) => {
+      const content = requireOption(options.content, 'content', jsonMode, runtime);
+      if (content === null) return;
+      const result = await memory.remember({
+        content,
+        topics: asCsv(options.topics),
+        metadata: parseMaybeJson(options.metadata),
+        kind: (asString(options.kind) || undefined) as RememberKind | undefined,
+        source: asString(options.source) || undefined,
+        dryRun: Boolean(options['dry-run']),
+        forceStore: Boolean(options['force-store']),
+      });
+      const payload = { ok: result.action === 'stored' || result.action === 'preview', command, ...result };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${result.action}: ${result.reason}\nkind: ${result.kind}\nlayer: ${result.layer}\nscore: ${result.score}\n`);
     });
     return 0;
   }

@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.22.0] - 2026-07-13
+
+### Added
+
+- Added first-class memory intake via `memory.remember()` so agents can classify, score, and dedupe candidate memories before storing them.
+- Added a new `rememberKind` lane (`fact`, `preference`, `decision`, `procedure`, `recent-event`, `artifact-note`) plus typed `RememberInput` / `RememberResult` exports.
+- Added `remem remember` for CLI-driven intake policy checks and machine-readable write decisions.
+- Added `POST /memory/remember` for remote runtimes that need the same write-policy surface over HTTP.
+
+### Changed
+
+- Layer auto-assignment now honors `intakeLayerHint` metadata so intake-routed memories land in the intended durable layer when layers are enabled.
+
 ### Fixed
 
 - Added regression coverage to keep `ReMEM.store()` returning the stored entry and to verify file-backed SQLite persistence survives close/reopen flows.

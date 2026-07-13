@@ -638,6 +638,13 @@ Respond with ONLY a JSON object:
    * Auto-assign layer based on content analysis.
    */
   private autoAssignLayer(input: StoreMemoryInput): MemoryLayer {
+    const metadataLayerHint = typeof input.metadata?.intakeLayerHint === 'string'
+      ? input.metadata.intakeLayerHint
+      : undefined;
+    if (metadataLayerHint === 'episodic' || metadataLayerHint === 'semantic' || metadataLayerHint === 'identity' || metadataLayerHint === 'procedural') {
+      return metadataLayerHint;
+    }
+
     const text = `${input.content} ${(input.topics ?? []).join(' ')}`.toLowerCase();
 
     // Identity keywords

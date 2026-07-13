@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.21.1](https://img.shields.io/badge/v0.21.1-cytoscape--graph--exports-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.22.0](https://img.shields.io/badge/v0.22.0-memory--intake--pipeline-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -32,6 +32,7 @@ Built with TypeScript. Node-first, with storage and adapter surfaces designed to
 - **Semantic recall, not just keyword recall** - hybrid keyword + embedding search when vectors are enabled
 - **Persists across restarts** - SQLite by default, PostgreSQL for server/shared deployments, snapshots for backup + restore
 - **Grows with the agent** - layers, compression, links, adapters, and long-running memory workflows without forcing a framework
+- **Filters memory before it pollutes recall** - intake scoring, kind classification, duplicate skipping, and automatic layer hints via `remember()`
 
 ```typescript
 import { ReMEM } from '@darksol/remem';
@@ -83,6 +84,7 @@ remem storage-maintenance --db ./remem.db --dry-run --json
 remem knowledge-artifact --db ./remem.db --path .codebase-memory/graph.db.zst --source codebase-memory-mcp --project remem --format sqlite --compression zstd --json
 remem knowledge-ingest --db ./remem.db --artifact ./code-graph.json --source codebase-memory-mcp --project remem --json
 remem store --content "Meta likes dark mode" --topics preferences,ui
+remem remember --content "We decided to ship intake scoring before the next release" --topics release,roadmap --source operator
 remem query --query "What does Meta like?"
 remem context-pack --query "What context should the next agent carry?" --max-chars 6000 --json
 remem dream --query "What is long memory trying to tell us?" --json
@@ -111,6 +113,41 @@ remem init --runtime openclaw --out-dir ./.remem --check --json
 Use `doctor` when you want package/runtime/config/storage/snapshot checks in one command. Use `smoke-check` when you only need the lighter snapshot + optional endpoint verification pass.
 
 Use `stats` when an agent needs a compact inventory of the memory scope before deciding whether to recall, consolidate, snapshot, or prune.
+
+### Memory intake before recall
+
+Use `remember()` when an agent should decide whether something is worth storing before it hits durable memory.
+
+```typescript
+const intake = await memory.remember({
+  content: 'We decided to ship intake scoring before the next npm release.',
+  topics: ['release', 'roadmap'],
+  source: 'operator',
+});
+
+if (intake.action === 'stored') {
+  console.log(intake.kind, intake.layer, intake.entry?.id);
+}
+```
+
+`remember()` does four things in one pass:
+- classifies the memory as a `fact`, `preference`, `decision`, `procedure`, `recent-event`, or `artifact-note`
+- scores whether the memory is strong enough to store
+- skips near-identical recent memories instead of duplicating them
+- attaches an automatic layer hint so durable layers stay cleaner when layer persistence is enabled
+
+CLI / HTTP surfaces ship with the same policy:
+
+```bash
+remem remember \
+  --db ./remem.db \
+  --content "Always run npm pack --dry-run before publish." \
+  --topics release,checklist \
+  --source release-bot \
+  --json
+```
+
+`POST /memory/remember` accepts the same shape for remote runtimes.
 
 Use `graph` when an agent needs a visualization-ready map of a memory scope. It returns weighted memory nodes, internal links, topic clusters, Graphviz DOT, and Cytoscape-compatible elements so you can inspect recall shape before pruning, consolidation, handoff, or web rendering.
 

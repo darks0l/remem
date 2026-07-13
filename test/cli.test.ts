@@ -206,6 +206,26 @@ describe('ReMEM CLI', () => {
     expect(payload.results[0].content).toContain('dark mode');
   });
 
+  it('classifies intake memories through the remember CLI command', async () => {
+    const db = './.tmp-cli-remember.db';
+    await fs.rm(db, { force: true });
+
+    const rememberResult = await invoke([
+      'remember',
+      '--db', db,
+      '--content', 'We decided to ship the intake pipeline in the next ReMEM release.',
+      '--topics', 'release,roadmap',
+      '--source', 'cli-test',
+      '--json',
+    ]);
+    expect(rememberResult.exitCode).toBe(0);
+    const payload = JSON.parse(rememberResult.stdout);
+    expect(payload.action).toBe('stored');
+    expect(payload.kind).toBe('decision');
+    expect(payload.layer).toBe('semantic');
+    expect(payload.entry.metadata.source).toBe('cli-test');
+  });
+
   it('fails unknown commands cleanly', async () => {
     const result = await invoke(['definitely-not-a-command']);
     expect(result.exitCode).toBe(1);

@@ -29,6 +29,52 @@ export const storeMemoryInputSchema = z.object({
 
 export type StoreMemoryInput = z.infer<typeof storeMemoryInputSchema>;
 
+export const rememberKindSchema = z.enum([
+  'fact',
+  'preference',
+  'decision',
+  'procedure',
+  'recent-event',
+  'artifact-note',
+]);
+
+export type RememberKind = z.infer<typeof rememberKindSchema>;
+
+export const rememberActionSchema = z.enum([
+  'stored',
+  'skipped_duplicate',
+  'skipped_low_signal',
+  'preview',
+]);
+
+export type RememberAction = z.infer<typeof rememberActionSchema>;
+
+export const rememberInputSchema = storeMemoryInputSchema.extend({
+  kind: rememberKindSchema.optional(),
+  source: z.string().min(1).optional(),
+  dryRun: z.boolean().default(false),
+  forceStore: z.boolean().default(false),
+});
+
+export type RememberInput = z.input<typeof rememberInputSchema>;
+
+export const rememberResultSchema = z.object({
+  action: rememberActionSchema,
+  kind: rememberKindSchema,
+  layer: z.enum(['episodic', 'semantic', 'identity', 'procedural']),
+  score: z.number().min(0).max(1),
+  threshold: z.number().min(0).max(1),
+  reason: z.string(),
+  duplicateOf: z.string().optional(),
+  conflictIds: z.array(z.string()).default([]),
+  topics: z.array(z.string()),
+  metadata: z.record(z.unknown()).default({}),
+  entry: memoryEntrySchema.optional(),
+  trigger: z.unknown().optional(),
+});
+
+export type RememberResult = z.infer<typeof rememberResultSchema>;
+
 // ============================================================================
 // Query Types
 // ============================================================================

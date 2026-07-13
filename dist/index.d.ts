@@ -46,6 +46,118 @@ declare const storeMemoryInputSchema: z.ZodObject<{
     metadata?: Record<string, unknown> | undefined;
 }>;
 type StoreMemoryInput = z.infer<typeof storeMemoryInputSchema>;
+declare const rememberKindSchema: z.ZodEnum<["fact", "preference", "decision", "procedure", "recent-event", "artifact-note"]>;
+type RememberKind = z.infer<typeof rememberKindSchema>;
+declare const rememberActionSchema: z.ZodEnum<["stored", "skipped_duplicate", "skipped_low_signal", "preview"]>;
+type RememberAction = z.infer<typeof rememberActionSchema>;
+declare const rememberInputSchema: z.ZodObject<{
+    content: z.ZodString;
+    topics: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
+    metadata: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>>;
+} & {
+    kind: z.ZodOptional<z.ZodEnum<["fact", "preference", "decision", "procedure", "recent-event", "artifact-note"]>>;
+    source: z.ZodOptional<z.ZodString>;
+    dryRun: z.ZodDefault<z.ZodBoolean>;
+    forceStore: z.ZodDefault<z.ZodBoolean>;
+}, "strip", z.ZodTypeAny, {
+    topics: string[];
+    metadata: Record<string, unknown>;
+    content: string;
+    dryRun: boolean;
+    forceStore: boolean;
+    kind?: "fact" | "preference" | "decision" | "procedure" | "recent-event" | "artifact-note" | undefined;
+    source?: string | undefined;
+}, {
+    content: string;
+    topics?: string[] | undefined;
+    metadata?: Record<string, unknown> | undefined;
+    kind?: "fact" | "preference" | "decision" | "procedure" | "recent-event" | "artifact-note" | undefined;
+    source?: string | undefined;
+    dryRun?: boolean | undefined;
+    forceStore?: boolean | undefined;
+}>;
+type RememberInput = z.input<typeof rememberInputSchema>;
+declare const rememberResultSchema: z.ZodObject<{
+    action: z.ZodEnum<["stored", "skipped_duplicate", "skipped_low_signal", "preview"]>;
+    kind: z.ZodEnum<["fact", "preference", "decision", "procedure", "recent-event", "artifact-note"]>;
+    layer: z.ZodEnum<["episodic", "semantic", "identity", "procedural"]>;
+    score: z.ZodNumber;
+    threshold: z.ZodNumber;
+    reason: z.ZodString;
+    duplicateOf: z.ZodOptional<z.ZodString>;
+    conflictIds: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    topics: z.ZodArray<z.ZodString, "many">;
+    metadata: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+    entry: z.ZodOptional<z.ZodObject<{
+        id: z.ZodString;
+        content: z.ZodString;
+        topics: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+        metadata: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+        createdAt: z.ZodNumber;
+        accessedAt: z.ZodNumber;
+        accessCount: z.ZodDefault<z.ZodNumber>;
+    }, "strip", z.ZodTypeAny, {
+        topics: string[];
+        metadata: Record<string, unknown>;
+        id: string;
+        content: string;
+        createdAt: number;
+        accessedAt: number;
+        accessCount: number;
+    }, {
+        id: string;
+        content: string;
+        createdAt: number;
+        accessedAt: number;
+        topics?: string[] | undefined;
+        metadata?: Record<string, unknown> | undefined;
+        accessCount?: number | undefined;
+    }>>;
+    trigger: z.ZodOptional<z.ZodUnknown>;
+}, "strip", z.ZodTypeAny, {
+    topics: string[];
+    metadata: Record<string, unknown>;
+    layer: "episodic" | "semantic" | "identity" | "procedural";
+    kind: "fact" | "preference" | "decision" | "procedure" | "recent-event" | "artifact-note";
+    action: "stored" | "skipped_duplicate" | "skipped_low_signal" | "preview";
+    score: number;
+    threshold: number;
+    reason: string;
+    conflictIds: string[];
+    trigger?: unknown;
+    duplicateOf?: string | undefined;
+    entry?: {
+        topics: string[];
+        metadata: Record<string, unknown>;
+        id: string;
+        content: string;
+        createdAt: number;
+        accessedAt: number;
+        accessCount: number;
+    } | undefined;
+}, {
+    topics: string[];
+    layer: "episodic" | "semantic" | "identity" | "procedural";
+    kind: "fact" | "preference" | "decision" | "procedure" | "recent-event" | "artifact-note";
+    action: "stored" | "skipped_duplicate" | "skipped_low_signal" | "preview";
+    score: number;
+    threshold: number;
+    reason: string;
+    metadata?: Record<string, unknown> | undefined;
+    trigger?: unknown;
+    duplicateOf?: string | undefined;
+    conflictIds?: string[] | undefined;
+    entry?: {
+        id: string;
+        content: string;
+        createdAt: number;
+        accessedAt: number;
+        topics?: string[] | undefined;
+        metadata?: Record<string, unknown> | undefined;
+        accessCount?: number | undefined;
+    } | undefined;
+}>;
+type RememberResult = z.infer<typeof rememberResultSchema>;
 declare const metadataFilterValueSchema: z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
 type MetadataFilterValue = z.infer<typeof metadataFilterValueSchema>;
 declare const metadataFilterOperatorSchema: z.ZodEffects<z.ZodObject<{
@@ -493,16 +605,16 @@ declare const neighborPathSchema: z.ZodObject<{
     type: string;
     fromId: string;
     toId: string;
+    score: number;
     throughId: string;
     hop: number;
-    score: number;
 }, {
     type: string;
     fromId: string;
     toId: string;
+    score: number;
     throughId: string;
     hop: number;
-    score: number;
 }>;
 type NeighborPath = z.infer<typeof neighborPathSchema>;
 declare const smartRecallProfileSchema: z.ZodEnum<["fast", "deep", "agent-safe", "ops-debug"]>;
@@ -1038,13 +1150,13 @@ declare const contextPackSectionSchema: z.ZodObject<{
     sourceIds: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
 }, "strip", z.ZodTypeAny, {
     content: string;
+    kind: "recent" | "overview" | "recall" | "dream";
     title: string;
     sourceIds: string[];
-    kind: "recent" | "overview" | "recall" | "dream";
 }, {
     content: string;
-    title: string;
     kind: "recent" | "overview" | "recall" | "dream";
+    title: string;
     sourceIds?: string[] | undefined;
 }>;
 type ContextPackSection = z.infer<typeof contextPackSectionSchema>;
@@ -1059,13 +1171,13 @@ declare const contextPackResponseSchema: z.ZodObject<{
         sourceIds: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
     }, "strip", z.ZodTypeAny, {
         content: string;
+        kind: "recent" | "overview" | "recall" | "dream";
         title: string;
         sourceIds: string[];
-        kind: "recent" | "overview" | "recall" | "dream";
     }, {
         content: string;
-        title: string;
         kind: "recent" | "overview" | "recall" | "dream";
+        title: string;
         sourceIds?: string[] | undefined;
     }>, "many">;
     sourceIds: z.ZodArray<z.ZodString, "many">;
@@ -1082,9 +1194,9 @@ declare const contextPackResponseSchema: z.ZodObject<{
     maxChars: number;
     sections: {
         content: string;
+        kind: "recent" | "overview" | "recall" | "dream";
         title: string;
         sourceIds: string[];
-        kind: "recent" | "overview" | "recall" | "dream";
     }[];
     usedChars: number;
     truncated: boolean;
@@ -1097,8 +1209,8 @@ declare const contextPackResponseSchema: z.ZodObject<{
     maxChars: number;
     sections: {
         content: string;
-        title: string;
         kind: "recent" | "overview" | "recall" | "dream";
+        title: string;
         sourceIds?: string[] | undefined;
     }[];
     usedChars: number;
@@ -1137,15 +1249,15 @@ declare const memoryHealthCheckSchema: z.ZodObject<{
     name: string;
     detail: string;
     value?: unknown;
-    command?: string | undefined;
     action?: string | undefined;
+    command?: string | undefined;
 }, {
     status: "pass" | "warn" | "fail";
     name: string;
     detail: string;
     value?: unknown;
-    command?: string | undefined;
     action?: string | undefined;
+    command?: string | undefined;
 }>;
 type MemoryHealthCheck = z.infer<typeof memoryHealthCheckSchema>;
 declare const memoryHealthRecommendationSchema: z.ZodObject<{
@@ -1155,13 +1267,13 @@ declare const memoryHealthRecommendationSchema: z.ZodObject<{
     command: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     action: string;
-    priority: "low" | "medium" | "high";
     reason: string;
+    priority: "low" | "medium" | "high";
     command?: string | undefined;
 }, {
     action: string;
-    priority: "low" | "medium" | "high";
     reason: string;
+    priority: "low" | "medium" | "high";
     command?: string | undefined;
 }>;
 type MemoryHealthRecommendation = z.infer<typeof memoryHealthRecommendationSchema>;
@@ -1181,15 +1293,15 @@ declare const memoryHealthResponseSchema: z.ZodObject<{
         name: string;
         detail: string;
         value?: unknown;
-        command?: string | undefined;
         action?: string | undefined;
+        command?: string | undefined;
     }, {
         status: "pass" | "warn" | "fail";
         name: string;
         detail: string;
         value?: unknown;
-        command?: string | undefined;
         action?: string | undefined;
+        command?: string | undefined;
     }>, "many">;
     recommendations: z.ZodArray<z.ZodObject<{
         priority: z.ZodEnum<["low", "medium", "high"]>;
@@ -1198,13 +1310,13 @@ declare const memoryHealthResponseSchema: z.ZodObject<{
         command: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         action: string;
-        priority: "low" | "medium" | "high";
         reason: string;
+        priority: "low" | "medium" | "high";
         command?: string | undefined;
     }, {
         action: string;
-        priority: "low" | "medium" | "high";
         reason: string;
+        priority: "low" | "medium" | "high";
         command?: string | undefined;
     }>, "many">;
     stats: z.ZodObject<{
@@ -1241,13 +1353,13 @@ declare const memoryHealthResponseSchema: z.ZodObject<{
         name: string;
         detail: string;
         value?: unknown;
-        command?: string | undefined;
         action?: string | undefined;
+        command?: string | undefined;
     }[];
     recommendations: {
         action: string;
-        priority: "low" | "medium" | "high";
         reason: string;
+        priority: "low" | "medium" | "high";
         command?: string | undefined;
     }[];
     stats: {
@@ -1268,13 +1380,13 @@ declare const memoryHealthResponseSchema: z.ZodObject<{
         name: string;
         detail: string;
         value?: unknown;
-        command?: string | undefined;
         action?: string | undefined;
+        command?: string | undefined;
     }[];
     recommendations: {
         action: string;
-        priority: "low" | "medium" | "high";
         reason: string;
+        priority: "low" | "medium" | "high";
         command?: string | undefined;
     }[];
     stats: {
@@ -1312,13 +1424,13 @@ declare const knowledgeResourceGrantSchema: z.ZodObject<{
     scopes: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
 }, "strip", z.ZodTypeAny, {
     scopes: string[];
+    resourceUri?: string | undefined;
     source?: string | undefined;
     project?: string | undefined;
-    resourceUri?: string | undefined;
 }, {
+    resourceUri?: string | undefined;
     source?: string | undefined;
     project?: string | undefined;
-    resourceUri?: string | undefined;
     scopes?: string[] | undefined;
 }>;
 type KnowledgeResourceGrant = z.infer<typeof knowledgeResourceGrantSchema>;
@@ -1473,10 +1585,10 @@ declare const knowledgeGraphArtifactSchema: z.ZodObject<{
     }[];
     source: string;
     requiredScopes: string[];
-    generatedAt?: number | undefined;
-    project?: string | undefined;
     artifactPath?: string | undefined;
     resourceUri?: string | undefined;
+    generatedAt?: number | undefined;
+    project?: string | undefined;
     version?: string | undefined;
 }, {
     metadata?: Record<string, unknown> | undefined;
@@ -1499,11 +1611,11 @@ declare const knowledgeGraphArtifactSchema: z.ZodObject<{
         metadata?: Record<string, unknown> | undefined;
         weight?: number | undefined;
     }[] | undefined;
-    generatedAt?: number | undefined;
-    source?: string | undefined;
-    project?: string | undefined;
     artifactPath?: string | undefined;
     resourceUri?: string | undefined;
+    source?: string | undefined;
+    generatedAt?: number | undefined;
+    project?: string | undefined;
     requiredScopes?: string[] | undefined;
     version?: string | undefined;
 }>;
@@ -1525,8 +1637,8 @@ declare const knowledgeIngestOptionsSchema: z.ZodObject<{
 }, {
     visibility?: "private" | "shared" | undefined;
     namespace?: string | string[] | undefined;
-    topic?: string | undefined;
     source?: string | undefined;
+    topic?: string | undefined;
     project?: string | undefined;
     linkTypePrefix?: string | undefined;
 }>;
@@ -1570,26 +1682,26 @@ declare const knowledgeArtifactRegistrationSchema: z.ZodObject<{
     metadata: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>>;
 }, "strip", z.ZodTypeAny, {
     metadata: Record<string, unknown>;
-    source: string;
     artifactPath: string;
+    source: string;
     requiredScopes: string[];
     format: string;
+    resourceUri?: string | undefined;
+    checksum?: string | undefined;
     generatedAt?: number | undefined;
     project?: string | undefined;
-    resourceUri?: string | undefined;
     compression?: string | undefined;
-    checksum?: string | undefined;
 }, {
     artifactPath: string;
     metadata?: Record<string, unknown> | undefined;
-    generatedAt?: number | undefined;
-    source?: string | undefined;
-    project?: string | undefined;
     resourceUri?: string | undefined;
+    checksum?: string | undefined;
+    source?: string | undefined;
+    generatedAt?: number | undefined;
+    project?: string | undefined;
     requiredScopes?: string[] | undefined;
     format?: string | undefined;
     compression?: string | undefined;
-    checksum?: string | undefined;
 }>;
 type KnowledgeArtifactRegistration = z.infer<typeof knowledgeArtifactRegistrationSchema>;
 type KnowledgeArtifactRegistrationResult = {
@@ -2531,7 +2643,6 @@ declare const proceduralMatchSchema: z.ZodObject<{
     reasons: z.ZodArray<z.ZodString, "many">;
 }, "strip", z.ZodTypeAny, {
     score: number;
-    reasons: string[];
     entry: {
         topics: string[];
         metadata: Record<string, unknown>;
@@ -2548,9 +2659,9 @@ declare const proceduralMatchSchema: z.ZodObject<{
         supersedes?: string | null | undefined;
         supersededBy?: string | null | undefined;
     };
+    reasons: string[];
 }, {
     score: number;
-    reasons: string[];
     entry: {
         id: string;
         content: string;
@@ -2567,6 +2678,7 @@ declare const proceduralMatchSchema: z.ZodObject<{
         supersedes?: string | null | undefined;
         supersededBy?: string | null | undefined;
     };
+    reasons: string[];
 }>;
 type ProceduralMatch = z.infer<typeof proceduralMatchSchema>;
 declare const driftEventSchema: z.ZodObject<{
@@ -3821,6 +3933,7 @@ declare class MemoryREPL {
 }
 
 interface AdvancedMemoryRuntime {
+    remember(input: RememberInput): Promise<RememberResult>;
     queryWithNeighbors(query: string, options?: QueryWithNeighborsOptions): Promise<QueryResponse & {
         linksTraversed: number;
         paths?: NeighborPath[];
@@ -4277,9 +4390,9 @@ declare function createCodebaseMemoryAdapter(memory: ReMEM, options?: ReMEMAdapt
             type: string;
             fromId: string;
             toId: string;
+            score: number;
             throughId: string;
             hop: number;
-            score: number;
         }[];
         linksTraversed: number;
         context: string;
@@ -4304,9 +4417,9 @@ declare function createCodebaseMemoryAdapter(memory: ReMEM, options?: ReMEMAdapt
             type: string;
             fromId: string;
             toId: string;
+            score: number;
             throughId: string;
             hop: number;
-            score: number;
         }[];
         linksTraversed: number;
         context: string;
@@ -4581,6 +4694,14 @@ declare class ReMEM {
     private normalizeNamespace;
     private namespaceTopicTrail;
     private buildScopedMetadataFilters;
+    private normalizeRememberContent;
+    private rememberTokenSet;
+    private inferRememberKind;
+    private rememberLayerForKind;
+    private rememberScore;
+    private rememberDuplicate;
+    private rememberConflicts;
+    private buildProcedureTrigger;
     private graphNodeLabel;
     private dotEscape;
     constructor(config: ReMEMConfig);
@@ -4595,6 +4716,7 @@ declare class ReMEM {
      * If embeddings are enabled, generates a vector embedding in the background.
      */
     store(input: StoreMemoryInput): Promise<MemoryEntry>;
+    remember(input: RememberInput): Promise<RememberResult>;
     /**
      * Query memory using natural language.
      * Uses semantic search (cosine similarity) when embeddings are enabled,
@@ -4965,4 +5087,4 @@ declare class ReMEM {
     close(): void;
 }
 
-export { type Adapter, type CodebaseGraphAsMemoryOptions, type CodebaseGraphConnection, type CodebaseGraphDisplayType, type CodebaseGraphInventoryOptions, type CodebaseGraphMemorySnapshot, type CodebaseGraphNodeHealth, type CodebaseGraphOwnerSummary, type CodebaseGraphQueryOptions, type CodebaseGraphSubgraph, type CodebaseSubgraphOptions, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, type ContextPackOptions, type ContextPackResponse, type ContextPackSection, DEFAULT_LAYER_CONFIG, type DreamMemoryLayer, type DreamOptions, type DreamResponse, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type KnowledgeArtifactRegistration, type KnowledgeArtifactRegistrationResult, type KnowledgeEdge, type KnowledgeGraphArtifact, type KnowledgeIngestOptions, type KnowledgeIngestResult, type KnowledgeNode, type KnowledgeResourceAccessResult, type KnowledgeResourceGrant, type KnowledgeResourceScope, type KnowledgeResourceUri, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryGraphCytoscapeEdge, type MemoryGraphCytoscapeExport, type MemoryGraphCytoscapeNode, type MemoryGraphLink, type MemoryGraphNode, type MemoryGraphOptions, type MemoryGraphSnapshot, type MemoryGraphTopicCluster, type MemoryHealthCheck, type MemoryHealthOptions, type MemoryHealthRecommendation, type MemoryHealthResponse, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, type MetadataFilter, type MetadataFilterOperator, type MetadataFilterValue, ModelAbstraction, type ModelConfig, type NamespaceInput, type NamespaceQueryScope, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type SmartRecallOptions, type SmartRecallProfile, type SmartRecallResponse, type SmartRecallResult, type SnapshotExport, type SnapshotMeta, type StorageMaintenanceOptions, type StorageMaintenanceResult, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, authorizeKnowledgeResourceAccess, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, contextPackOptionsSchema, contextPackResponseSchema, contextPackSectionSchema, createCodebaseMemoryAdapter, createHermesAdapter, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, dreamMemoryLayerSchema, dreamOptionsSchema, dreamResponseSchema, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, knowledgeArtifactRegistrationSchema, knowledgeEdgeSchema, knowledgeGraphArtifactSchema, knowledgeIngestOptionsSchema, knowledgeIngestResultSchema, knowledgeNodeSchema, knowledgeResourceGrantSchema, knowledgeResourceScopeSchema, knowledgeResourceUriSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryHealthCheckSchema, memoryHealthOptionsSchema, memoryHealthRecommendationSchema, memoryHealthResponseSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, metadataFilterOperatorSchema, metadataFilterSchema, metadataFilterValueSchema, modelConfigSchema, namespaceInputSchema, namespaceQueryScopeSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, smartRecallOptionsSchema, smartRecallProfileSchema, smartRecallResponseSchema, smartRecallResultSchema, storeMemoryInputSchema, uploadPackage };
+export { type Adapter, type CodebaseGraphAsMemoryOptions, type CodebaseGraphConnection, type CodebaseGraphDisplayType, type CodebaseGraphInventoryOptions, type CodebaseGraphMemorySnapshot, type CodebaseGraphNodeHealth, type CodebaseGraphOwnerSummary, type CodebaseGraphQueryOptions, type CodebaseGraphSubgraph, type CodebaseSubgraphOptions, type Constitution, ConstitutionInjector, ConstitutionManager, type ConstitutionStatement, type ContextPackOptions, type ContextPackResponse, type ContextPackSection, DEFAULT_LAYER_CONFIG, type DreamMemoryLayer, type DreamOptions, type DreamResponse, DriftDetector, type DriftEvent, type DriftResult, type DuplicateResult, type DuplicationConfig, type EmbeddingConfig$1 as EmbeddingConfig, EpisodicCapturePipeline, type EventType, HttpAdapter, type IdentityCategory, type IdentityConfig, type IdentityPackage, type IdentitySystem, type InfectionConfig, type InfectionResult, type KnowledgeArtifactRegistration, type KnowledgeArtifactRegistrationResult, type KnowledgeEdge, type KnowledgeGraphArtifact, type KnowledgeIngestOptions, type KnowledgeIngestResult, type KnowledgeNode, type KnowledgeResourceAccessResult, type KnowledgeResourceGrant, type KnowledgeResourceScope, type KnowledgeResourceUri, type LLMMessage, type LLMResponse, type LayerConfig, LayerManager, type LayeredMemoryEntry, type LinkedMemoryQueryOptions, MemoryConsolidator, type MemoryEntry, type MemoryEvent, type MemoryGraphCytoscapeEdge, type MemoryGraphCytoscapeExport, type MemoryGraphCytoscapeNode, type MemoryGraphLink, type MemoryGraphNode, type MemoryGraphOptions, type MemoryGraphSnapshot, type MemoryGraphTopicCluster, type MemoryHealthCheck, type MemoryHealthOptions, type MemoryHealthRecommendation, type MemoryHealthResponse, type MemoryLayer, type MemoryLink, type MemoryLinkInput, MemoryREPL, MemoryStore, type MemoryStoreLike, type MetadataFilter, type MetadataFilterOperator, type MetadataFilterValue, ModelAbstraction, type ModelConfig, type NamespaceInput, type NamespaceQueryScope, type NeighborPath, PostgresMemoryStore, type PostgresStorageConfig, type ProceduralMatch, type ProceduralTrigger, QueryEngine, type QueryOptions, type QueryResponse, type QueryResult, type QueryWithNeighborsOptions, ReMEM, type ReMEMAdapterOptions, type ReMEMConfig, type RememberAction, type RememberInput, type RememberKind, type RememberResult, type SmartRecallOptions, type SmartRecallProfile, type SmartRecallResponse, type SmartRecallResult, type SnapshotExport, type SnapshotMeta, type StorageMaintenanceOptions, type StorageMaintenanceResult, type StoreMemoryInput, type StoreMemoryOptions, type SupersessionResult, authorizeKnowledgeResourceAccess, buildIdentityPackage, constitutionSchema, constitutionStatementSchema, contextPackOptionsSchema, contextPackResponseSchema, contextPackSectionSchema, createCodebaseMemoryAdapter, createHermesAdapter, createIdentitySystem, createLangGraphStoreAdapter, createOpenClawAdapter, createVercelAIAdapter, defaultMemoryLinkTypes, downloadPackage, dreamMemoryLayerSchema, dreamOptionsSchema, dreamResponseSchema, driftEventSchema, driftResultSchema, duplicate, duplicationConfigSchema, embeddingConfigSchema, eventTypeSchema, identityCategorySchema, identityConfigSchema, identityPackageSchema, infect, infectFromServer, infectionConfigSchema, knowledgeArtifactRegistrationSchema, knowledgeEdgeSchema, knowledgeGraphArtifactSchema, knowledgeIngestOptionsSchema, knowledgeIngestResultSchema, knowledgeNodeSchema, knowledgeResourceGrantSchema, knowledgeResourceScopeSchema, knowledgeResourceUriSchema, layerConfigSchema, layeredMemoryEntrySchema, linkedMemoryQueryOptionsSchema, memoryEntrySchema, memoryEventSchema, memoryHealthCheckSchema, memoryHealthOptionsSchema, memoryHealthRecommendationSchema, memoryHealthResponseSchema, memoryLayerSchema, memoryLinkInputSchema, memoryLinkSchema, metadataFilterOperatorSchema, metadataFilterSchema, metadataFilterValueSchema, modelConfigSchema, namespaceInputSchema, namespaceQueryScopeSchema, neighborPathSchema, postgresStorageConfigSchema, proceduralMatchSchema, proceduralTriggerSchema, queryOptionsSchema, queryResponseSchema, queryResultSchema, queryWithNeighborsOptionsSchema, rememConfigSchema, rememberActionSchema, rememberInputSchema, rememberKindSchema, rememberResultSchema, smartRecallOptionsSchema, smartRecallProfileSchema, smartRecallResponseSchema, smartRecallResultSchema, storeMemoryInputSchema, uploadPackage };
