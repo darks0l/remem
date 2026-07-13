@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Fixed
+
+- Added regression coverage to keep `ReMEM.store()` returning the stored entry and to verify file-backed SQLite persistence survives close/reopen flows.
+- Ignored local `.temp-remem-*` validation/setup scratch directories so CLI/config tests do not leave avoidable repo noise behind.
 
 ## [0.21.1] - 2026-07-10
 

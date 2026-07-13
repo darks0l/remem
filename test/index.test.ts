@@ -2,6 +2,8 @@
  * ReMEM — Core Tests
  */
 
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ReMEM, MemoryStore, PostgresMemoryStore, MemoryREPL } from '../src/index.js';
 
@@ -25,6 +27,53 @@ describe('ReMEM', () => {
     const results = await memory.query('dark mode');
     expect(results.results.length).toBeGreaterThan(0);
     expect(results.results[0].content).toContain('dark mode');
+  });
+
+  it('returns the stored entry from memory.store()', async () => {
+    const stored = await memory.store({
+      content: 'Stored entry should come back with its generated id',
+      topics: ['store', 'contract'],
+      metadata: { project: 'remem' },
+    });
+
+    expect(stored.id).toBeTypeOf('string');
+    expect(stored.content).toContain('generated id');
+    expect(stored.topics).toEqual(['store', 'contract']);
+    expect(stored.metadata).toEqual({ project: 'remem' });
+  });
+
+  it('persists file-backed sqlite memories across close and reopen cycles', async () => {
+    const dbDir = path.resolve('.temp-remem-persist');
+    const dbPath = path.join(dbDir, `persist-${Date.now()}.db`);
+    await fs.mkdir(dbDir, { recursive: true });
+    await fs.rm(dbPath, { force: true });
+    await fs.rm(`${dbPath}.tmp`, { force: true });
+
+    const persisted = new ReMEM({
+      dbPath,
+    });
+    await persisted.init();
+
+    const stored = await persisted.store({
+      content: 'File-backed persistence should survive restart',
+      topics: ['persist', 'sqlite'],
+    });
+    persisted.close();
+
+    const stat = await fs.stat(dbPath);
+    expect(stat.size).toBeGreaterThan(0);
+
+    const reopened = new ReMEM({
+      dbPath,
+    });
+    await reopened.init();
+
+    const results = await reopened.query('survive restart');
+    expect(results.results.some((entry) => entry.id === stored.id)).toBe(true);
+
+    reopened.close();
+    await fs.rm(dbPath, { force: true });
+    await fs.rm(`${dbPath}.tmp`, { force: true });
   });
 
   it('returns recent memories', async () => {
