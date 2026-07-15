@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No unreleased changes yet.
 
+## [0.22.1] - 2026-07-15
+
+### Changed
+
+- Expanded the OpenClaw quickstart into a task-oriented setup flow with lane-scoped recall, `smartRecall()`, `contextPack()`, and generated-config validation.
+- Expanded the Hermes quickstart with decisions, procedures, nested shared namespace examples, and a cleaner bootstrap/health-check lane.
+
+### Fixed
+
+- Added docs hygiene regression coverage so the OpenClaw and Hermes quickstarts stay aligned with their documented runtime workflows.
+
 ## [0.22.0] - 2026-07-13
 
 ### Added
