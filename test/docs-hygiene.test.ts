@@ -10,6 +10,8 @@ const repoRoot = path.resolve(__dirname, '..');
 const filesToCheck = [
   'README.md',
   'benchmarks/README.md',
+  'docs/openclaw-quickstart.md',
+  'docs/hermes-quickstart.md',
 ] as const;
 
 const privateLanUrlPattern = /https?:\/\/(?:192\.168\.|10\.|172\.(?:1[6-9]|2\d|3[01])\.)/;
@@ -29,5 +31,30 @@ describe('documentation hygiene', () => {
     const readme = readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
     expect(readme).not.toMatch(stalePassingCountPattern);
     expect(readme).toContain('https://img.shields.io/badge/tests-passing-00e676');
+  });
+
+  it('keeps the OpenClaw quickstart aligned with the documented task-oriented workflow', () => {
+    const quickstart = readFileSync(path.join(repoRoot, 'docs/openclaw-quickstart.md'), 'utf8');
+    expect(quickstart).toContain('remem init --runtime openclaw');
+    expect(quickstart).toContain('rememberTurn');
+    expect(quickstart).toContain('rememberDecision');
+    expect(quickstart).toContain('rememberProcedure');
+    expect(quickstart).toContain('recallProjectContext');
+    expect(quickstart).toContain('smartRecall');
+    expect(quickstart).toContain('contextPack');
+    expect(quickstart).toContain('validate-config');
+  });
+
+  it('keeps the Hermes quickstart aligned with the documented harness workflow', () => {
+    const quickstart = readFileSync(path.join(repoRoot, 'docs/hermes-quickstart.md'), 'utf8');
+    expect(quickstart).toContain('remem init --runtime hermes');
+    expect(quickstart).toContain('rememberTurn');
+    expect(quickstart).toContain('rememberArtifact');
+    expect(quickstart).toContain('rememberDecision');
+    expect(quickstart).toContain('rememberProcedure');
+    expect(quickstart).toContain('rememberShared');
+    expect(quickstart).toContain('recallShared');
+    expect(quickstart).toContain('includeDescendants');
+    expect(quickstart).toContain('smoke-check');
   });
 });
