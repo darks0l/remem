@@ -208,6 +208,43 @@ describe('HttpAdapter', () => {
     expect(knowledgeIngestJson.nodesStored).toBe(2);
     expect(knowledgeIngestJson.edgesLinked).toBe(1);
 
+    const knowledgeOverview = await fetch('http://127.0.0.1:18913/knowledge/overview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: 'remem', limit: 5 }),
+    });
+    expect(knowledgeOverview.status).toBe(200);
+    const knowledgeOverviewJson = await readJson(knowledgeOverview) as {
+      project?: string;
+      nodes: number;
+      labels: Record<string, number>;
+      hotspots: unknown[];
+    };
+    expect(knowledgeOverviewJson.project).toBe('remem');
+    expect(knowledgeOverviewJson.nodes).toBe(2);
+    expect(knowledgeOverviewJson.labels.Function).toBe(2);
+    expect(Array.isArray(knowledgeOverviewJson.hotspots)).toBe(true);
+
+    const knowledgeSubgraph = await fetch('http://127.0.0.1:18913/knowledge/subgraph', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: 'ProcessOrder',
+        options: { project: 'remem', connectionTypes: ['calls'], limit: 8, neighborLimit: 8 },
+      }),
+    });
+    expect(knowledgeSubgraph.status).toBe(200);
+    const knowledgeSubgraphJson = await readJson(knowledgeSubgraph) as {
+      results: Array<{ content: string }>;
+      paths: unknown[];
+      linksTraversed: number;
+      context: string;
+    };
+    expect(knowledgeSubgraphJson.results.length).toBe(2);
+    expect(knowledgeSubgraphJson.paths.length).toBeGreaterThanOrEqual(1);
+    expect(knowledgeSubgraphJson.linksTraversed).toBeGreaterThanOrEqual(1);
+    expect(knowledgeSubgraphJson.context).toContain('ProcessOrder');
+
     const sharedCreate = await fetch('http://127.0.0.1:18913/memory/shared', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

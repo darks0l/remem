@@ -2573,21 +2573,21 @@ declare const proceduralTriggerSchema: z.ZodObject<{
     priority: z.ZodDefault<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
     topics: string[];
+    match: "all" | "any";
     priority: number;
     terms: string[];
     phrases: string[];
     excludeTerms: string[];
-    match: "all" | "any";
     minScore: number;
     regex?: string | undefined;
 }, {
     topics?: string[] | undefined;
+    match?: "all" | "any" | undefined;
     priority?: number | undefined;
     terms?: string[] | undefined;
     phrases?: string[] | undefined;
     excludeTerms?: string[] | undefined;
     regex?: string | undefined;
-    match?: "all" | "any" | undefined;
     minScore?: number | undefined;
 }>;
 type ProceduralTrigger = z.infer<typeof proceduralTriggerSchema>;
@@ -3153,6 +3153,347 @@ interface MemoryStoreLike {
     persist(): void;
     close(): void | Promise<void>;
 }
+
+interface ReMEMAdapterOptions {
+    /** Default topic attached to memories stored through the adapter. */
+    defaultTopic?: string;
+    /** Default query limit when the caller does not provide one. */
+    defaultLimit?: number;
+}
+interface CodebaseGraphQueryOptions extends QueryOptions {
+    project?: string;
+}
+interface CodebaseSubgraphOptions extends Partial<QueryWithNeighborsOptions> {
+    project?: string;
+    maxContextChars?: number;
+    connectionTypes?: string[];
+    includeConnections?: string[];
+    minConnectionWeight?: number;
+    resourceGrant?: KnowledgeResourceGrant;
+}
+interface CodebaseGraphInventoryOptions {
+    project?: string;
+    limit?: number;
+    resourceGrant?: KnowledgeResourceGrant;
+}
+interface CodebaseGraphOwnerSummary {
+    owner: string;
+    type: 'directory' | 'package' | 'project';
+    nodes: number;
+    files: number;
+    symbols: number;
+    packages: number;
+    averageWeight: number;
+    paths: string[];
+}
+interface CodebaseGraphNodeHealth {
+    node: QueryResult;
+    incoming: number;
+    outgoing: number;
+    weight: number;
+    links: MemoryLink[];
+    incomingWeight?: number;
+    outgoingWeight?: number;
+    relationTypes?: string[];
+}
+interface CodebaseGraphSubgraph {
+    query: string;
+    project?: string;
+    results: QueryResult[];
+    paths: NeighborPath[];
+    linksTraversed: number;
+    context: string;
+}
+type CodebaseGraphDisplayType = 'memory' | 'graph' | 'context' | 'inventory';
+interface CodebaseGraphAsMemoryOptions extends CodebaseSubgraphOptions {
+    displayType?: CodebaseGraphDisplayType;
+    snapshotName?: string;
+    nodeLabels?: string[];
+}
+interface CodebaseGraphConnection {
+    fromId: string;
+    toId: string;
+    type: string;
+    weight: number;
+    from?: QueryResult;
+    to?: QueryResult;
+}
+interface CodebaseGraphMemorySnapshot {
+    name: 'Codebase Graph as memory';
+    displayType: CodebaseGraphDisplayType;
+    query: string;
+    project?: string;
+    summary: string;
+    nodes: QueryResult[];
+    connections: CodebaseGraphConnection[];
+    paths: NeighborPath[];
+    linksTraversed: number;
+    context: string;
+    inventory?: {
+        owners: CodebaseGraphOwnerSummary[];
+        entrypoints: CodebaseGraphNodeHealth[];
+        hotspots: CodebaseGraphNodeHealth[];
+        deadzones: CodebaseGraphNodeHealth[];
+    };
+}
+/**
+ * Vercel AI SDK-style helper.
+ *
+ * The AI SDK does not mandate one memory interface, so this adapter exposes
+ * tiny primitives that fit neatly into middleware/tools: save messages,
+ * remember arbitrary text, and recall relevant context.
+ */
+declare function createVercelAIAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
+    name: string;
+    remember(input: string | StoreMemoryInput): Promise<void>;
+    saveMessages(messages: unknown, metadata?: Record<string, unknown>): Promise<void>;
+    recall(query: string, queryOptions?: QueryOptions): Promise<QueryResponse>;
+    context(query: string, queryOptions?: QueryOptions): Promise<string>;
+};
+/**
+ * LangGraph/LangChain-style BaseStore-ish adapter.
+ *
+ * Implements get/put/search/listNamespaces in a dependency-free structural shape
+ * so it can be wrapped by LangGraph JS projects without pulling LangChain into
+ * ReMEM itself.
+ */
+declare function createLangGraphStoreAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
+    name: string;
+    put(namespace: string | string[], key: string, value: unknown, putOptions?: {
+        visibility?: "private" | "shared";
+    }): Promise<void>;
+    search(namespace: string | string[], query: string, queryOptions?: QueryOptions, scopeOptions?: NamespaceQueryScope): Promise<{
+        namespace: string[];
+        key: string;
+        value: string;
+        createdAt: number;
+        updatedAt: number;
+        score: number | undefined;
+    }[]>;
+    get(namespace: string | string[], key: string, scopeOptions?: NamespaceQueryScope): Promise<{
+        namespace: string[];
+        key: string;
+        value: string;
+        createdAt: number;
+        updatedAt: number;
+    } | null>;
+    listNamespaces(scopeOptions?: NamespaceQueryScope): Promise<string[][]>;
+};
+/**
+ * OpenClaw/session adapter.
+ * Stores user/assistant turns and recalls concise context blocks for prompts.
+ */
+declare function createOpenClawAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
+    name: string;
+    rememberTurn(turn: {
+        role: "user" | "assistant" | "system" | string;
+        content: string;
+        sessionId?: string;
+        messageId?: string;
+        metadata?: Record<string, unknown>;
+    }): Promise<void>;
+    rememberDecision(decision: {
+        content: string;
+        sessionId?: string;
+        topics?: string[];
+        metadata?: Record<string, unknown>;
+    }): Promise<void>;
+    rememberProcedure(rule: {
+        content: string;
+        trigger: string | Record<string, unknown>;
+        topics?: string[];
+        metadata?: Record<string, unknown>;
+    }): Promise<void>;
+    recallContext(query: string, queryOptions?: QueryOptions): Promise<string>;
+    recallProjectContext(query: string, optionsWithNeighbors?: QueryOptions & {
+        hops?: 1 | 2;
+    }): Promise<string>;
+    query(query: string, queryOptions?: QueryOptions): Promise<QueryResponse>;
+};
+/**
+ * Hermes harness adapter.
+ * Mirrors the polished harness-facing shape from OpenClaw, but keeps the
+ * surface generic to common harness concepts: turns, artifacts, decisions,
+ * procedures, and scoped recall.
+ */
+declare function createHermesAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
+    name: string;
+    rememberTurn(turn: {
+        role: "user" | "assistant" | "system" | string;
+        content: string;
+        threadId?: string;
+        runId?: string;
+        messageId?: string;
+        metadata?: Record<string, unknown>;
+    }): Promise<void>;
+    rememberArtifact(artifact: {
+        kind: string;
+        content: string;
+        threadId?: string;
+        runId?: string;
+        topics?: string[];
+        metadata?: Record<string, unknown>;
+    }): Promise<void>;
+    rememberDecision(decision: {
+        content: string;
+        threadId?: string;
+        runId?: string;
+        topics?: string[];
+        metadata?: Record<string, unknown>;
+    }): Promise<void>;
+    rememberProcedure(rule: {
+        content: string;
+        trigger: string | Record<string, unknown>;
+        topics?: string[];
+        metadata?: Record<string, unknown>;
+    }): Promise<void>;
+    rememberShared(input: {
+        namespace: string | string[];
+        content: string;
+        visibility?: "private" | "shared";
+        topics?: string[];
+        metadata?: Record<string, unknown>;
+    }): Promise<void>;
+    recallContext(query: string, queryOptions?: QueryOptions): Promise<string>;
+    recallShared(namespace: string | string[], query: string, queryOptions?: QueryOptions, scopeOptions?: NamespaceQueryScope): Promise<string>;
+    query(query: string, queryOptions?: QueryOptions): Promise<QueryResponse>;
+};
+/**
+ * Codebase knowledge adapter.
+ *
+ * This does not try to reimplement a parser or tree-sitter pipeline. It gives
+ * code graph tools a stable way to feed ReMEM with architecture nodes, routes,
+ * call/import edges, ADRs, and compressed graph artifact pointers.
+ */
+declare function createCodebaseMemoryAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
+    name: string;
+    key: string;
+    registerArtifact(input: KnowledgeArtifactRegistration): Promise<KnowledgeArtifactRegistrationResult>;
+    ingestGraph(graph: KnowledgeGraphArtifact, ingestOptions?: Parameters<ReMEM["ingestKnowledgeGraph"]>[1]): Promise<{
+        namespace: string;
+        source: string;
+        nodesStored: number;
+        edgesLinked: number;
+        skippedEdges: number;
+        nodeMemoryIds: Record<string, string>;
+        project?: string | undefined;
+    }>;
+    searchGraph(query: string, queryOptions?: CodebaseGraphQueryOptions): Promise<{
+        query: string;
+        results: {
+            topics: string[];
+            metadata: Record<string, unknown>;
+            id: string;
+            content: string;
+            createdAt: number;
+            accessedAt: number;
+            accessCount: number;
+            relevanceScore?: number | undefined;
+        }[];
+        totalAvailable: number;
+        tookMs: number;
+    }>;
+    architecture(project?: string, limit?: number): Promise<{
+        query: string;
+        results: {
+            topics: string[];
+            metadata: Record<string, unknown>;
+            id: string;
+            content: string;
+            createdAt: number;
+            accessedAt: number;
+            accessCount: number;
+            relevanceScore?: number | undefined;
+        }[];
+        totalAvailable: number;
+        tookMs: number;
+    }>;
+    impact(subject: string, optionsOrLimit?: number | (Partial<QueryWithNeighborsOptions> & {
+        project?: string;
+    })): Promise<{
+        query: string;
+        results: {
+            topics: string[];
+            metadata: Record<string, unknown>;
+            id: string;
+            content: string;
+            createdAt: number;
+            accessedAt: number;
+            accessCount: number;
+            relevanceScore?: number | undefined;
+        }[];
+        totalAvailable: number;
+        tookMs: number;
+    } & {
+        linksTraversed: number;
+        paths?: NeighborPath[];
+    }>;
+    subgraph(query: string, queryOptions?: CodebaseSubgraphOptions): Promise<{
+        query: string;
+        project: string | undefined;
+        results: {
+            topics: string[];
+            metadata: Record<string, unknown>;
+            id: string;
+            content: string;
+            createdAt: number;
+            accessedAt: number;
+            accessCount: number;
+            relevanceScore?: number | undefined;
+        }[];
+        paths: {
+            type: string;
+            fromId: string;
+            toId: string;
+            score: number;
+            throughId: string;
+            hop: number;
+        }[];
+        linksTraversed: number;
+        context: string;
+    }>;
+    asMemory(query: string, queryOptions?: CodebaseGraphAsMemoryOptions): Promise<CodebaseGraphMemorySnapshot>;
+    graphAsMemory(query: string, queryOptions?: CodebaseGraphAsMemoryOptions): Promise<CodebaseGraphMemorySnapshot>;
+    explain(query: string, queryOptions?: CodebaseSubgraphOptions): Promise<{
+        summary: string;
+        query: string;
+        project: string | undefined;
+        results: {
+            topics: string[];
+            metadata: Record<string, unknown>;
+            id: string;
+            content: string;
+            createdAt: number;
+            accessedAt: number;
+            accessCount: number;
+            relevanceScore?: number | undefined;
+        }[];
+        paths: {
+            type: string;
+            fromId: string;
+            toId: string;
+            score: number;
+            throughId: string;
+            hop: number;
+        }[];
+        linksTraversed: number;
+        context: string;
+    }>;
+    entrypoints(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]>;
+    owners(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphOwnerSummary[]>;
+    hotspots(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]>;
+    deadzones(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]>;
+    overview(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<{
+        project: string | undefined;
+        nodes: number;
+        labels: Record<string, number>;
+        owners: CodebaseGraphOwnerSummary[];
+        entrypoints: CodebaseGraphNodeHealth[];
+        hotspots: CodebaseGraphNodeHealth[];
+        deadzones: CodebaseGraphNodeHealth[];
+    }>;
+    context(query: string, queryOptions?: CodebaseGraphQueryOptions): Promise<string>;
+};
 
 /**
  * ReMEM — Model Abstraction
@@ -3944,6 +4285,12 @@ interface AdvancedMemoryRuntime {
     storageMaintenance(options?: StorageMaintenanceOptions): Promise<StorageMaintenanceResult>;
     registerKnowledgeArtifact(input: KnowledgeArtifactRegistration): Promise<KnowledgeArtifactRegistrationResult>;
     ingestKnowledgeGraph(graph: KnowledgeGraphArtifact, options?: KnowledgeIngestOptions): Promise<KnowledgeIngestResult>;
+    knowledgeOverview(options?: {
+        project?: string;
+        limit?: number;
+        resourceGrant?: KnowledgeResourceGrant;
+    }): Promise<unknown>;
+    knowledgeSubgraph(query: string, options?: CodebaseSubgraphOptions): Promise<CodebaseGraphSubgraph>;
     storeShared(input: StoreMemoryInput & {
         namespace: NamespaceInput;
         visibility?: 'private' | 'shared';
@@ -4098,347 +4445,6 @@ declare class EpisodicCapturePipeline {
         started: boolean;
     };
 }
-
-interface ReMEMAdapterOptions {
-    /** Default topic attached to memories stored through the adapter. */
-    defaultTopic?: string;
-    /** Default query limit when the caller does not provide one. */
-    defaultLimit?: number;
-}
-interface CodebaseGraphQueryOptions extends QueryOptions {
-    project?: string;
-}
-interface CodebaseSubgraphOptions extends Partial<QueryWithNeighborsOptions> {
-    project?: string;
-    maxContextChars?: number;
-    connectionTypes?: string[];
-    includeConnections?: string[];
-    minConnectionWeight?: number;
-    resourceGrant?: KnowledgeResourceGrant;
-}
-interface CodebaseGraphInventoryOptions {
-    project?: string;
-    limit?: number;
-    resourceGrant?: KnowledgeResourceGrant;
-}
-interface CodebaseGraphOwnerSummary {
-    owner: string;
-    type: 'directory' | 'package' | 'project';
-    nodes: number;
-    files: number;
-    symbols: number;
-    packages: number;
-    averageWeight: number;
-    paths: string[];
-}
-interface CodebaseGraphNodeHealth {
-    node: QueryResult;
-    incoming: number;
-    outgoing: number;
-    weight: number;
-    links: MemoryLink[];
-    incomingWeight?: number;
-    outgoingWeight?: number;
-    relationTypes?: string[];
-}
-interface CodebaseGraphSubgraph {
-    query: string;
-    project?: string;
-    results: QueryResult[];
-    paths: NeighborPath[];
-    linksTraversed: number;
-    context: string;
-}
-type CodebaseGraphDisplayType = 'memory' | 'graph' | 'context' | 'inventory';
-interface CodebaseGraphAsMemoryOptions extends CodebaseSubgraphOptions {
-    displayType?: CodebaseGraphDisplayType;
-    snapshotName?: string;
-    nodeLabels?: string[];
-}
-interface CodebaseGraphConnection {
-    fromId: string;
-    toId: string;
-    type: string;
-    weight: number;
-    from?: QueryResult;
-    to?: QueryResult;
-}
-interface CodebaseGraphMemorySnapshot {
-    name: 'Codebase Graph as memory';
-    displayType: CodebaseGraphDisplayType;
-    query: string;
-    project?: string;
-    summary: string;
-    nodes: QueryResult[];
-    connections: CodebaseGraphConnection[];
-    paths: NeighborPath[];
-    linksTraversed: number;
-    context: string;
-    inventory?: {
-        owners: CodebaseGraphOwnerSummary[];
-        entrypoints: CodebaseGraphNodeHealth[];
-        hotspots: CodebaseGraphNodeHealth[];
-        deadzones: CodebaseGraphNodeHealth[];
-    };
-}
-/**
- * Vercel AI SDK-style helper.
- *
- * The AI SDK does not mandate one memory interface, so this adapter exposes
- * tiny primitives that fit neatly into middleware/tools: save messages,
- * remember arbitrary text, and recall relevant context.
- */
-declare function createVercelAIAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
-    name: string;
-    remember(input: string | StoreMemoryInput): Promise<void>;
-    saveMessages(messages: unknown, metadata?: Record<string, unknown>): Promise<void>;
-    recall(query: string, queryOptions?: QueryOptions): Promise<QueryResponse>;
-    context(query: string, queryOptions?: QueryOptions): Promise<string>;
-};
-/**
- * LangGraph/LangChain-style BaseStore-ish adapter.
- *
- * Implements get/put/search/listNamespaces in a dependency-free structural shape
- * so it can be wrapped by LangGraph JS projects without pulling LangChain into
- * ReMEM itself.
- */
-declare function createLangGraphStoreAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
-    name: string;
-    put(namespace: string | string[], key: string, value: unknown, putOptions?: {
-        visibility?: "private" | "shared";
-    }): Promise<void>;
-    search(namespace: string | string[], query: string, queryOptions?: QueryOptions, scopeOptions?: NamespaceQueryScope): Promise<{
-        namespace: string[];
-        key: string;
-        value: string;
-        createdAt: number;
-        updatedAt: number;
-        score: number | undefined;
-    }[]>;
-    get(namespace: string | string[], key: string, scopeOptions?: NamespaceQueryScope): Promise<{
-        namespace: string[];
-        key: string;
-        value: string;
-        createdAt: number;
-        updatedAt: number;
-    } | null>;
-    listNamespaces(scopeOptions?: NamespaceQueryScope): Promise<string[][]>;
-};
-/**
- * OpenClaw/session adapter.
- * Stores user/assistant turns and recalls concise context blocks for prompts.
- */
-declare function createOpenClawAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
-    name: string;
-    rememberTurn(turn: {
-        role: "user" | "assistant" | "system" | string;
-        content: string;
-        sessionId?: string;
-        messageId?: string;
-        metadata?: Record<string, unknown>;
-    }): Promise<void>;
-    rememberDecision(decision: {
-        content: string;
-        sessionId?: string;
-        topics?: string[];
-        metadata?: Record<string, unknown>;
-    }): Promise<void>;
-    rememberProcedure(rule: {
-        content: string;
-        trigger: string | Record<string, unknown>;
-        topics?: string[];
-        metadata?: Record<string, unknown>;
-    }): Promise<void>;
-    recallContext(query: string, queryOptions?: QueryOptions): Promise<string>;
-    recallProjectContext(query: string, optionsWithNeighbors?: QueryOptions & {
-        hops?: 1 | 2;
-    }): Promise<string>;
-    query(query: string, queryOptions?: QueryOptions): Promise<QueryResponse>;
-};
-/**
- * Hermes harness adapter.
- * Mirrors the polished harness-facing shape from OpenClaw, but keeps the
- * surface generic to common harness concepts: turns, artifacts, decisions,
- * procedures, and scoped recall.
- */
-declare function createHermesAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
-    name: string;
-    rememberTurn(turn: {
-        role: "user" | "assistant" | "system" | string;
-        content: string;
-        threadId?: string;
-        runId?: string;
-        messageId?: string;
-        metadata?: Record<string, unknown>;
-    }): Promise<void>;
-    rememberArtifact(artifact: {
-        kind: string;
-        content: string;
-        threadId?: string;
-        runId?: string;
-        topics?: string[];
-        metadata?: Record<string, unknown>;
-    }): Promise<void>;
-    rememberDecision(decision: {
-        content: string;
-        threadId?: string;
-        runId?: string;
-        topics?: string[];
-        metadata?: Record<string, unknown>;
-    }): Promise<void>;
-    rememberProcedure(rule: {
-        content: string;
-        trigger: string | Record<string, unknown>;
-        topics?: string[];
-        metadata?: Record<string, unknown>;
-    }): Promise<void>;
-    rememberShared(input: {
-        namespace: string | string[];
-        content: string;
-        visibility?: "private" | "shared";
-        topics?: string[];
-        metadata?: Record<string, unknown>;
-    }): Promise<void>;
-    recallContext(query: string, queryOptions?: QueryOptions): Promise<string>;
-    recallShared(namespace: string | string[], query: string, queryOptions?: QueryOptions, scopeOptions?: NamespaceQueryScope): Promise<string>;
-    query(query: string, queryOptions?: QueryOptions): Promise<QueryResponse>;
-};
-/**
- * Codebase knowledge adapter.
- *
- * This does not try to reimplement a parser or tree-sitter pipeline. It gives
- * code graph tools a stable way to feed ReMEM with architecture nodes, routes,
- * call/import edges, ADRs, and compressed graph artifact pointers.
- */
-declare function createCodebaseMemoryAdapter(memory: ReMEM, options?: ReMEMAdapterOptions): {
-    name: string;
-    key: string;
-    registerArtifact(input: KnowledgeArtifactRegistration): Promise<KnowledgeArtifactRegistrationResult>;
-    ingestGraph(graph: KnowledgeGraphArtifact, ingestOptions?: Parameters<ReMEM["ingestKnowledgeGraph"]>[1]): Promise<{
-        namespace: string;
-        source: string;
-        nodesStored: number;
-        edgesLinked: number;
-        skippedEdges: number;
-        nodeMemoryIds: Record<string, string>;
-        project?: string | undefined;
-    }>;
-    searchGraph(query: string, queryOptions?: CodebaseGraphQueryOptions): Promise<{
-        query: string;
-        results: {
-            topics: string[];
-            metadata: Record<string, unknown>;
-            id: string;
-            content: string;
-            createdAt: number;
-            accessedAt: number;
-            accessCount: number;
-            relevanceScore?: number | undefined;
-        }[];
-        totalAvailable: number;
-        tookMs: number;
-    }>;
-    architecture(project?: string, limit?: number): Promise<{
-        query: string;
-        results: {
-            topics: string[];
-            metadata: Record<string, unknown>;
-            id: string;
-            content: string;
-            createdAt: number;
-            accessedAt: number;
-            accessCount: number;
-            relevanceScore?: number | undefined;
-        }[];
-        totalAvailable: number;
-        tookMs: number;
-    }>;
-    impact(subject: string, optionsOrLimit?: number | (Partial<QueryWithNeighborsOptions> & {
-        project?: string;
-    })): Promise<{
-        query: string;
-        results: {
-            topics: string[];
-            metadata: Record<string, unknown>;
-            id: string;
-            content: string;
-            createdAt: number;
-            accessedAt: number;
-            accessCount: number;
-            relevanceScore?: number | undefined;
-        }[];
-        totalAvailable: number;
-        tookMs: number;
-    } & {
-        linksTraversed: number;
-        paths?: NeighborPath[];
-    }>;
-    subgraph(query: string, queryOptions?: CodebaseSubgraphOptions): Promise<{
-        query: string;
-        project: string | undefined;
-        results: {
-            topics: string[];
-            metadata: Record<string, unknown>;
-            id: string;
-            content: string;
-            createdAt: number;
-            accessedAt: number;
-            accessCount: number;
-            relevanceScore?: number | undefined;
-        }[];
-        paths: {
-            type: string;
-            fromId: string;
-            toId: string;
-            score: number;
-            throughId: string;
-            hop: number;
-        }[];
-        linksTraversed: number;
-        context: string;
-    }>;
-    asMemory(query: string, queryOptions?: CodebaseGraphAsMemoryOptions): Promise<CodebaseGraphMemorySnapshot>;
-    graphAsMemory(query: string, queryOptions?: CodebaseGraphAsMemoryOptions): Promise<CodebaseGraphMemorySnapshot>;
-    explain(query: string, queryOptions?: CodebaseSubgraphOptions): Promise<{
-        summary: string;
-        query: string;
-        project: string | undefined;
-        results: {
-            topics: string[];
-            metadata: Record<string, unknown>;
-            id: string;
-            content: string;
-            createdAt: number;
-            accessedAt: number;
-            accessCount: number;
-            relevanceScore?: number | undefined;
-        }[];
-        paths: {
-            type: string;
-            fromId: string;
-            toId: string;
-            score: number;
-            throughId: string;
-            hop: number;
-        }[];
-        linksTraversed: number;
-        context: string;
-    }>;
-    entrypoints(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]>;
-    owners(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphOwnerSummary[]>;
-    hotspots(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]>;
-    deadzones(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<CodebaseGraphNodeHealth[]>;
-    overview(projectOrOptions?: string | CodebaseGraphInventoryOptions): Promise<{
-        project: string | undefined;
-        nodes: number;
-        labels: Record<string, number>;
-        owners: CodebaseGraphOwnerSummary[];
-        entrypoints: CodebaseGraphNodeHealth[];
-        hotspots: CodebaseGraphNodeHealth[];
-        deadzones: CodebaseGraphNodeHealth[];
-    }>;
-    context(query: string, queryOptions?: CodebaseGraphQueryOptions): Promise<string>;
-};
 
 /**
  * ReMEM — Identity & Constitution
@@ -4803,6 +4809,26 @@ declare class ReMEM {
      * graph recall can traverse architecture/import/call relationships.
      */
     ingestKnowledgeGraph(artifact: KnowledgeGraphArtifact, options?: KnowledgeIngestOptions): Promise<KnowledgeIngestResult>;
+    /**
+     * Summarize imported knowledge/codebase graph memories by label, owner, and graph health.
+     * Useful when another system owns indexing and ReMEM is the durable recall + traversal layer.
+     */
+    knowledgeOverview(options?: CodebaseGraphInventoryOptions & {
+        resourceGrant?: KnowledgeResourceGrant;
+    }): Promise<{
+        project: string | undefined;
+        nodes: number;
+        labels: Record<string, number>;
+        owners: CodebaseGraphOwnerSummary[];
+        entrypoints: CodebaseGraphNodeHealth[];
+        hotspots: CodebaseGraphNodeHealth[];
+        deadzones: CodebaseGraphNodeHealth[];
+    }>;
+    /**
+     * Retrieve a scoped codebase/knowledge subgraph with prompt-ready context.
+     * This exposes imported graph memories without requiring callers to instantiate an adapter themselves.
+     */
+    knowledgeSubgraph(query: string, options?: CodebaseSubgraphOptions): Promise<CodebaseGraphSubgraph>;
     private renderKnowledgeNodeContent;
     private inferKnowledgeNodeWeight;
     private inferKnowledgeEdgeWeight;

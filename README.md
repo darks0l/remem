@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.22.1](https://img.shields.io/badge/v0.22.1-openclaw--and--hermes--quickstarts-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.22.2](https://img.shields.io/badge/v0.22.2-knowledge--graph--inspection-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -83,6 +83,8 @@ remem graph --db ./remem.db --query "release context" --dot > memory.dot
 remem storage-maintenance --db ./remem.db --dry-run --json
 remem knowledge-artifact --db ./remem.db --path .codebase-memory/graph.db.zst --source codebase-memory-mcp --project remem --format sqlite --compression zstd --json
 remem knowledge-ingest --db ./remem.db --artifact ./code-graph.json --source codebase-memory-mcp --project remem --json
+remem knowledge-overview --db ./remem.db --project remem --json
+remem knowledge-subgraph --db ./remem.db --query "ProcessOrder" --project remem --connections calls,imports --json
 remem store --content "Meta likes dark mode" --topics preferences,ui
 remem remember --content "We decided to ship intake scoring before the next release" --topics release,roadmap --source operator
 remem query --query "What does Meta like?"
@@ -205,6 +207,20 @@ remem knowledge-ingest \
   --artifact ./code-graph.json \
   --source codebase-memory-mcp \
   --project remem \
+  --json
+
+# Inspect the imported graph without writing custom adapter glue.
+remem knowledge-overview \
+  --db ./remem.db \
+  --project remem \
+  --json
+
+remem knowledge-subgraph \
+  --db ./remem.db \
+  --query "ProcessOrder" \
+  --project remem \
+  --connections calls,imports \
+  --max-context-chars 4000 \
   --json
 ```
 
@@ -1415,6 +1431,18 @@ curl -X POST "http://localhost:8787/knowledge/ingest" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $REMEM_TOKEN" \
   -d '{"graph":{"source":"codebase-memory-mcp","project":"remem","nodes":[{"id":"fn:ProcessOrder","label":"Function","name":"ProcessOrder"}],"edges":[]}}'
+
+# Inspect imported code/knowledge graph inventory
+curl -X POST "http://localhost:8787/knowledge/overview" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -d '{"project":"remem","limit":10}'
+
+# Retrieve a prompt-ready code/knowledge subgraph
+curl -X POST "http://localhost:8787/knowledge/subgraph" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -d '{"query":"ProcessOrder","options":{"project":"remem","connectionTypes":["calls","imports"],"limit":8,"neighborLimit":8,"maxContextChars":4000}}'
 
 # Health
 curl -H "Authorization: Bearer $REMEM_TOKEN" \

@@ -23,6 +23,12 @@ import { EmbeddingService, type EmbeddingConfig as EmbedServiceConfig } from './
 import { MemoryREPL } from './repl.js';
 import { MemoryConsolidator, type ConsolidationWorkflowOptions, type ConsolidationWorkflowResult } from './consolidate.js';
 import {
+  createCodebaseMemoryAdapter,
+  type CodebaseGraphInventoryOptions,
+  type CodebaseGraphSubgraph,
+  type CodebaseSubgraphOptions,
+} from './adapters.js';
+import {
   linkedMemoryQueryOptionsSchema,
   knowledgeArtifactRegistrationSchema,
   knowledgeGraphArtifactSchema,
@@ -55,6 +61,7 @@ import {
   type KnowledgeIngestOptions,
   type KnowledgeIngestResult,
   type KnowledgeNode,
+  type KnowledgeResourceGrant,
   type NeighborPath,
   type ProceduralMatch,
   type ProceduralTrigger,
@@ -1560,6 +1567,24 @@ export class ReMEM {
       skippedEdges,
       nodeMemoryIds,
     };
+  }
+
+  /**
+   * Summarize imported knowledge/codebase graph memories by label, owner, and graph health.
+   * Useful when another system owns indexing and ReMEM is the durable recall + traversal layer.
+   */
+  async knowledgeOverview(
+    options: CodebaseGraphInventoryOptions & { resourceGrant?: KnowledgeResourceGrant } = {}
+  ) {
+    return createCodebaseMemoryAdapter(this).overview(options);
+  }
+
+  /**
+   * Retrieve a scoped codebase/knowledge subgraph with prompt-ready context.
+   * This exposes imported graph memories without requiring callers to instantiate an adapter themselves.
+   */
+  async knowledgeSubgraph(query: string, options: CodebaseSubgraphOptions = {}): Promise<CodebaseGraphSubgraph> {
+    return createCodebaseMemoryAdapter(this).subgraph(query, options);
   }
 
   private renderKnowledgeNodeContent(node: KnowledgeNode): string {

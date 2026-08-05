@@ -5370,633 +5370,6 @@ Return JSON with shape {"content":"...","triggerTerms":["..."],"triggerPhrases":
   }
 };
 
-// src/http.ts
-var HttpAdapter = class {
-  server;
-  engine;
-  store;
-  model;
-  memory;
-  port;
-  host;
-  authToken;
-  corsOrigin;
-  maxBodyBytes;
-  constructor(config) {
-    this.store = config.store;
-    this.model = config.model;
-    this.memory = config.memory;
-    this.engine = new QueryEngine({ store: this.store, model: this.model });
-    this.port = config.port ?? 8787;
-    this.host = config.host ?? "127.0.0.1";
-    this.authToken = config.authToken;
-    this.corsOrigin = config.corsOrigin ?? "http://localhost";
-    this.maxBodyBytes = config.maxBodyBytes ?? 1024 * 1024;
-  }
-  async start() {
-    const http = await import("http");
-    this.server = http.createServer(async (req, res) => {
-      const url = new URL(req.url ?? "/", `http://localhost:${this.port}`);
-      const method = req.method ?? "GET";
-      res.setHeader("Access-Control-Allow-Origin", this.corsOrigin);
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      if (method === "OPTIONS") {
-        res.writeHead(204);
-        res.end();
-        return;
-      }
-      if (!this.isAuthorized(req)) {
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Unauthorized" }));
-        return;
-      }
-      try {
-        const result = await this.handleRequest(method, url, req);
-        res.writeHead(result.status, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(result.body));
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: message }));
-      }
-    });
-    return new Promise((resolve) => {
-      this.server.listen(this.port, this.host, () => {
-        resolve();
-      });
-    });
-  }
-  async stop() {
-    return new Promise((resolve) => {
-      this.server?.close(() => resolve());
-    });
-  }
-  async handleRequest(method, url, req) {
-    const path = url.pathname;
-    if (method === "POST" && path === "/memory") {
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      if (!body) return { status: 400, body: { error: "Empty request body" } };
-      const input = storeMemoryInputSchema.parse(JSON.parse(body));
-      await this.engine.store(input);
-      return { status: 201, body: { ok: true, message: "Memory stored" } };
-    }
-    if (method === "POST" && path === "/memory/remember") {
-      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      if (!body) return { status: 400, body: { error: "Empty request body" } };
-      const input = rememberInputSchema.parse(JSON.parse(body));
-      const result = await this.memory.remember(input);
-      return { status: result.action === "stored" ? 201 : 200, body: result };
-    }
-    if (method === "POST" && path === "/memory/shared") {
-      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      if (!body) return { status: 400, body: { error: "Empty request body" } };
-      const parsed = JSON.parse(body);
-      const input = storeMemoryInputSchema.parse(parsed);
-      const namespace = namespaceInputSchema.parse(parsed.namespace);
-      const visibility = parsed.visibility === "private" ? "private" : "shared";
-      await this.memory.storeShared({ ...input, namespace, visibility });
-      return { status: 201, body: { ok: true, message: "Shared memory stored", namespace, visibility } };
-    }
-    if (method === "GET" && path === "/memory") {
-      const query = url.searchParams.get("q") ?? "";
-      const limit = parseInt(url.searchParams.get("limit") ?? "10", 10);
-      const topics = url.searchParams.get("topics")?.split(",").filter(Boolean);
-      const minAccessCount = url.searchParams.get("minAccessCount");
-      const metadata = url.searchParams.get("metadata");
-      const options = { limit };
-      if (topics) options.topics = topics;
-      if (minAccessCount) options.minAccessCount = parseInt(minAccessCount, 10);
-      if (metadata) options.metadata = JSON.parse(metadata);
-      const result = await this.engine.query(query, options);
-      return { status: 200, body: result };
-    }
-    if (method === "POST" && path === "/memory/namespace/query") {
-      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
-        return { status: 400, body: { error: "query string required" } };
-      }
-      const namespace = namespaceInputSchema.parse(parsed.namespace);
-      const scope = namespaceQueryScopeSchema.parse(parsed.scope ?? {});
-      const options = parsed.options ? JSON.parse(JSON.stringify(parsed.options)) : void 0;
-      const result = await this.memory.queryNamespace(namespace, parsed.query, options, scope);
-      return { status: 200, body: result };
-    }
-    if (method === "GET" && path === "/memory/recent") {
-      const n = parseInt(url.searchParams.get("n") ?? "10", 10);
-      const results = await this.engine.getRecent(n);
-      return { status: 200, body: { results } };
-    }
-    if (method === "POST" && path === "/memory/namespace/recent") {
-      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      const namespace = namespaceInputSchema.parse(parsed.namespace);
-      const scope = namespaceQueryScopeSchema.parse(parsed.scope ?? {});
-      const n = typeof parsed.n === "number" ? parsed.n : 10;
-      const results = await this.memory.getRecentInNamespace(namespace, n, scope);
-      return { status: 200, body: { results } };
-    }
-    if (method === "POST" && path === "/memory/query-with-neighbors") {
-      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
-        return { status: 400, body: { error: "query string required" } };
-      }
-      const options = queryWithNeighborsOptionsSchema.parse(parsed.options ?? {});
-      const result = await this.memory.queryWithNeighbors(parsed.query, options);
-      return { status: 200, body: result };
-    }
-    if (method === "POST" && path === "/memory/smart-recall") {
-      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
-        return { status: 400, body: { error: "query string required" } };
-      }
-      const result = await this.memory.smartRecall(parsed.query, parsed.options);
-      return { status: 200, body: result };
-    }
-    if (method === "POST" && path === "/memory/context-pack") {
-      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
-        return { status: 400, body: { error: "query string required" } };
-      }
-      const result = await this.memory.contextPack(parsed.query, parsed.options);
-      return { status: 200, body: result };
-    }
-    if ((method === "GET" || method === "POST") && path === "/memory/health") {
-      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      let options;
-      if (method === "POST") {
-        if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-        const body = await this.readBody(req);
-        const parsed = body ? JSON.parse(body) : {};
-        options = parsed.options;
-      }
-      const result = await this.memory.health(options);
-      return { status: 200, body: result };
-    }
-    if (method === "POST" && path === "/storage/maintenance") {
-      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      const result = await this.memory.storageMaintenance(parsed.options);
-      return { status: 200, body: result };
-    }
-    if (method === "POST" && path === "/knowledge/artifact") {
-      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const artifact = knowledgeArtifactRegistrationSchema.parse(body ? JSON.parse(body) : {});
-      const result = await this.memory.registerKnowledgeArtifact(artifact);
-      return { status: 201, body: result };
-    }
-    if (method === "POST" && path === "/knowledge/ingest") {
-      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      const graph = knowledgeGraphArtifactSchema.parse(parsed.graph ?? parsed);
-      const options = parsed.options ? knowledgeIngestOptionsSchema.parse(parsed.options) : void 0;
-      const result = await this.memory.ingestKnowledgeGraph(graph, options);
-      return { status: 201, body: result };
-    }
-    if (method === "POST" && path === "/memory/procedural/match") {
-      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.context !== "string" || !parsed.context.trim()) {
-        return { status: 400, body: { error: "context string required" } };
-      }
-      const matches = this.memory.matchProcedural(parsed.context);
-      return { status: 200, body: { matches } };
-    }
-    if (method === "POST" && path === "/identity/audit") {
-      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.sessionText !== "string" || !parsed.sessionText.trim()) {
-        return { status: 400, body: { error: "sessionText string required" } };
-      }
-      const audit = await this.memory.auditIdentityAlignment(parsed.sessionText);
-      return { status: 200, body: audit };
-    }
-    if (method === "GET" && path.startsWith("/memory/topics/")) {
-      const topic = decodeURIComponent(path.split("/")[3]);
-      const limit = parseInt(url.searchParams.get("limit") ?? "20", 10);
-      const results = await this.engine.getByTopic(topic, limit);
-      return { status: 200, body: { results } };
-    }
-    if (method === "GET" && path.startsWith("/memory/")) {
-      const id = path.split("/")[2];
-      if (id === "recent" || id === "topics") {
-        return { status: 404, body: { error: "Not found" } };
-      }
-      const entry = await this.store.get(id);
-      return entry ? { status: 200, body: { entry } } : { status: 404, body: { error: "Memory not found" } };
-    }
-    if (method === "DELETE" && path.startsWith("/memory/")) {
-      const id = path.split("/")[2];
-      const forgotten = await this.store.forget(id);
-      return {
-        status: forgotten ? 200 : 404,
-        body: { ok: forgotten, message: forgotten ? "Memory forgotten" : "Memory not found" }
-      };
-    }
-    if (method === "GET" && path === "/snapshots") {
-      const snapshots = await this.store.listSnapshots();
-      return { status: 200, body: { snapshots } };
-    }
-    if (method === "POST" && path === "/snapshots") {
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      const label = typeof parsed.label === "string" && parsed.label.trim() ? parsed.label : "snapshot";
-      const snapshot = await this.store.createSnapshot(label);
-      return { status: 201, body: { snapshot } };
-    }
-    if (method === "GET" && path.startsWith("/snapshots/") && path.endsWith("/export")) {
-      const id = path.split("/")[2];
-      const snapshot = await this.store.exportSnapshot(id);
-      return { status: 200, body: { snapshot } };
-    }
-    if (method === "POST" && path === "/snapshots/import") {
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = JSON.parse(body);
-      if (!parsed.snapshot || typeof parsed.snapshot !== "object") {
-        return { status: 400, body: { error: "snapshot object required" } };
-      }
-      const snapshot = await this.store.importSnapshot(
-        parsed.snapshot,
-        { overwrite: parsed.overwrite === true }
-      );
-      return { status: 201, body: { snapshot } };
-    }
-    if (method === "POST" && path.startsWith("/snapshots/") && path.endsWith("/restore")) {
-      const id = path.split("/")[2];
-      const restored = await this.store.restoreSnapshot(id);
-      return { status: 200, body: { ok: true, restored } };
-    }
-    if (method === "DELETE" && path.startsWith("/snapshots/")) {
-      const id = path.split("/")[2];
-      const deleted = await this.store.deleteSnapshot(id);
-      return {
-        status: deleted ? 200 : 404,
-        body: { ok: deleted, message: deleted ? "Snapshot deleted" : "Snapshot not found" }
-      };
-    }
-    if (method === "GET" && path === "/events") {
-      const limit = parseInt(url.searchParams.get("limit") ?? "100", 10);
-      const events = this.store.getEventLog(limit);
-      return { status: 200, body: { events } };
-    }
-    if (method === "GET" && path === "/health") {
-      return {
-        status: 200,
-        body: {
-          ok: true,
-          model: this.model?.name() ?? "none",
-          advancedRoutes: Boolean(this.memory),
-          nativeVectorSearch: this.memory?.usesNativeVectorSearch?.() ?? this.store.supportsNativeVectorSearch?.() ?? false
-        }
-      };
-    }
-    return { status: 404, body: { error: "Not found", path, method } };
-  }
-  isAuthorized(req) {
-    if (!this.authToken) return true;
-    return req.headers.authorization === `Bearer ${this.authToken}`;
-  }
-  async readBody(req) {
-    return new Promise((resolve, reject) => {
-      const chunks = [];
-      let total = 0;
-      req.on("data", (chunk) => {
-        total += chunk.length;
-        if (total > this.maxBodyBytes) {
-          reject(new Error("Request body too large"));
-          req.destroy();
-          return;
-        }
-        chunks.push(chunk);
-      });
-      req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-      req.on("error", reject);
-    });
-  }
-};
-
-// src/episodic-capture.ts
-var import_crypto6 = require("crypto");
-var HIGH_IMPORTANCE_PATTERNS = [
-  "decision",
-  "agreed",
-  "decided",
-  "commit",
-  "ship",
-  "deploy",
-  "publish",
-  "fix",
-  "bug",
-  "broken",
-  "hack",
-  "workaround",
-  "important",
-  "critical",
-  "priority",
-  "blocker",
-  "ship it",
-  "go",
-  "no-go",
-  "approved",
-  "rejected",
-  "refactor",
-  "architecture",
-  "design",
-  "strategy",
-  "plan"
-];
-var LOW_IMPORTANCE_PATTERNS = [
-  "ping",
-  "pong",
-  "heartbeat",
-  "typing",
-  "read",
-  "check",
-  "ACK",
-  "ok",
-  "yes",
-  "noop",
-  "noop",
-  "null",
-  "skip",
-  "ignore",
-  "watermark"
-];
-var TYPE_IMPORTANCE = {
-  "decision": 0.9,
-  "goal.achieved": 0.95,
-  "identity.drift": 0.8,
-  "identity.correction": 0.8,
-  "agent.error": 0.7,
-  "learning": 0.75,
-  "user.feedback": 0.65,
-  "user.question": 0.55,
-  "goal.set": 0.7,
-  "memory.store": 0.5,
-  "memory.query": 0.3,
-  "memory.recall": 0.4,
-  "session.start": 0.2,
-  "session.end": 0.3,
-  "session.compaction": 0.1,
-  "agent.turn": 0.4,
-  "agent.response": 0.4,
-  "agent.tool_call": 0.5,
-  "agent.tool_result": 0.45,
-  "user.message": 0.5
-};
-function scoreImportance(event) {
-  if (event.importanceOverride !== void 0) {
-    return Math.max(0, Math.min(1, event.importanceOverride));
-  }
-  let score = TYPE_IMPORTANCE[event.type] ?? 0.5;
-  const lower = event.content.toLowerCase();
-  for (const pattern of HIGH_IMPORTANCE_PATTERNS) {
-    if (lower.includes(pattern)) {
-      score = Math.min(1, score + 0.15);
-      break;
-    }
-  }
-  for (const pattern of LOW_IMPORTANCE_PATTERNS) {
-    if (lower.includes(pattern)) {
-      score = Math.max(0.1, score - 0.2);
-      break;
-    }
-  }
-  if (event.content.length < 20) {
-    score = Math.max(0.1, score - 0.1);
-  }
-  if (event.content.length > 500) {
-    score = Math.min(1, score + 0.1);
-  }
-  return Math.max(0, Math.min(1, score));
-}
-function hashString(s) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    h = (h << 5) - h + c;
-    h = h & h;
-  }
-  return h;
-}
-function makeDedupKey(event) {
-  const normalized = event.content.toLowerCase().replace(/\s+/g, " ").trim();
-  return {
-    type: event.type,
-    contentHash: hashString(normalized)
-  };
-}
-var EpisodicCapturePipeline = class {
-  remem;
-  eventBuffer = [];
-  dedupSet = /* @__PURE__ */ new Map();
-  flushIntervalMs;
-  maxBatchSize;
-  dedupWindowMs;
-  layer;
-  intervalHandle = null;
-  started = false;
-  eventCount = 0;
-  droppedCount = 0;
-  constructor(remem, options = {}) {
-    this.remem = remem;
-    this.flushIntervalMs = options.flushIntervalMs ?? 1e3;
-    this.maxBatchSize = options.maxBatchSize ?? 50;
-    this.dedupWindowMs = options.dedupWindowMs ?? 2e3;
-    this.layer = options.layer ?? "episodic";
-  }
-  /**
-   * Capture a single event into the episodic layer.
-   * Events are buffered and flushed in batches.
-   */
-  capture(event) {
-    const now = Date.now();
-    this.eventCount++;
-    const enriched = {
-      ...event,
-      id: event.id ?? (0, import_crypto6.randomUUID)(),
-      timestamp: event.timestamp ?? now
-    };
-    if (!enriched.noDedup) {
-      const key = makeDedupKey(enriched);
-      const keyStr = `${key.type}::${key.contentHash}`;
-      const existing = this.dedupSet.get(keyStr);
-      if (existing && now < existing.expiresAt) {
-        this.droppedCount++;
-        return;
-      }
-      this.dedupSet.set(keyStr, { key, expiresAt: now + this.dedupWindowMs });
-    }
-    this.eventBuffer.push(enriched);
-    if (this.eventBuffer.length >= this.maxBatchSize) {
-      this.flush().catch((err) => console.error("[EpisodicCapture] flush error:", err));
-    }
-  }
-  /**
-   * Capture multiple events at once.
-   */
-  captureBatch(events) {
-    for (const event of events) {
-      this.capture(event);
-    }
-  }
-  /**
-   * Start the periodic flush interval.
-   * Call once after registering event sources.
-   */
-  start() {
-    if (this.started) return;
-    this.started = true;
-    this.intervalHandle = setInterval(() => {
-      if (this.eventBuffer.length > 0) {
-        this.flush().catch((err) => console.error("[EpisodicCapture] flush error:", err));
-      }
-      const now = Date.now();
-      for (const [key, val] of this.dedupSet.entries()) {
-        if (now >= val.expiresAt) this.dedupSet.delete(key);
-      }
-    }, this.flushIntervalMs);
-  }
-  /**
-   * Stop the flush interval and flush remaining events.
-   */
-  stop() {
-    if (this.intervalHandle) {
-      clearInterval(this.intervalHandle);
-      this.intervalHandle = null;
-    }
-    if (this.eventBuffer.length > 0) {
-      this.flush().catch((err) => console.error("[EpisodicCapture] final flush error:", err));
-    }
-    this.started = false;
-  }
-  /**
-   * Flush the event buffer to MemoryStore.
-   */
-  async flush() {
-    if (this.eventBuffer.length === 0) return;
-    const batch = this.eventBuffer.splice(0, this.eventBuffer.length);
-    for (const event of batch) {
-      const importance = scoreImportance(event);
-      const topics = this.extractTopics(event);
-      const content = this.formatEvent(event);
-      const entry = this.remem.store(
-        {
-          content,
-          topics,
-          metadata: {
-            ...event.metadata,
-            captureEventId: event.id,
-            captureEventType: event.type,
-            importance,
-            capturedAt: event.timestamp
-          }
-        },
-        this.layer
-      );
-      if (this.remem.getLayerManager && typeof entry.id === "string") {
-        void this.generateEmbedding(entry.id, content).catch(() => {
-        });
-      }
-    }
-  }
-  /**
-   * Extract topics from event type and content.
-   */
-  extractTopics(event) {
-    const topics = [event.type.split(".")[0]];
-    switch (event.type) {
-      case "decision":
-        topics.push("decision");
-        break;
-      case "learning":
-        topics.push("learning");
-        break;
-      case "goal.set":
-      case "goal.achieved":
-        topics.push("goal");
-        break;
-      case "identity.drift":
-      case "identity.correction":
-        topics.push("identity", "drift");
-        break;
-      case "agent.error":
-        topics.push("error");
-        break;
-      case "user.message":
-        topics.push("user-interaction");
-        if (event.metadata?.channel?.includes("discord")) topics.push("discord");
-        break;
-      case "session.compaction":
-        topics.push("session", "maintenance");
-        break;
-    }
-    const hashtags = event.content.match(/#[a-zA-Z][\w-]*/g);
-    if (hashtags) {
-      topics.push(...hashtags.map((t) => t.slice(1).toLowerCase()));
-    }
-    return [...new Set(topics)];
-  }
-  /**
-   * Format an event into a human-readable episodic memory string.
-   */
-  formatEvent(event) {
-    const ts = event.timestamp ? new Date(event.timestamp).toISOString().slice(0, 19).replace("T", " ") : "";
-    const metaStr = event.metadata ? Object.entries(event.metadata).filter(([k]) => !["importance", "capturedAt"].includes(k)).slice(0, 5).map(([k, v]) => `${k}=${String(v).slice(0, 50)}`).join(" ") : "";
-    const importance = scoreImportance(event);
-    const importanceLabel = importance >= 0.8 ? "\u{1F534}" : importance >= 0.6 ? "\u{1F7E1}" : importance >= 0.4 ? "\u{1F7E2}" : "\u26AA";
-    return `[${event.type}] ${event.content}${metaStr ? ` (${metaStr})` : ""} ${importanceLabel} ${ts}`.trim();
-  }
-  /**
-   * Generate embedding for a stored entry (async, non-blocking).
-   * Returns early if no embedding service available.
-   */
-  async generateEmbedding(_entryId, _content) {
-  }
-  /**
-   * Get capture statistics.
-   */
-  getStats() {
-    return {
-      eventCount: this.eventCount,
-      droppedCount: this.droppedCount,
-      bufferSize: this.eventBuffer.length,
-      started: this.started
-    };
-  }
-};
-
 // src/adapters.ts
 function withDefaultTopic(input, defaultTopic) {
   const normalized = storeMemoryInputSchema.parse(input);
@@ -6639,6 +6012,656 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
     }
   };
 }
+
+// src/http.ts
+var HttpAdapter = class {
+  server;
+  engine;
+  store;
+  model;
+  memory;
+  port;
+  host;
+  authToken;
+  corsOrigin;
+  maxBodyBytes;
+  constructor(config) {
+    this.store = config.store;
+    this.model = config.model;
+    this.memory = config.memory;
+    this.engine = new QueryEngine({ store: this.store, model: this.model });
+    this.port = config.port ?? 8787;
+    this.host = config.host ?? "127.0.0.1";
+    this.authToken = config.authToken;
+    this.corsOrigin = config.corsOrigin ?? "http://localhost";
+    this.maxBodyBytes = config.maxBodyBytes ?? 1024 * 1024;
+  }
+  async start() {
+    const http = await import("http");
+    this.server = http.createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", `http://localhost:${this.port}`);
+      const method = req.method ?? "GET";
+      res.setHeader("Access-Control-Allow-Origin", this.corsOrigin);
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      if (method === "OPTIONS") {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      if (!this.isAuthorized(req)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Unauthorized" }));
+        return;
+      }
+      try {
+        const result = await this.handleRequest(method, url, req);
+        res.writeHead(result.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result.body));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: message }));
+      }
+    });
+    return new Promise((resolve) => {
+      this.server.listen(this.port, this.host, () => {
+        resolve();
+      });
+    });
+  }
+  async stop() {
+    return new Promise((resolve) => {
+      this.server?.close(() => resolve());
+    });
+  }
+  async handleRequest(method, url, req) {
+    const path = url.pathname;
+    if (method === "POST" && path === "/memory") {
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      if (!body) return { status: 400, body: { error: "Empty request body" } };
+      const input = storeMemoryInputSchema.parse(JSON.parse(body));
+      await this.engine.store(input);
+      return { status: 201, body: { ok: true, message: "Memory stored" } };
+    }
+    if (method === "POST" && path === "/memory/remember") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      if (!body) return { status: 400, body: { error: "Empty request body" } };
+      const input = rememberInputSchema.parse(JSON.parse(body));
+      const result = await this.memory.remember(input);
+      return { status: result.action === "stored" ? 201 : 200, body: result };
+    }
+    if (method === "POST" && path === "/memory/shared") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      if (!body) return { status: 400, body: { error: "Empty request body" } };
+      const parsed = JSON.parse(body);
+      const input = storeMemoryInputSchema.parse(parsed);
+      const namespace = namespaceInputSchema.parse(parsed.namespace);
+      const visibility = parsed.visibility === "private" ? "private" : "shared";
+      await this.memory.storeShared({ ...input, namespace, visibility });
+      return { status: 201, body: { ok: true, message: "Shared memory stored", namespace, visibility } };
+    }
+    if (method === "GET" && path === "/memory") {
+      const query = url.searchParams.get("q") ?? "";
+      const limit = parseInt(url.searchParams.get("limit") ?? "10", 10);
+      const topics = url.searchParams.get("topics")?.split(",").filter(Boolean);
+      const minAccessCount = url.searchParams.get("minAccessCount");
+      const metadata = url.searchParams.get("metadata");
+      const options = { limit };
+      if (topics) options.topics = topics;
+      if (minAccessCount) options.minAccessCount = parseInt(minAccessCount, 10);
+      if (metadata) options.metadata = JSON.parse(metadata);
+      const result = await this.engine.query(query, options);
+      return { status: 200, body: result };
+    }
+    if (method === "POST" && path === "/memory/namespace/query") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
+        return { status: 400, body: { error: "query string required" } };
+      }
+      const namespace = namespaceInputSchema.parse(parsed.namespace);
+      const scope = namespaceQueryScopeSchema.parse(parsed.scope ?? {});
+      const options = parsed.options ? JSON.parse(JSON.stringify(parsed.options)) : void 0;
+      const result = await this.memory.queryNamespace(namespace, parsed.query, options, scope);
+      return { status: 200, body: result };
+    }
+    if (method === "GET" && path === "/memory/recent") {
+      const n = parseInt(url.searchParams.get("n") ?? "10", 10);
+      const results = await this.engine.getRecent(n);
+      return { status: 200, body: { results } };
+    }
+    if (method === "POST" && path === "/memory/namespace/recent") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      const namespace = namespaceInputSchema.parse(parsed.namespace);
+      const scope = namespaceQueryScopeSchema.parse(parsed.scope ?? {});
+      const n = typeof parsed.n === "number" ? parsed.n : 10;
+      const results = await this.memory.getRecentInNamespace(namespace, n, scope);
+      return { status: 200, body: { results } };
+    }
+    if (method === "POST" && path === "/memory/query-with-neighbors") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
+        return { status: 400, body: { error: "query string required" } };
+      }
+      const options = queryWithNeighborsOptionsSchema.parse(parsed.options ?? {});
+      const result = await this.memory.queryWithNeighbors(parsed.query, options);
+      return { status: 200, body: result };
+    }
+    if (method === "POST" && path === "/memory/smart-recall") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
+        return { status: 400, body: { error: "query string required" } };
+      }
+      const result = await this.memory.smartRecall(parsed.query, parsed.options);
+      return { status: 200, body: result };
+    }
+    if (method === "POST" && path === "/memory/context-pack") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
+        return { status: 400, body: { error: "query string required" } };
+      }
+      const result = await this.memory.contextPack(parsed.query, parsed.options);
+      return { status: 200, body: result };
+    }
+    if ((method === "GET" || method === "POST") && path === "/memory/health") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      let options;
+      if (method === "POST") {
+        if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+        const body = await this.readBody(req);
+        const parsed = body ? JSON.parse(body) : {};
+        options = parsed.options;
+      }
+      const result = await this.memory.health(options);
+      return { status: 200, body: result };
+    }
+    if (method === "POST" && path === "/storage/maintenance") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      const result = await this.memory.storageMaintenance(parsed.options);
+      return { status: 200, body: result };
+    }
+    if (method === "POST" && path === "/knowledge/artifact") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const artifact = knowledgeArtifactRegistrationSchema.parse(body ? JSON.parse(body) : {});
+      const result = await this.memory.registerKnowledgeArtifact(artifact);
+      return { status: 201, body: result };
+    }
+    if (method === "POST" && path === "/knowledge/ingest") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      const graph = knowledgeGraphArtifactSchema.parse(parsed.graph ?? parsed);
+      const options = parsed.options ? knowledgeIngestOptionsSchema.parse(parsed.options) : void 0;
+      const result = await this.memory.ingestKnowledgeGraph(graph, options);
+      return { status: 201, body: result };
+    }
+    if (method === "POST" && path === "/knowledge/overview") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      const result = await this.memory.knowledgeOverview({
+        project: typeof parsed.project === "string" && parsed.project.trim() ? parsed.project : void 0,
+        limit: typeof parsed.limit === "number" ? parsed.limit : void 0,
+        resourceGrant: parsed.resourceGrant
+      });
+      return { status: 200, body: result };
+    }
+    if (method === "POST" && path === "/knowledge/subgraph") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
+        return { status: 400, body: { error: "query string required" } };
+      }
+      const result = await this.memory.knowledgeSubgraph(parsed.query, parsed.options);
+      return { status: 200, body: result };
+    }
+    if (method === "POST" && path === "/memory/procedural/match") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.context !== "string" || !parsed.context.trim()) {
+        return { status: 400, body: { error: "context string required" } };
+      }
+      const matches = this.memory.matchProcedural(parsed.context);
+      return { status: 200, body: { matches } };
+    }
+    if (method === "POST" && path === "/identity/audit") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.sessionText !== "string" || !parsed.sessionText.trim()) {
+        return { status: 400, body: { error: "sessionText string required" } };
+      }
+      const audit = await this.memory.auditIdentityAlignment(parsed.sessionText);
+      return { status: 200, body: audit };
+    }
+    if (method === "GET" && path.startsWith("/memory/topics/")) {
+      const topic = decodeURIComponent(path.split("/")[3]);
+      const limit = parseInt(url.searchParams.get("limit") ?? "20", 10);
+      const results = await this.engine.getByTopic(topic, limit);
+      return { status: 200, body: { results } };
+    }
+    if (method === "GET" && path.startsWith("/memory/")) {
+      const id = path.split("/")[2];
+      if (id === "recent" || id === "topics") {
+        return { status: 404, body: { error: "Not found" } };
+      }
+      const entry = await this.store.get(id);
+      return entry ? { status: 200, body: { entry } } : { status: 404, body: { error: "Memory not found" } };
+    }
+    if (method === "DELETE" && path.startsWith("/memory/")) {
+      const id = path.split("/")[2];
+      const forgotten = await this.store.forget(id);
+      return {
+        status: forgotten ? 200 : 404,
+        body: { ok: forgotten, message: forgotten ? "Memory forgotten" : "Memory not found" }
+      };
+    }
+    if (method === "GET" && path === "/snapshots") {
+      const snapshots = await this.store.listSnapshots();
+      return { status: 200, body: { snapshots } };
+    }
+    if (method === "POST" && path === "/snapshots") {
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      const label = typeof parsed.label === "string" && parsed.label.trim() ? parsed.label : "snapshot";
+      const snapshot = await this.store.createSnapshot(label);
+      return { status: 201, body: { snapshot } };
+    }
+    if (method === "GET" && path.startsWith("/snapshots/") && path.endsWith("/export")) {
+      const id = path.split("/")[2];
+      const snapshot = await this.store.exportSnapshot(id);
+      return { status: 200, body: { snapshot } };
+    }
+    if (method === "POST" && path === "/snapshots/import") {
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = JSON.parse(body);
+      if (!parsed.snapshot || typeof parsed.snapshot !== "object") {
+        return { status: 400, body: { error: "snapshot object required" } };
+      }
+      const snapshot = await this.store.importSnapshot(
+        parsed.snapshot,
+        { overwrite: parsed.overwrite === true }
+      );
+      return { status: 201, body: { snapshot } };
+    }
+    if (method === "POST" && path.startsWith("/snapshots/") && path.endsWith("/restore")) {
+      const id = path.split("/")[2];
+      const restored = await this.store.restoreSnapshot(id);
+      return { status: 200, body: { ok: true, restored } };
+    }
+    if (method === "DELETE" && path.startsWith("/snapshots/")) {
+      const id = path.split("/")[2];
+      const deleted = await this.store.deleteSnapshot(id);
+      return {
+        status: deleted ? 200 : 404,
+        body: { ok: deleted, message: deleted ? "Snapshot deleted" : "Snapshot not found" }
+      };
+    }
+    if (method === "GET" && path === "/events") {
+      const limit = parseInt(url.searchParams.get("limit") ?? "100", 10);
+      const events = this.store.getEventLog(limit);
+      return { status: 200, body: { events } };
+    }
+    if (method === "GET" && path === "/health") {
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          model: this.model?.name() ?? "none",
+          advancedRoutes: Boolean(this.memory),
+          nativeVectorSearch: this.memory?.usesNativeVectorSearch?.() ?? this.store.supportsNativeVectorSearch?.() ?? false
+        }
+      };
+    }
+    return { status: 404, body: { error: "Not found", path, method } };
+  }
+  isAuthorized(req) {
+    if (!this.authToken) return true;
+    return req.headers.authorization === `Bearer ${this.authToken}`;
+  }
+  async readBody(req) {
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      let total = 0;
+      req.on("data", (chunk) => {
+        total += chunk.length;
+        if (total > this.maxBodyBytes) {
+          reject(new Error("Request body too large"));
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+      req.on("error", reject);
+    });
+  }
+};
+
+// src/episodic-capture.ts
+var import_crypto6 = require("crypto");
+var HIGH_IMPORTANCE_PATTERNS = [
+  "decision",
+  "agreed",
+  "decided",
+  "commit",
+  "ship",
+  "deploy",
+  "publish",
+  "fix",
+  "bug",
+  "broken",
+  "hack",
+  "workaround",
+  "important",
+  "critical",
+  "priority",
+  "blocker",
+  "ship it",
+  "go",
+  "no-go",
+  "approved",
+  "rejected",
+  "refactor",
+  "architecture",
+  "design",
+  "strategy",
+  "plan"
+];
+var LOW_IMPORTANCE_PATTERNS = [
+  "ping",
+  "pong",
+  "heartbeat",
+  "typing",
+  "read",
+  "check",
+  "ACK",
+  "ok",
+  "yes",
+  "noop",
+  "noop",
+  "null",
+  "skip",
+  "ignore",
+  "watermark"
+];
+var TYPE_IMPORTANCE = {
+  "decision": 0.9,
+  "goal.achieved": 0.95,
+  "identity.drift": 0.8,
+  "identity.correction": 0.8,
+  "agent.error": 0.7,
+  "learning": 0.75,
+  "user.feedback": 0.65,
+  "user.question": 0.55,
+  "goal.set": 0.7,
+  "memory.store": 0.5,
+  "memory.query": 0.3,
+  "memory.recall": 0.4,
+  "session.start": 0.2,
+  "session.end": 0.3,
+  "session.compaction": 0.1,
+  "agent.turn": 0.4,
+  "agent.response": 0.4,
+  "agent.tool_call": 0.5,
+  "agent.tool_result": 0.45,
+  "user.message": 0.5
+};
+function scoreImportance(event) {
+  if (event.importanceOverride !== void 0) {
+    return Math.max(0, Math.min(1, event.importanceOverride));
+  }
+  let score = TYPE_IMPORTANCE[event.type] ?? 0.5;
+  const lower = event.content.toLowerCase();
+  for (const pattern of HIGH_IMPORTANCE_PATTERNS) {
+    if (lower.includes(pattern)) {
+      score = Math.min(1, score + 0.15);
+      break;
+    }
+  }
+  for (const pattern of LOW_IMPORTANCE_PATTERNS) {
+    if (lower.includes(pattern)) {
+      score = Math.max(0.1, score - 0.2);
+      break;
+    }
+  }
+  if (event.content.length < 20) {
+    score = Math.max(0.1, score - 0.1);
+  }
+  if (event.content.length > 500) {
+    score = Math.min(1, score + 0.1);
+  }
+  return Math.max(0, Math.min(1, score));
+}
+function hashString(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h = (h << 5) - h + c;
+    h = h & h;
+  }
+  return h;
+}
+function makeDedupKey(event) {
+  const normalized = event.content.toLowerCase().replace(/\s+/g, " ").trim();
+  return {
+    type: event.type,
+    contentHash: hashString(normalized)
+  };
+}
+var EpisodicCapturePipeline = class {
+  remem;
+  eventBuffer = [];
+  dedupSet = /* @__PURE__ */ new Map();
+  flushIntervalMs;
+  maxBatchSize;
+  dedupWindowMs;
+  layer;
+  intervalHandle = null;
+  started = false;
+  eventCount = 0;
+  droppedCount = 0;
+  constructor(remem, options = {}) {
+    this.remem = remem;
+    this.flushIntervalMs = options.flushIntervalMs ?? 1e3;
+    this.maxBatchSize = options.maxBatchSize ?? 50;
+    this.dedupWindowMs = options.dedupWindowMs ?? 2e3;
+    this.layer = options.layer ?? "episodic";
+  }
+  /**
+   * Capture a single event into the episodic layer.
+   * Events are buffered and flushed in batches.
+   */
+  capture(event) {
+    const now = Date.now();
+    this.eventCount++;
+    const enriched = {
+      ...event,
+      id: event.id ?? (0, import_crypto6.randomUUID)(),
+      timestamp: event.timestamp ?? now
+    };
+    if (!enriched.noDedup) {
+      const key = makeDedupKey(enriched);
+      const keyStr = `${key.type}::${key.contentHash}`;
+      const existing = this.dedupSet.get(keyStr);
+      if (existing && now < existing.expiresAt) {
+        this.droppedCount++;
+        return;
+      }
+      this.dedupSet.set(keyStr, { key, expiresAt: now + this.dedupWindowMs });
+    }
+    this.eventBuffer.push(enriched);
+    if (this.eventBuffer.length >= this.maxBatchSize) {
+      this.flush().catch((err) => console.error("[EpisodicCapture] flush error:", err));
+    }
+  }
+  /**
+   * Capture multiple events at once.
+   */
+  captureBatch(events) {
+    for (const event of events) {
+      this.capture(event);
+    }
+  }
+  /**
+   * Start the periodic flush interval.
+   * Call once after registering event sources.
+   */
+  start() {
+    if (this.started) return;
+    this.started = true;
+    this.intervalHandle = setInterval(() => {
+      if (this.eventBuffer.length > 0) {
+        this.flush().catch((err) => console.error("[EpisodicCapture] flush error:", err));
+      }
+      const now = Date.now();
+      for (const [key, val] of this.dedupSet.entries()) {
+        if (now >= val.expiresAt) this.dedupSet.delete(key);
+      }
+    }, this.flushIntervalMs);
+  }
+  /**
+   * Stop the flush interval and flush remaining events.
+   */
+  stop() {
+    if (this.intervalHandle) {
+      clearInterval(this.intervalHandle);
+      this.intervalHandle = null;
+    }
+    if (this.eventBuffer.length > 0) {
+      this.flush().catch((err) => console.error("[EpisodicCapture] final flush error:", err));
+    }
+    this.started = false;
+  }
+  /**
+   * Flush the event buffer to MemoryStore.
+   */
+  async flush() {
+    if (this.eventBuffer.length === 0) return;
+    const batch = this.eventBuffer.splice(0, this.eventBuffer.length);
+    for (const event of batch) {
+      const importance = scoreImportance(event);
+      const topics = this.extractTopics(event);
+      const content = this.formatEvent(event);
+      const entry = this.remem.store(
+        {
+          content,
+          topics,
+          metadata: {
+            ...event.metadata,
+            captureEventId: event.id,
+            captureEventType: event.type,
+            importance,
+            capturedAt: event.timestamp
+          }
+        },
+        this.layer
+      );
+      if (this.remem.getLayerManager && typeof entry.id === "string") {
+        void this.generateEmbedding(entry.id, content).catch(() => {
+        });
+      }
+    }
+  }
+  /**
+   * Extract topics from event type and content.
+   */
+  extractTopics(event) {
+    const topics = [event.type.split(".")[0]];
+    switch (event.type) {
+      case "decision":
+        topics.push("decision");
+        break;
+      case "learning":
+        topics.push("learning");
+        break;
+      case "goal.set":
+      case "goal.achieved":
+        topics.push("goal");
+        break;
+      case "identity.drift":
+      case "identity.correction":
+        topics.push("identity", "drift");
+        break;
+      case "agent.error":
+        topics.push("error");
+        break;
+      case "user.message":
+        topics.push("user-interaction");
+        if (event.metadata?.channel?.includes("discord")) topics.push("discord");
+        break;
+      case "session.compaction":
+        topics.push("session", "maintenance");
+        break;
+    }
+    const hashtags = event.content.match(/#[a-zA-Z][\w-]*/g);
+    if (hashtags) {
+      topics.push(...hashtags.map((t) => t.slice(1).toLowerCase()));
+    }
+    return [...new Set(topics)];
+  }
+  /**
+   * Format an event into a human-readable episodic memory string.
+   */
+  formatEvent(event) {
+    const ts = event.timestamp ? new Date(event.timestamp).toISOString().slice(0, 19).replace("T", " ") : "";
+    const metaStr = event.metadata ? Object.entries(event.metadata).filter(([k]) => !["importance", "capturedAt"].includes(k)).slice(0, 5).map(([k, v]) => `${k}=${String(v).slice(0, 50)}`).join(" ") : "";
+    const importance = scoreImportance(event);
+    const importanceLabel = importance >= 0.8 ? "\u{1F534}" : importance >= 0.6 ? "\u{1F7E1}" : importance >= 0.4 ? "\u{1F7E2}" : "\u26AA";
+    return `[${event.type}] ${event.content}${metaStr ? ` (${metaStr})` : ""} ${importanceLabel} ${ts}`.trim();
+  }
+  /**
+   * Generate embedding for a stored entry (async, non-blocking).
+   * Returns early if no embedding service available.
+   */
+  async generateEmbedding(_entryId, _content) {
+  }
+  /**
+   * Get capture statistics.
+   */
+  getStats() {
+    return {
+      eventCount: this.eventCount,
+      droppedCount: this.droppedCount,
+      bufferSize: this.eventBuffer.length,
+      started: this.started
+    };
+  }
+};
 
 // src/index.ts
 var ReMEM = class {
@@ -7804,6 +7827,20 @@ profile: ${profile}
       skippedEdges,
       nodeMemoryIds
     };
+  }
+  /**
+   * Summarize imported knowledge/codebase graph memories by label, owner, and graph health.
+   * Useful when another system owns indexing and ReMEM is the durable recall + traversal layer.
+   */
+  async knowledgeOverview(options = {}) {
+    return createCodebaseMemoryAdapter(this).overview(options);
+  }
+  /**
+   * Retrieve a scoped codebase/knowledge subgraph with prompt-ready context.
+   * This exposes imported graph memories without requiring callers to instantiate an adapter themselves.
+   */
+  async knowledgeSubgraph(query, options = {}) {
+    return createCodebaseMemoryAdapter(this).subgraph(query, options);
   }
   renderKnowledgeNodeContent(node) {
     const title = node.name ?? node.id;

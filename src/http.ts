@@ -43,6 +43,8 @@ export interface AdvancedMemoryRuntime {
   storageMaintenance(options?: StorageMaintenanceOptions): Promise<StorageMaintenanceResult>;
   registerKnowledgeArtifact(input: KnowledgeArtifactRegistration): Promise<import('./types.js').KnowledgeArtifactRegistrationResult>;
   ingestKnowledgeGraph(graph: KnowledgeGraphArtifact, options?: KnowledgeIngestOptions): Promise<import('./types.js').KnowledgeIngestResult>;
+  knowledgeOverview(options?: { project?: string; limit?: number; resourceGrant?: import('./types.js').KnowledgeResourceGrant }): Promise<unknown>;
+  knowledgeSubgraph(query: string, options?: import('./adapters.js').CodebaseSubgraphOptions): Promise<import('./adapters.js').CodebaseGraphSubgraph>;
   storeShared(input: import('./types.js').StoreMemoryInput & { namespace: NamespaceInput; visibility?: 'private' | 'shared' }): Promise<void>;
   queryNamespace(namespace: NamespaceInput, query: string, options?: QueryOptions, scope?: NamespaceQueryScope): Promise<QueryResponse>;
   getRecentInNamespace(namespace: NamespaceInput, n?: number, scope?: NamespaceQueryScope): Promise<QueryResult[]>;
@@ -321,6 +323,31 @@ export class HttpAdapter {
       const options = parsed.options ? knowledgeIngestOptionsSchema.parse(parsed.options) : undefined;
       const result = await this.memory.ingestKnowledgeGraph(graph, options);
       return { status: 201, body: result };
+    }
+
+    if (method === 'POST' && path === '/knowledge/overview') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) as { project?: unknown; limit?: unknown; resourceGrant?: unknown } : {};
+      const result = await this.memory.knowledgeOverview({
+        project: typeof parsed.project === 'string' && parsed.project.trim() ? parsed.project : undefined,
+        limit: typeof parsed.limit === 'number' ? parsed.limit : undefined,
+        resourceGrant: parsed.resourceGrant as import('./types.js').KnowledgeResourceGrant | undefined,
+      });
+      return { status: 200, body: result };
+    }
+
+    if (method === 'POST' && path === '/knowledge/subgraph') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      if (!req) return { status: 400, body: { error: 'Request body unavailable' } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) as { query?: unknown; options?: unknown } : {};
+      if (typeof parsed.query !== 'string' || !parsed.query.trim()) {
+        return { status: 400, body: { error: 'query string required' } };
+      }
+      const result = await this.memory.knowledgeSubgraph(parsed.query, parsed.options as import('./adapters.js').CodebaseSubgraphOptions | undefined);
+      return { status: 200, body: result };
     }
 
     if (method === 'POST' && path === '/memory/procedural/match') {

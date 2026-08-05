@@ -136,6 +136,8 @@ Usage:
   remem storage-maintenance [--dry-run] [--compact] [--json]
   remem knowledge-artifact --path <file> [--source codebase-memory-mcp] [--project <name>] [--resource-uri <uri>] [--required-scopes a,b] [--format sqlite] [--compression zstd] [--json]
   remem knowledge-ingest --artifact <graph.json|graph.json.gz> [--source <name>] [--project <name>] [--namespace team/code] [--visibility shared|private] [--json]
+  remem knowledge-overview [--project <name>] [--limit 10] [--json]
+  remem knowledge-subgraph --query <text> [--project <name>] [--limit 8] [--neighbor-limit 8] [--connections calls,imports] [--max-context-chars 6000] [--json]
   remem store --content <text> [--topics a,b] [--metadata '{"kind":"note"}']
   remem remember --content <text> [--kind fact|preference|decision|procedure|recent-event|artifact-note] [--topics a,b] [--source <name>] [--dry-run]
   remem query --query <text> [--limit 8]
@@ -748,6 +750,79 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
       };
       if (jsonMode) emitJson(runtime, payload);
       else emitText(runtime, `Ingested ${result.nodesStored} knowledge nodes and ${result.edgesLinked} links (${result.skippedEdges} skipped).\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'knowledge-overview') {
+    await withMemory(options, async (memory, context) => {
+      const result = await memory.knowledgeOverview({
+        project: asString(options.project) || undefined,
+        limit: asNumber(options.limit, 10),
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...result,
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        emitText(
+          runtime,
+          [
+            `knowledge overview${result.project ? ` (${result.project})` : ''}`,
+            `nodes: ${result.nodes}`,
+            `labels: ${Object.entries(result.labels).map(([label, count]) => `${label}:${count}`).join(', ') || 'none'}`,
+            `owners: ${result.owners.length}`,
+            `entrypoints: ${result.entrypoints.length}`,
+            `hotspots: ${result.hotspots.length}`,
+            `deadzones: ${result.deadzones.length}`,
+            '',
+          ].join('\n')
+        );
+      }
+    });
+    return 0;
+  }
+
+  if (command === 'knowledge-subgraph') {
+    await withMemory(options, async (memory, context) => {
+      const query = requireOption(options.query, 'query', jsonMode, runtime);
+      if (query === null) return;
+      const result = await memory.knowledgeSubgraph(query, {
+        project: asString(options.project) || undefined,
+        limit: asNumber(options.limit, 8),
+        neighborLimit: asNumber(options['neighbor-limit'], asNumber(options.limit, 8)),
+        maxContextChars: asNumber(options['max-context-chars'], 6000),
+        connectionTypes: asCsv(options.connections),
+        minConnectionWeight: options['min-connection-weight'] ? asNumber(options['min-connection-weight'], 0) : undefined,
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...result,
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        emitText(
+          runtime,
+          [
+            `knowledge subgraph for "${query}"`,
+            `nodes: ${result.results.length}`,
+            `paths: ${result.paths.length}`,
+            `links traversed: ${result.linksTraversed}`,
+            '',
+            result.context,
+            '',
+          ].join('\n')
+        );
+      }
     });
     return 0;
   }

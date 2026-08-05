@@ -169,6 +169,36 @@ describe('ReMEM CLI', () => {
     expect(queriedPayload.results[0].metadata.source).toBe('remem.knowledge.node');
     expect(queriedPayload.results[0].metadata.resourceUri).toBe('memory://codebase/remem/imported');
 
+    const overview = await invoke([
+      'knowledge-overview',
+      '--db', db,
+      '--project', 'remem',
+      '--json',
+    ]);
+    expect(overview.exitCode).toBe(0);
+    const overviewPayload = JSON.parse(overview.stdout);
+    expect(overviewPayload.command).toBe('knowledge-overview');
+    expect(overviewPayload.project).toBe('remem');
+    expect(overviewPayload.nodes).toBe(2);
+    expect(overviewPayload.labels.Function).toBe(2);
+    expect(Array.isArray(overviewPayload.hotspots)).toBe(true);
+
+    const subgraph = await invoke([
+      'knowledge-subgraph',
+      '--db', db,
+      '--query', 'ProcessOrder',
+      '--project', 'remem',
+      '--connections', 'calls',
+      '--json',
+    ]);
+    expect(subgraph.exitCode).toBe(0);
+    const subgraphPayload = JSON.parse(subgraph.stdout);
+    expect(subgraphPayload.command).toBe('knowledge-subgraph');
+    expect(subgraphPayload.results.length).toBe(2);
+    expect(subgraphPayload.paths.length).toBeGreaterThanOrEqual(1);
+    expect(subgraphPayload.linksTraversed).toBeGreaterThanOrEqual(1);
+    expect(subgraphPayload.context).toContain('ProcessOrder');
+
     await fs.rm(artifact, { force: true });
   });
 

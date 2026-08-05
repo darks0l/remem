@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No unreleased changes yet.
 
+## [0.22.2] - 2026-08-05
+
+### Added
+
+- Added `memory.knowledgeOverview()` so imported knowledge/codebase graph memories can be summarized from the core ReMEM runtime without custom adapter glue.
+- Added `memory.knowledgeSubgraph()` for prompt-ready imported graph traversal directly from the core runtime.
+- Added `remem knowledge-overview` and `remem knowledge-subgraph` for first-class CLI inspection of imported code/knowledge graphs.
+- Added `POST /knowledge/overview` and `POST /knowledge/subgraph` so remote runtimes can inspect imported graphs over HTTP.
+
+### Fixed
+
+- Added regression coverage to keep CLI and HTTP knowledge-graph inspection contracts aligned with the underlying codebase adapter traversal behavior.
+
 ## [0.22.1] - 2026-07-15
 
 ### Changed
