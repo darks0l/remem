@@ -173,6 +173,7 @@ describe('ReMEM CLI', () => {
       'knowledge-overview',
       '--db', db,
       '--project', 'remem',
+      '--labels', 'Function',
       '--json',
     ]);
     expect(overview.exitCode).toBe(0);
@@ -189,6 +190,7 @@ describe('ReMEM CLI', () => {
       '--query', 'ProcessOrder',
       '--project', 'remem',
       '--connections', 'calls',
+      '--labels', 'Function',
       '--json',
     ]);
     expect(subgraph.exitCode).toBe(0);

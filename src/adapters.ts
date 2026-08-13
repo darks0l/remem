@@ -33,6 +33,8 @@ export interface ReMEMAdapterOptions {
 
 export interface CodebaseGraphQueryOptions extends QueryOptions {
   project?: string;
+  nodeLabels?: string[];
+  owners?: string[];
 }
 
 export interface CodebaseSubgraphOptions extends Partial<QueryWithNeighborsOptions> {
@@ -42,12 +44,16 @@ export interface CodebaseSubgraphOptions extends Partial<QueryWithNeighborsOptio
   includeConnections?: string[];
   minConnectionWeight?: number;
   resourceGrant?: KnowledgeResourceGrant;
+  nodeLabels?: string[];
+  owners?: string[];
 }
 
 export interface CodebaseGraphInventoryOptions {
   project?: string;
   limit?: number;
   resourceGrant?: KnowledgeResourceGrant;
+  nodeLabels?: string[];
+  owners?: string[];
 }
 
 export interface CodebaseGraphOwnerSummary {
@@ -208,6 +214,12 @@ function normalizeCodebaseConnectionTypes(types?: string[]): string[] | undefine
     .map((type) => type.startsWith('knowledge:') ? type : `knowledge:${type}`)));
 }
 
+function normalizeCodebaseStringFilters(values?: string[]): string[] | undefined {
+  if (!values?.length) return undefined;
+  const normalized = Array.from(new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean)));
+  return normalized.length ? normalized : undefined;
+}
+
 function connectionTypeMatches(type: string, allowed?: string[]): boolean {
   if (!allowed?.length) return true;
   return allowed.includes(type.toLowerCase());
@@ -221,6 +233,25 @@ function topLevelOwner(entry: QueryResult): { owner: string; type: CodebaseGraph
   const normalized = path.replace(/\\/g, '/').replace(/^\.\//, '');
   const first = normalized.split('/').filter(Boolean)[0];
   return { owner: first || '.', type: 'directory' };
+}
+
+function matchesCodebaseFilters(
+  entry: QueryResult,
+  options: Pick<CodebaseGraphInventoryOptions, 'nodeLabels' | 'owners'>
+): boolean {
+  const allowedLabels = normalizeCodebaseStringFilters(options.nodeLabels);
+  if (allowedLabels?.length) {
+    const label = (getStringMetadata(entry, 'label') ?? '').toLowerCase();
+    if (!allowedLabels.includes(label)) return false;
+  }
+
+  const allowedOwners = normalizeCodebaseStringFilters(options.owners);
+  if (allowedOwners?.length) {
+    const owner = topLevelOwner(entry).owner.toLowerCase();
+    if (!allowedOwners.includes(owner)) return false;
+  }
+
+  return true;
 }
 
 function formatCodebaseContext(results: QueryResult[], maxChars = 6_000): string {
@@ -628,7 +659,9 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
 
   const scopedKnowledgeNodes = async (inventoryOptions: CodebaseGraphInventoryOptions): Promise<QueryResult[]> => {
     const nodes = await knowledgeNodes(inventoryOptions.project);
-    return nodes.filter((node) => hasKnowledgeResourceAccess(node, inventoryOptions.resourceGrant));
+    return nodes
+      .filter((node) => hasKnowledgeResourceAccess(node, inventoryOptions.resourceGrant))
+      .filter((node) => matchesCodebaseFilters(node, inventoryOptions));
   };
 
   const nodeHealth = async (node: QueryResult): Promise<CodebaseGraphNodeHealth> => {
@@ -705,8 +738,8 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
     },
 
     async searchGraph(query: string, queryOptions: CodebaseGraphQueryOptions = { limit: defaultLimit }) {
-      const { project, metadata, ...rest } = queryOptions;
-      return memory.query(query, {
+      const { project, metadata, nodeLabels, owners, ...rest } = queryOptions;
+      const response = await memory.query(query, {
         ...rest,
         metadata: {
           ...(metadata ?? {}),
@@ -714,6 +747,12 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
           ...(project ? { project } : {}),
         },
       });
+      const results = response.results.filter((entry) => matchesCodebaseFilters(entry, { nodeLabels, owners }));
+      return {
+        ...response,
+        results,
+        totalAvailable: results.length,
+      };
     },
 
     async architecture(project?: string, limit = defaultLimit) {
@@ -766,7 +805,8 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
         includePathDetails: true,
       });
       const results = response.results.filter((entry) => hasKnowledgeResourceAccess(entry, queryOptions.resourceGrant));
-      const allowedIds = new Set(results.map((entry) => entry.id));
+      const filteredResults = results.filter((entry) => matchesCodebaseFilters(entry, queryOptions));
+      const allowedIds = new Set(filteredResults.map((entry) => entry.id));
       const paths = (response.paths ?? [])
         .filter((path) => connectionTypeMatches(path.type, selectedConnectionTypes))
         .filter((path) => allowedIds.has(path.fromId) && allowedIds.has(path.toId) && allowedIds.has(path.throughId))
@@ -774,10 +814,10 @@ export function createCodebaseMemoryAdapter(memory: ReMEM, options: ReMEMAdapter
       return {
         query,
         project: queryOptions.project,
-        results,
+        results: filteredResults,
         paths,
         linksTraversed: paths.length,
-        context: formatCodebaseContext(results, queryOptions.maxContextChars ?? 6_000),
+        context: formatCodebaseContext(filteredResults, queryOptions.maxContextChars ?? 6_000),
       };
     },
 

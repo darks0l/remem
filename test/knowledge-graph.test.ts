@@ -196,6 +196,15 @@ describe('knowledge graph ingestion', () => {
     const search = await adapter.searchGraph('ChargeCard');
     expect(search.results[0]?.metadata?.name).toBe('ChargeCard');
 
+    const filteredSearch = await adapter.searchGraph('ProcessOrder ChargeCard', {
+      project: 'checkout-service',
+      nodeLabels: ['Function'],
+      owners: ['src'],
+      limit: 5,
+    });
+    expect(filteredSearch.results.every((entry) => entry.metadata?.label === 'Function')).toBe(true);
+    expect(filteredSearch.results.every((entry) => String(entry.metadata?.path ?? '').startsWith('src/'))).toBe(true);
+
     const scopedMiss = await adapter.searchGraph('ChargeCard', { project: 'other-project', limit: 5 });
     expect(scopedMiss.results).toHaveLength(0);
 
@@ -213,6 +222,15 @@ describe('knowledge graph ingestion', () => {
     const subgraph = await adapter.subgraph('ProcessOrder', { project: 'checkout-service', maxContextChars: 800 });
     expect(subgraph.linksTraversed).toBeGreaterThanOrEqual(1);
     expect(subgraph.context).toContain('ProcessOrder');
+
+    const filteredSubgraph = await adapter.subgraph('ProcessOrder', {
+      project: 'checkout-service',
+      nodeLabels: ['Function'],
+      owners: ['src'],
+      maxContextChars: 800,
+    });
+    expect(filteredSubgraph.results.every((entry) => entry.metadata?.label === 'Function')).toBe(true);
+    expect(filteredSubgraph.results.every((entry) => String(entry.metadata?.path ?? '').startsWith('src/'))).toBe(true);
 
     const callsOnly = await adapter.asMemory('ProcessOrder', {
       project: 'checkout-service',
@@ -262,6 +280,15 @@ describe('knowledge graph ingestion', () => {
     const overview = await adapter.overview('checkout-service');
     expect(overview.labels.Function).toBe(3);
     expect(overview.hotspots[0].node.metadata?.name).toBe('ProcessOrder');
+
+    const filteredOverview = await adapter.overview({
+      project: 'checkout-service',
+      nodeLabels: ['Route'],
+      owners: ['src'],
+      limit: 5,
+    });
+    expect(filteredOverview.nodes).toBe(1);
+    expect(filteredOverview.labels.Route).toBe(1);
   });
 
   it('filters codebase graph snapshots by resource grants', async () => {

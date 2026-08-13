@@ -136,8 +136,8 @@ Usage:
   remem storage-maintenance [--dry-run] [--compact] [--json]
   remem knowledge-artifact --path <file> [--source codebase-memory-mcp] [--project <name>] [--resource-uri <uri>] [--required-scopes a,b] [--format sqlite] [--compression zstd] [--json]
   remem knowledge-ingest --artifact <graph.json|graph.json.gz> [--source <name>] [--project <name>] [--namespace team/code] [--visibility shared|private] [--json]
-  remem knowledge-overview [--project <name>] [--limit 10] [--json]
-  remem knowledge-subgraph --query <text> [--project <name>] [--limit 8] [--neighbor-limit 8] [--connections calls,imports] [--max-context-chars 6000] [--json]
+  remem knowledge-overview [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
+  remem knowledge-subgraph --query <text> [--project <name>] [--limit 8] [--neighbor-limit 8] [--connections calls,imports] [--labels Function,Route] [--owners src,packages] [--max-context-chars 6000] [--json]
   remem store --content <text> [--topics a,b] [--metadata '{"kind":"note"}']
   remem remember --content <text> [--kind fact|preference|decision|procedure|recent-event|artifact-note] [--topics a,b] [--source <name>] [--dry-run]
   remem query --query <text> [--limit 8]
@@ -759,6 +759,8 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
       const result = await memory.knowledgeOverview({
         project: asString(options.project) || undefined,
         limit: asNumber(options.limit, 10),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners),
       });
       const payload = {
         ok: true,
@@ -798,6 +800,8 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
         neighborLimit: asNumber(options['neighbor-limit'], asNumber(options.limit, 8)),
         maxContextChars: asNumber(options['max-context-chars'], 6000),
         connectionTypes: asCsv(options.connections),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners),
         minConnectionWeight: options['min-connection-weight'] ? asNumber(options['min-connection-weight'], 0) : undefined,
       });
       const payload = {

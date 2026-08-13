@@ -32,7 +32,20 @@ describe('package files allowlist', () => {
         'benchmarks/results/*.json',
         'benchmarks/results/*.md',
         'ROADMAP.md',
-        'docs/*.md',
+        'docs/openclaw-quickstart.md',
+        'docs/hermes-quickstart.md',
+      ])
+    );
+  });
+
+  it('does not accidentally ship scratch reset notes from the docs folder', () => {
+    expect(isIncluded('docs/remem-v2-reset.md', files)).toBe(false);
+  });
+
+  it('ships runnable dist runtime files, not only declarations', () => {
+    expect(files).toEqual(
+      expect.arrayContaining([
+        'dist/**',
       ])
     );
   });

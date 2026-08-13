@@ -1,7 +1,7 @@
 {
   "name": "@darksol/remem",
-  "version": "0.22.2",
-  "description": "Persistent, queryable memory for AI agents with graph recall, procedural rules, identity audits, snapshots, and multi-agent scoping",
+  "version": "0.23.0",
+  "description": "Persistent, queryable memory for AI agents with smart recall, durable storage, snapshots, graph recall, and multi-agent scoping",
   "bin": {
     "remem": "dist/cli.js"
   },
@@ -40,9 +40,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
+    "test:artifact": "node ./scripts/smoke-pack.mjs",
     "bench:public-results": "node ./benchmarks/generate-public-results.mjs",
     "bench:public-results:verify": "node ./benchmarks/generate-public-results.mjs --verify",
-    "prepublishOnly": "npm run lint && npm test && npm run build && npm pack --dry-run"
+    "prepublishOnly": "npm run lint && npm test && npm run build && npm run test:artifact && npm pack --dry-run"
   },
   "keywords": [
     "ai",
@@ -99,11 +100,12 @@
     "esbuild": "^0.28.1"
   },
   "files": [
-    "dist",
+    "dist/**",
     "README.md",
     "CHANGELOG.md",
     "ROADMAP.md",
-    "docs/*.md",
+    "docs/openclaw-quickstart.md",
+    "docs/hermes-quickstart.md",
     "benchmarks/README.md",
     "benchmarks/public-results.d.ts",
     "benchmarks/public-results.schema.d.ts",

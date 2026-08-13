@@ -1,0 +1,2 @@
+# Keep this file so npm packaging does not fall back to .gitignore rules.
+# The package surface is controlled primarily by package.json#files.

@@ -3162,6 +3162,8 @@ interface ReMEMAdapterOptions {
 }
 interface CodebaseGraphQueryOptions extends QueryOptions {
     project?: string;
+    nodeLabels?: string[];
+    owners?: string[];
 }
 interface CodebaseSubgraphOptions extends Partial<QueryWithNeighborsOptions> {
     project?: string;
@@ -3170,11 +3172,15 @@ interface CodebaseSubgraphOptions extends Partial<QueryWithNeighborsOptions> {
     includeConnections?: string[];
     minConnectionWeight?: number;
     resourceGrant?: KnowledgeResourceGrant;
+    nodeLabels?: string[];
+    owners?: string[];
 }
 interface CodebaseGraphInventoryOptions {
     project?: string;
     limit?: number;
     resourceGrant?: KnowledgeResourceGrant;
+    nodeLabels?: string[];
+    owners?: string[];
 }
 interface CodebaseGraphOwnerSummary {
     owner: string;
@@ -3379,7 +3385,6 @@ declare function createCodebaseMemoryAdapter(memory: ReMEM, options?: ReMEMAdapt
         project?: string | undefined;
     }>;
     searchGraph(query: string, queryOptions?: CodebaseGraphQueryOptions): Promise<{
-        query: string;
         results: {
             topics: string[];
             metadata: Record<string, unknown>;
@@ -3391,6 +3396,7 @@ declare function createCodebaseMemoryAdapter(memory: ReMEM, options?: ReMEMAdapt
             relevanceScore?: number | undefined;
         }[];
         totalAvailable: number;
+        query: string;
         tookMs: number;
     }>;
     architecture(project?: string, limit?: number): Promise<{

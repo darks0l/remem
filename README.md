@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.22.2](https://img.shields.io/badge/v0.22.2-knowledge--graph--inspection-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.23.0](https://img.shields.io/badge/v0.23.0-graph--filtering-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -83,8 +83,8 @@ remem graph --db ./remem.db --query "release context" --dot > memory.dot
 remem storage-maintenance --db ./remem.db --dry-run --json
 remem knowledge-artifact --db ./remem.db --path .codebase-memory/graph.db.zst --source codebase-memory-mcp --project remem --format sqlite --compression zstd --json
 remem knowledge-ingest --db ./remem.db --artifact ./code-graph.json --source codebase-memory-mcp --project remem --json
-remem knowledge-overview --db ./remem.db --project remem --json
-remem knowledge-subgraph --db ./remem.db --query "ProcessOrder" --project remem --connections calls,imports --json
+remem knowledge-overview --db ./remem.db --project remem --labels Function,Route --json
+remem knowledge-subgraph --db ./remem.db --query "ProcessOrder" --project remem --connections calls,imports --owners src --json
 remem store --content "Meta likes dark mode" --topics preferences,ui
 remem remember --content "We decided to ship intake scoring before the next release" --topics release,roadmap --source operator
 remem query --query "What does Meta like?"
@@ -177,6 +177,12 @@ remem storage-maintenance --db ./remem.db --compact --json
 
 Use `knowledge-artifact` and `knowledge-ingest` when another tool already owns the code intelligence layer. ReMEM can either remember the external graph artifact pointer or import a portable node/edge graph so normal memory recall can traverse architecture, route, import, and call relationships. The codebase adapter can then turn those links into scoped search, weighted impact traversal, subgraph context, entrypoint discovery, owner/directory summaries, hotspot ranking, isolated-node diagnostics, and **Codebase Graph as memory** snapshots.
 
+When imported graphs get large, the inspection lane can now be filtered directly by node label and top-level owner path. That makes it much easier to ask for things like:
+
+- only `Function` and `Route` nodes
+- only nodes owned by `src`, `packages`, or another top-level directory
+- the intersection of both filters before rendering context or inventory
+
 For MCP or other resource-oriented bridges, knowledge artifacts and graph imports can also carry a validated `resourceUri` plus `requiredScopes`. ReMEM stores those fields on artifact and imported node metadata and exports `authorizeKnowledgeResourceAccess()` for host-side grant checks before returning graph snapshots or subscribed resource reads.
 
 The codebase adapter also accepts `resourceGrant` on subgraph and `Codebase Graph as memory` calls, so a bridge can filter snapshot nodes, paths, and connections to only the resource scopes granted to the current caller.
@@ -213,6 +219,7 @@ remem knowledge-ingest \
 remem knowledge-overview \
   --db ./remem.db \
   --project remem \
+  --labels Function,Route \
   --json
 
 remem knowledge-subgraph \
@@ -220,6 +227,7 @@ remem knowledge-subgraph \
   --query "ProcessOrder" \
   --project remem \
   --connections calls,imports \
+  --owners src \
   --max-context-chars 4000 \
   --json
 ```

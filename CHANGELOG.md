@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No unreleased changes yet.
 
+## [0.23.0] - 2026-08-13
+
+### Added
+
+- Added label and owner filtering to codebase/knowledge graph inspection so `knowledgeOverview()`, `knowledgeSubgraph()`, and the codebase adapter can scope results to specific node labels and top-level owners.
+- Added `--labels` and `--owners` support to `remem knowledge-overview` and `remem knowledge-subgraph` for CLI-driven graph filtering.
+- Added a packed-artifact smoke gate so publish validation proves the npm tarball can install and expose the classic `ReMEM` runtime.
+
+### Changed
+
+- Tightened the npm package allowlist so only the public quickstart docs ship from `docs/`, preventing scratch notes such as `docs/remem-v2-reset.md` from leaking into published tarballs.
+- Updated the package description and README so the original `@darksol/remem` package stays framed around the classic ReMEM runtime surface while documenting the new graph filtering lane.
+
 ## [0.22.2] - 2026-08-05
 
 ### Added

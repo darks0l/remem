@@ -5441,6 +5441,11 @@ function normalizeCodebaseConnectionTypes(types) {
   if (!types?.length) return void 0;
   return Array.from(new Set(types.map((type) => type.trim().toLowerCase()).filter(Boolean).map((type) => type.startsWith("knowledge:") ? type : `knowledge:${type}`)));
 }
+function normalizeCodebaseStringFilters(values) {
+  if (!values?.length) return void 0;
+  const normalized = Array.from(new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean)));
+  return normalized.length ? normalized : void 0;
+}
 function connectionTypeMatches(type, allowed) {
   if (!allowed?.length) return true;
   return allowed.includes(type.toLowerCase());
@@ -5453,6 +5458,19 @@ function topLevelOwner(entry) {
   const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "");
   const first = normalized.split("/").filter(Boolean)[0];
   return { owner: first || ".", type: "directory" };
+}
+function matchesCodebaseFilters(entry, options) {
+  const allowedLabels = normalizeCodebaseStringFilters(options.nodeLabels);
+  if (allowedLabels?.length) {
+    const label = (getStringMetadata(entry, "label") ?? "").toLowerCase();
+    if (!allowedLabels.includes(label)) return false;
+  }
+  const allowedOwners = normalizeCodebaseStringFilters(options.owners);
+  if (allowedOwners?.length) {
+    const owner = topLevelOwner(entry).owner.toLowerCase();
+    if (!allowedOwners.includes(owner)) return false;
+  }
+  return true;
 }
 function formatCodebaseContext(results, maxChars = 6e3) {
   const lines = [];
@@ -5741,7 +5759,7 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
   };
   const scopedKnowledgeNodes = async (inventoryOptions) => {
     const nodes = await knowledgeNodes(inventoryOptions.project);
-    return nodes.filter((node) => hasKnowledgeResourceAccess(node, inventoryOptions.resourceGrant));
+    return nodes.filter((node) => hasKnowledgeResourceAccess(node, inventoryOptions.resourceGrant)).filter((node) => matchesCodebaseFilters(node, inventoryOptions));
   };
   const nodeHealth = async (node) => {
     const links = await memory.getLinkedMemories(node.id, { direction: "both", limit: 100 });
@@ -5802,8 +5820,8 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
       return memory.ingestKnowledgeGraph(parsed, ingestOptions);
     },
     async searchGraph(query, queryOptions = { limit: defaultLimit }) {
-      const { project, metadata, ...rest } = queryOptions;
-      return memory.query(query, {
+      const { project, metadata, nodeLabels, owners, ...rest } = queryOptions;
+      const response = await memory.query(query, {
         ...rest,
         metadata: {
           ...metadata ?? {},
@@ -5811,6 +5829,12 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
           ...project ? { project } : {}
         }
       });
+      const results = response.results.filter((entry) => matchesCodebaseFilters(entry, { nodeLabels, owners }));
+      return {
+        ...response,
+        results,
+        totalAvailable: results.length
+      };
     },
     async architecture(project, limit = defaultLimit) {
       return memory.query("architecture routes packages entry points hotspots boundaries clusters", {
@@ -5857,15 +5881,16 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
         includePathDetails: true
       });
       const results = response.results.filter((entry) => hasKnowledgeResourceAccess(entry, queryOptions.resourceGrant));
-      const allowedIds = new Set(results.map((entry) => entry.id));
+      const filteredResults = results.filter((entry) => matchesCodebaseFilters(entry, queryOptions));
+      const allowedIds = new Set(filteredResults.map((entry) => entry.id));
       const paths = (response.paths ?? []).filter((path) => connectionTypeMatches(path.type, selectedConnectionTypes)).filter((path) => allowedIds.has(path.fromId) && allowedIds.has(path.toId) && allowedIds.has(path.throughId)).filter((path) => (queryOptions.minConnectionWeight ?? 0) <= path.score);
       return {
         query,
         project: queryOptions.project,
-        results,
+        results: filteredResults,
         paths,
         linksTraversed: paths.length,
-        context: formatCodebaseContext(results, queryOptions.maxContextChars ?? 6e3)
+        context: formatCodebaseContext(filteredResults, queryOptions.maxContextChars ?? 6e3)
       };
     },
     async asMemory(query, queryOptions = {}) {
