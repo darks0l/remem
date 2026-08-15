@@ -36,6 +36,8 @@ import {
   queryWithNeighborsOptionsSchema,
   rememConfigSchema,
   rememberInputSchema,
+  rememberBatchInputSchema,
+  rememberBatchOptionsSchema,
   smartRecallOptionsSchema,
   dreamOptionsSchema,
   contextPackOptionsSchema,
@@ -67,6 +69,8 @@ import {
   type ProceduralTrigger,
   type QueryWithNeighborsOptions,
   type RememberInput,
+  type RememberBatchOptions,
+  type RememberBatchResult,
   type RememberKind,
   type RememberResult,
   type ReMEMConfig,
@@ -589,6 +593,46 @@ export class ReMEM {
       metadata: finalMetadata,
       entry,
       ...(trigger ? { trigger } : {}),
+    };
+  }
+
+  async rememberMany(inputs: RememberInput[], options?: RememberBatchOptions): Promise<RememberBatchResult> {
+    const normalizedInputs = rememberBatchInputSchema.parse(inputs);
+    const opts = rememberBatchOptionsSchema.parse(options ?? {});
+    const results: RememberBatchResult['results'] = [];
+    let stored = 0;
+    let previews = 0;
+    let skippedDuplicate = 0;
+    let skippedLowSignal = 0;
+    let failed = 0;
+
+    for (const [index, input] of normalizedInputs.entries()) {
+      try {
+        const result = await this.remember(input);
+        results.push({ index, ok: true, result });
+
+        if (result.action === 'stored') stored += 1;
+        else if (result.action === 'preview') previews += 1;
+        else if (result.action === 'skipped_duplicate') skippedDuplicate += 1;
+        else if (result.action === 'skipped_low_signal') skippedLowSignal += 1;
+      } catch (error) {
+        failed += 1;
+        const message = error instanceof Error ? error.message : String(error);
+        results.push({ index, ok: false, error: message });
+        if (opts.stopOnError) {
+          throw error;
+        }
+      }
+    }
+
+    return {
+      total: normalizedInputs.length,
+      stored,
+      previews,
+      skippedDuplicate,
+      skippedLowSignal,
+      failed,
+      results,
     };
   }
 

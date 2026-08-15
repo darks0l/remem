@@ -80,6 +80,10 @@ import {
   queryWithNeighborsOptionsSchema,
   rememConfigSchema,
   rememberActionSchema,
+  rememberBatchInputSchema,
+  rememberBatchItemResultSchema,
+  rememberBatchOptionsSchema,
+  rememberBatchResultSchema,
   rememberInputSchema,
   rememberKindSchema,
   rememberResultSchema,
@@ -89,7 +93,7 @@ import {
   smartRecallResultSchema,
   storeMemoryInputSchema,
   uploadPackage
-} from "./chunk-VEJRH4ZC.mjs";
+} from "./chunk-QIWEO4DJ.mjs";
 export {
   ConstitutionInjector,
   ConstitutionManager,
@@ -172,6 +176,10 @@ export {
   queryWithNeighborsOptionsSchema,
   rememConfigSchema,
   rememberActionSchema,
+  rememberBatchInputSchema,
+  rememberBatchItemResultSchema,
+  rememberBatchOptionsSchema,
+  rememberBatchResultSchema,
   rememberInputSchema,
   rememberKindSchema,
   rememberResultSchema,

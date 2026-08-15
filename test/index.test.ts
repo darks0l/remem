@@ -115,6 +115,32 @@ describe('ReMEM', () => {
     expect(second.duplicateOf).toBe(first.entry?.id);
   });
 
+  it('processes mixed intake batches through rememberMany()', async () => {
+    const batch = await memory.rememberMany([
+      {
+        content: 'We decided to ship batch intake before the next release.',
+        topics: ['release', 'roadmap'],
+      },
+      {
+        content: 'ok',
+      },
+      {
+        content: 'We decided to ship batch intake before the next release.',
+        topics: ['release', 'roadmap'],
+      },
+    ]);
+
+    expect(batch.total).toBe(3);
+    expect(batch.stored).toBe(1);
+    expect(batch.skippedLowSignal).toBe(1);
+    expect(batch.skippedDuplicate).toBe(1);
+    expect(batch.failed).toBe(0);
+    expect(batch.results).toHaveLength(3);
+    expect(batch.results[0].result?.action).toBe('stored');
+    expect(batch.results[1].result?.action).toBe('skipped_low_signal');
+    expect(batch.results[2].result?.action).toBe('skipped_duplicate');
+  });
+
   it('returns recent memories', async () => {
     await memory.store({ content: 'First memory', topics: ['test'] });
     await memory.store({ content: 'Second memory', topics: ['test'] });

@@ -7,7 +7,7 @@ import { ReMEM, type StorageMaintenanceOptions } from './index.js';
 import { runSmokeChecks } from './smoke.js';
 import { generateInitArtifacts, type RuntimeFocus } from './setup.js';
 import { launchTerminalUi } from './ui.js';
-import { knowledgeArtifactRegistrationSchema, knowledgeGraphArtifactSchema, rememConfigSchema, type ContextPackOptions, type MemoryHealthOptions, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions, type RememberKind } from './types.js';
+import { knowledgeArtifactRegistrationSchema, knowledgeGraphArtifactSchema, rememConfigSchema, type ContextPackOptions, type MemoryHealthOptions, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions, type RememberInput, type RememberKind } from './types.js';
 
 const gunzipAsync = promisify(gunzip);
 
@@ -140,6 +140,7 @@ Usage:
   remem knowledge-subgraph --query <text> [--project <name>] [--limit 8] [--neighbor-limit 8] [--connections calls,imports] [--labels Function,Route] [--owners src,packages] [--max-context-chars 6000] [--json]
   remem store --content <text> [--topics a,b] [--metadata '{"kind":"note"}']
   remem remember --content <text> [--kind fact|preference|decision|procedure|recent-event|artifact-note] [--topics a,b] [--source <name>] [--dry-run]
+  remem remember-batch --file <items.json> [--stop-on-error] [--json]
   remem query --query <text> [--limit 8]
   remem recent [--limit 10]
   remem topic --topic <name> [--limit 10]
@@ -272,6 +273,15 @@ async function writeInitArtifacts(outDir: string, artifacts: ReturnType<typeof g
 async function readJsonFile(filePath: string) {
   const raw = await fs.readFile(filePath, 'utf8');
   return JSON.parse(raw) as unknown;
+}
+
+async function readRememberBatchFile(filePath: string): Promise<RememberInput[]> {
+  const parsed = await readJsonFile(path.resolve(filePath));
+  if (Array.isArray(parsed)) return parsed as RememberInput[];
+  if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { items?: unknown }).items)) {
+    return (parsed as { items: RememberInput[] }).items;
+  }
+  throw new Error('Batch file must be a JSON array or an object with an items array.');
 }
 
 async function readKnowledgeGraphFile(filePath: string) {
@@ -862,6 +872,33 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
       const payload = { ok: result.action === 'stored' || result.action === 'preview', command, ...result };
       if (jsonMode) emitJson(runtime, payload);
       else emitText(runtime, `${result.action}: ${result.reason}\nkind: ${result.kind}\nlayer: ${result.layer}\nscore: ${result.score}\n`);
+    });
+    return 0;
+  }
+
+  if (command === 'remember-batch') {
+    await withMemory(options, async (memory) => {
+      const file = requireOption(options.file, 'file', jsonMode, runtime);
+      if (file === null) return;
+      const result = await memory.rememberMany(await readRememberBatchFile(file), {
+        stopOnError: Boolean(options['stop-on-error']),
+      });
+      const payload = { ok: result.failed === 0, command, ...result };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        emitText(
+          runtime,
+          [
+            `remember-batch processed ${result.total} items`,
+            `stored: ${result.stored}`,
+            `preview: ${result.previews}`,
+            `duplicates: ${result.skippedDuplicate}`,
+            `low-signal: ${result.skippedLowSignal}`,
+            `failed: ${result.failed}`,
+            '',
+          ].join('\n')
+        );
+      }
     });
     return 0;
   }

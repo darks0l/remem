@@ -6,7 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-No unreleased changes yet.
+## [0.24.0] - 2026-08-15
+
+### Added
+
+- Added `memory.rememberMany()` so agents can batch durable-memory intake, preserve per-item outcomes, and get summary counts for stored, previewed, duplicate, and low-signal items.
+- Added `remem remember-batch --file <items.json>` for CLI-driven batch intake from JSON arrays or `{ items: [...] }` payloads.
 
 ## [0.23.0] - 2026-08-13
 

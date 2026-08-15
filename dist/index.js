@@ -111,6 +111,10 @@ __export(index_exports, {
   queryWithNeighborsOptionsSchema: () => queryWithNeighborsOptionsSchema,
   rememConfigSchema: () => rememConfigSchema,
   rememberActionSchema: () => rememberActionSchema,
+  rememberBatchInputSchema: () => rememberBatchInputSchema,
+  rememberBatchItemResultSchema: () => rememberBatchItemResultSchema,
+  rememberBatchOptionsSchema: () => rememberBatchOptionsSchema,
+  rememberBatchResultSchema: () => rememberBatchResultSchema,
   rememberInputSchema: () => rememberInputSchema,
   rememberKindSchema: () => rememberKindSchema,
   rememberResultSchema: () => rememberResultSchema,
@@ -166,6 +170,7 @@ var rememberInputSchema = storeMemoryInputSchema.extend({
   dryRun: import_zod.z.boolean().default(false),
   forceStore: import_zod.z.boolean().default(false)
 });
+var rememberBatchInputSchema = import_zod.z.array(rememberInputSchema).min(1);
 var rememberResultSchema = import_zod.z.object({
   action: rememberActionSchema,
   kind: rememberKindSchema,
@@ -179,6 +184,24 @@ var rememberResultSchema = import_zod.z.object({
   metadata: import_zod.z.record(import_zod.z.unknown()).default({}),
   entry: memoryEntrySchema.optional(),
   trigger: import_zod.z.unknown().optional()
+});
+var rememberBatchOptionsSchema = import_zod.z.object({
+  stopOnError: import_zod.z.boolean().default(false)
+});
+var rememberBatchItemResultSchema = import_zod.z.object({
+  index: import_zod.z.number().int().nonnegative(),
+  ok: import_zod.z.boolean(),
+  result: rememberResultSchema.optional(),
+  error: import_zod.z.string().optional()
+});
+var rememberBatchResultSchema = import_zod.z.object({
+  total: import_zod.z.number().int().nonnegative(),
+  stored: import_zod.z.number().int().nonnegative(),
+  previews: import_zod.z.number().int().nonnegative(),
+  skippedDuplicate: import_zod.z.number().int().nonnegative(),
+  skippedLowSignal: import_zod.z.number().int().nonnegative(),
+  failed: import_zod.z.number().int().nonnegative(),
+  results: import_zod.z.array(rememberBatchItemResultSchema)
 });
 var metadataFilterValueSchema = import_zod.z.union([import_zod.z.string(), import_zod.z.number(), import_zod.z.boolean(), import_zod.z.null()]);
 var metadataFilterOperatorSchema = import_zod.z.object({
@@ -7014,6 +7037,42 @@ var ReMEM = class {
       ...trigger ? { trigger } : {}
     };
   }
+  async rememberMany(inputs, options) {
+    const normalizedInputs = rememberBatchInputSchema.parse(inputs);
+    const opts = rememberBatchOptionsSchema.parse(options ?? {});
+    const results = [];
+    let stored = 0;
+    let previews = 0;
+    let skippedDuplicate = 0;
+    let skippedLowSignal = 0;
+    let failed = 0;
+    for (const [index, input] of normalizedInputs.entries()) {
+      try {
+        const result = await this.remember(input);
+        results.push({ index, ok: true, result });
+        if (result.action === "stored") stored += 1;
+        else if (result.action === "preview") previews += 1;
+        else if (result.action === "skipped_duplicate") skippedDuplicate += 1;
+        else if (result.action === "skipped_low_signal") skippedLowSignal += 1;
+      } catch (error) {
+        failed += 1;
+        const message = error instanceof Error ? error.message : String(error);
+        results.push({ index, ok: false, error: message });
+        if (opts.stopOnError) {
+          throw error;
+        }
+      }
+    }
+    return {
+      total: normalizedInputs.length,
+      stored,
+      previews,
+      skippedDuplicate,
+      skippedLowSignal,
+      failed,
+      results
+    };
+  }
   /**
    * Query memory using natural language.
    * Uses semantic search (cosine similarity) when embeddings are enabled,
@@ -8755,6 +8814,10 @@ profile: ${profile}
   queryWithNeighborsOptionsSchema,
   rememConfigSchema,
   rememberActionSchema,
+  rememberBatchInputSchema,
+  rememberBatchItemResultSchema,
+  rememberBatchOptionsSchema,
+  rememberBatchResultSchema,
   rememberInputSchema,
   rememberKindSchema,
   rememberResultSchema,

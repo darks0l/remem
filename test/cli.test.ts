@@ -258,6 +258,41 @@ describe('ReMEM CLI', () => {
     expect(payload.entry.metadata.source).toBe('cli-test');
   });
 
+  it('processes remember batches through the CLI JSON contract', async () => {
+    const db = './.tmp-cli-remember-batch.db';
+    const batchPath = path.resolve('.tmp-cli-remember-batch.json');
+    await fs.rm(db, { force: true });
+    await fs.writeFile(batchPath, JSON.stringify([
+      {
+        content: 'We decided to ship batch remember before the next release.',
+        topics: ['release', 'roadmap'],
+        source: 'cli-batch',
+      },
+      {
+        content: 'ok',
+      },
+      {
+        content: 'We decided to ship batch remember before the next release.',
+        topics: ['release', 'roadmap'],
+      },
+    ]), 'utf8');
+
+    const result = await invoke([
+      'remember-batch',
+      '--db', db,
+      '--file', batchPath,
+      '--json',
+    ]);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.command).toBe('remember-batch');
+    expect(payload.total).toBe(3);
+    expect(payload.stored).toBe(1);
+    expect(payload.skippedLowSignal).toBe(1);
+    expect(payload.skippedDuplicate).toBe(1);
+    expect(payload.failed).toBe(0);
+  });
+
   it('fails unknown commands cleanly', async () => {
     const result = await invoke(['definitely-not-a-command']);
     expect(result.exitCode).toBe(1);

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const rootDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'remem-pack-'));
@@ -22,12 +22,13 @@ try {
   });
   const [{ filename }] = JSON.parse(packJson);
   const tarballPath = path.join(rootDir, filename);
+  const installSpec = pathToFileURL(tarballPath).href;
 
   runNpm(['init', '-y'], {
     cwd: tempDir,
     stdio: 'ignore',
   });
-  runNpm(['install', tarballPath], {
+  runNpm(['install', installSpec], {
     cwd: tempDir,
     stdio: 'ignore',
   });

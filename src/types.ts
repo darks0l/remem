@@ -58,6 +58,8 @@ export const rememberInputSchema = storeMemoryInputSchema.extend({
 
 export type RememberInput = z.input<typeof rememberInputSchema>;
 
+export const rememberBatchInputSchema = z.array(rememberInputSchema).min(1);
+
 export const rememberResultSchema = z.object({
   action: rememberActionSchema,
   kind: rememberKindSchema,
@@ -74,6 +76,33 @@ export const rememberResultSchema = z.object({
 });
 
 export type RememberResult = z.infer<typeof rememberResultSchema>;
+
+export const rememberBatchOptionsSchema = z.object({
+  stopOnError: z.boolean().default(false),
+});
+
+export type RememberBatchOptions = z.input<typeof rememberBatchOptionsSchema>;
+
+export const rememberBatchItemResultSchema = z.object({
+  index: z.number().int().nonnegative(),
+  ok: z.boolean(),
+  result: rememberResultSchema.optional(),
+  error: z.string().optional(),
+});
+
+export type RememberBatchItemResult = z.infer<typeof rememberBatchItemResultSchema>;
+
+export const rememberBatchResultSchema = z.object({
+  total: z.number().int().nonnegative(),
+  stored: z.number().int().nonnegative(),
+  previews: z.number().int().nonnegative(),
+  skippedDuplicate: z.number().int().nonnegative(),
+  skippedLowSignal: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  results: z.array(rememberBatchItemResultSchema),
+});
+
+export type RememberBatchResult = z.infer<typeof rememberBatchResultSchema>;
 
 // ============================================================================
 // Query Types
