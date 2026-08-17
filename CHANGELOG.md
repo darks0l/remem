@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-08-17
+
+### Fixed
+
+- Made recall profile selection more forgiving across the core helpers, CLI, and HTTP adapter by normalizing common aliases such as `Coding_Agent`, `ops handoff`, and `research`.
+- Added regression coverage so profile alias handling stays stable for `recall-profiles`, `smart-recall`, and `context-pack` surfaces.
+
 ## [0.25.0] - 2026-08-17
 
 ### Added

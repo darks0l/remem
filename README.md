@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.25.0](https://img.shields.io/badge/v0.25.0-profile--catalog-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.25.1](https://img.shields.io/badge/v0.25.1-profile--aliases-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 

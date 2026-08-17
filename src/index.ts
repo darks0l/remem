@@ -22,6 +22,7 @@ import {
 import { EmbeddingService, type EmbeddingConfig as EmbedServiceConfig } from './embeddings.js';
 import { MemoryREPL } from './repl.js';
 import { MemoryConsolidator, type ConsolidationWorkflowOptions, type ConsolidationWorkflowResult } from './consolidate.js';
+import { resolveSmartRecallProfile } from './recall-profiles.js';
 import {
   createCodebaseMemoryAdapter,
   type CodebaseGraphInventoryOptions,
@@ -351,6 +352,10 @@ export function getSmartRecallProfile(profile: SmartRecallProfile): SmartRecallP
     defaultOptions: { ...descriptor.defaultOptions } as SmartRecallProfileDefaults,
     contextPackTitles: { ...descriptor.contextPackTitles },
   };
+}
+
+export function resolveRecallProfile(profile: string | null | undefined): SmartRecallProfile | null {
+  return resolveSmartRecallProfile(profile);
 }
 
 /**
@@ -2889,6 +2894,7 @@ export { MemoryREPL } from './repl.js';
 export { HttpAdapter } from './http.js';
 export { MemoryConsolidator } from './consolidate.js';
 export { EpisodicCapturePipeline } from './episodic-capture.js';
+export { normalizeSmartRecallProfileInput, resolveSmartRecallProfile } from './recall-profiles.js';
 export {
   createVercelAIAdapter,
   createHermesAdapter,

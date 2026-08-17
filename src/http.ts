@@ -35,6 +35,7 @@ import {
 import type { MemoryStoreLike, StorageMaintenanceOptions, StorageMaintenanceResult } from './storage-types.js';
 import { ModelAbstraction } from './model.js';
 import { QueryEngine } from './query.js';
+import { resolveSmartRecallProfile } from './recall-profiles.js';
 
 export interface AdvancedMemoryRuntime {
   remember(input: RememberInput): Promise<RememberResult>;
@@ -266,7 +267,10 @@ export class HttpAdapter {
     if (method === 'GET' && path.startsWith('/memory/recall-profiles/')) {
       if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
       const profile = decodeURIComponent(path.split('/')[3] ?? '').trim();
-      const matched = this.memory.getRecallProfiles().find((item) => item.profile === profile);
+      const resolvedProfile = resolveSmartRecallProfile(profile);
+      const matched = resolvedProfile
+        ? this.memory.getRecallProfiles().find((item) => item.profile === resolvedProfile)
+        : undefined;
       if (!matched) {
         return { status: 404, body: { error: `Unknown recall profile: ${profile}` } };
       }
@@ -282,7 +286,15 @@ export class HttpAdapter {
       if (typeof parsed.query !== 'string' || !parsed.query.trim()) {
         return { status: 400, body: { error: 'query string required' } };
       }
-      const options = smartRecallOptionsSchema.parse(parsed.options ?? {});
+      const optionPayload = parsed.options && typeof parsed.options === 'object'
+        ? {
+            ...(parsed.options as Record<string, unknown>),
+            ...(typeof (parsed.options as Record<string, unknown>).profile === 'string'
+              ? { profile: resolveSmartRecallProfile((parsed.options as Record<string, unknown>).profile as string) ?? (parsed.options as Record<string, unknown>).profile }
+              : {}),
+          }
+        : parsed.options ?? {};
+      const options = smartRecallOptionsSchema.parse(optionPayload);
       const result = await this.memory.smartRecall(parsed.query, options);
       return { status: 200, body: result };
     }
@@ -296,7 +308,15 @@ export class HttpAdapter {
       if (typeof parsed.query !== 'string' || !parsed.query.trim()) {
         return { status: 400, body: { error: 'query string required' } };
       }
-      const options = contextPackOptionsSchema.parse(parsed.options ?? {});
+      const optionPayload = parsed.options && typeof parsed.options === 'object'
+        ? {
+            ...(parsed.options as Record<string, unknown>),
+            ...(typeof (parsed.options as Record<string, unknown>).profile === 'string'
+              ? { profile: resolveSmartRecallProfile((parsed.options as Record<string, unknown>).profile as string) ?? (parsed.options as Record<string, unknown>).profile }
+              : {}),
+          }
+        : parsed.options ?? {};
+      const options = contextPackOptionsSchema.parse(optionPayload);
       const result = await this.memory.contextPack(parsed.query, options);
       return { status: 200, body: result };
     }

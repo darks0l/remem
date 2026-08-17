@@ -4,6 +4,7 @@ import path from 'node:path';
 import { gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { ReMEM, getSmartRecallProfiles, type StorageMaintenanceOptions } from './index.js';
+import { resolveSmartRecallProfile } from './recall-profiles.js';
 import { runSmokeChecks } from './smoke.js';
 import { generateInitArtifacts, type RuntimeFocus } from './setup.js';
 import { launchTerminalUi } from './ui.js';
@@ -65,6 +66,10 @@ function asNamespace(value: string | boolean | undefined) {
 function parseMaybeJson(value: string | boolean | undefined) {
   if (typeof value !== 'string' || !value.trim()) return {};
   return JSON.parse(value) as Record<string, unknown>;
+}
+
+function resolveProfileOption(value: string | boolean | undefined, fallback: ContextPackOptions['profile'] | SmartRecallOptions['profile']) {
+  return resolveSmartRecallProfile(asString(value)) ?? fallback;
 }
 
 function buildConfig(options: Record<string, string | boolean>): { config: ReMEMConfig; storageLabel: string; dbLabel: string; scopeLabel: string } {
@@ -1055,8 +1060,9 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
   if (command === 'recall-profiles') {
     const profiles = getSmartRecallProfiles();
     const requested = asString(options.profile).trim();
+    const resolvedProfile = resolveSmartRecallProfile(requested);
     const payload = requested
-      ? profiles.find((profile) => profile.profile === requested)
+      ? profiles.find((profile) => profile.profile === resolvedProfile)
       : { profiles };
 
     if (!payload) {
@@ -1090,7 +1096,7 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
     await withMemory(options, async (memory) => {
       const metadataFilters = parseMaybeJson(options.metadata) as QueryOptions['metadata'];
       const smartRecallOptions = smartRecallOptionsSchema.parse({
-        profile: asString(options.profile, 'fast') as SmartRecallOptions['profile'],
+        profile: resolveProfileOption(options.profile, 'fast'),
         limit: Number(asString(options.limit, '8')) || 8,
         includeRecent: Boolean(options.recent),
         recentLimit: Number(asString(options['recent-limit'], '5')) || 5,
@@ -1120,7 +1126,7 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
     await withMemory(options, async (memory) => {
       const metadataFilters = parseMaybeJson(options.metadata) as QueryOptions['metadata'];
       const contextPackOptions = contextPackOptionsSchema.parse({
-        profile: asString(options.profile, 'agent-safe') as ContextPackOptions['profile'],
+        profile: resolveProfileOption(options.profile, 'agent-safe'),
         limit: Number(asString(options.limit, '8')) || 8,
         maxChars: Number(asString(options['max-chars'], '6000')) || 6000,
         includeDream: Boolean(options.dream),

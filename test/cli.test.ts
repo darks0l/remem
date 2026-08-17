@@ -428,6 +428,28 @@ describe('ReMEM CLI', () => {
     expect(payload.profiles.some((profile: { profile: string }) => profile.profile === 'coding-agent')).toBe(true);
   });
 
+  it('accepts normalized recall profile aliases in CLI commands', async () => {
+    const db = './.tmp-cli-context-pack-debug.db';
+    await fs.rm(db, { force: true });
+    await invoke(['store', '--db', db, '--content', 'Release workflow for remem depends on stable CLI contracts', '--topics', 'release,code', '--json']);
+    await invoke(['procedural-store', '--db', db, '--content', 'Run lint, tests, build, and pack dry-run before publish.', '--trigger', 'publish remem', '--topics', 'release,procedure', '--json']);
+
+    const profilesResult = await invoke(['recall-profiles', '--profile', 'Coding_Agent', '--json']);
+    expect(profilesResult.exitCode).toBe(0);
+    const profilesPayload = JSON.parse(profilesResult.stdout);
+    expect(profilesPayload.profile.profile).toBe('coding-agent');
+
+    const smartRecallResult = await invoke(['smart-recall', '--db', db, '--query', 'publish remem safely', '--profile', 'OPS_HANDOFF', '--json']);
+    expect(smartRecallResult.exitCode).toBe(0);
+    const smartRecallPayload = JSON.parse(smartRecallResult.stdout);
+    expect(smartRecallPayload.profile).toBe('ops-handoff');
+
+    const contextPackResult = await invoke(['context-pack', '--db', db, '--query', 'publish remem safely', '--profile', 'research_brief', '--max-chars', '1400', '--json']);
+    expect(contextPackResult.exitCode).toBe(0);
+    const contextPackPayload = JSON.parse(contextPackResult.stdout);
+    expect(contextPackPayload.profile).toBe('research-brief');
+  });
+
   it('returns context pack JSON and bounded text', async () => {
     const db = './.tmp-cli-context-pack.db';
     await fs.rm(db, { force: true });

@@ -74,6 +74,7 @@ import {
   namespaceInputSchema,
   namespaceQueryScopeSchema,
   neighborPathSchema,
+  normalizeSmartRecallProfileInput,
   postgresStorageConfigSchema,
   proceduralMatchSchema,
   proceduralTriggerSchema,
@@ -90,6 +91,8 @@ import {
   rememberInputSchema,
   rememberKindSchema,
   rememberResultSchema,
+  resolveRecallProfile,
+  resolveSmartRecallProfile,
   smartRecallOptionsSchema,
   smartRecallProfileDefaultsSchema,
   smartRecallProfileDescriptorSchema,
@@ -98,7 +101,7 @@ import {
   smartRecallResultSchema,
   storeMemoryInputSchema,
   uploadPackage
-} from "./chunk-LX2VKVUM.mjs";
+} from "./chunk-Q5YVJTZK.mjs";
 export {
   ConstitutionInjector,
   ConstitutionManager,
@@ -175,6 +178,7 @@ export {
   namespaceInputSchema,
   namespaceQueryScopeSchema,
   neighborPathSchema,
+  normalizeSmartRecallProfileInput,
   postgresStorageConfigSchema,
   proceduralMatchSchema,
   proceduralTriggerSchema,
@@ -191,6 +195,8 @@ export {
   rememberInputSchema,
   rememberKindSchema,
   rememberResultSchema,
+  resolveRecallProfile,
+  resolveSmartRecallProfile,
   smartRecallOptionsSchema,
   smartRecallProfileDefaultsSchema,
   smartRecallProfileDescriptorSchema,

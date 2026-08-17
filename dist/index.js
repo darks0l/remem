@@ -105,6 +105,7 @@ __export(index_exports, {
   namespaceInputSchema: () => namespaceInputSchema,
   namespaceQueryScopeSchema: () => namespaceQueryScopeSchema,
   neighborPathSchema: () => neighborPathSchema,
+  normalizeSmartRecallProfileInput: () => normalizeSmartRecallProfileInput,
   postgresStorageConfigSchema: () => postgresStorageConfigSchema,
   proceduralMatchSchema: () => proceduralMatchSchema,
   proceduralTriggerSchema: () => proceduralTriggerSchema,
@@ -121,6 +122,8 @@ __export(index_exports, {
   rememberInputSchema: () => rememberInputSchema,
   rememberKindSchema: () => rememberKindSchema,
   rememberResultSchema: () => rememberResultSchema,
+  resolveRecallProfile: () => resolveRecallProfile,
+  resolveSmartRecallProfile: () => resolveSmartRecallProfile,
   smartRecallOptionsSchema: () => smartRecallOptionsSchema,
   smartRecallProfileDefaultsSchema: () => smartRecallProfileDefaultsSchema,
   smartRecallProfileDescriptorSchema: () => smartRecallProfileDescriptorSchema,
@@ -5432,6 +5435,37 @@ Return JSON with shape {"content":"...","triggerTerms":["..."],"triggerPhrases":
   }
 };
 
+// src/recall-profiles.ts
+var PROFILE_ALIASES = {
+  agentsafe: "agent-safe",
+  "agent-safe": "agent-safe",
+  agent_safe: "agent-safe",
+  opsdebug: "ops-debug",
+  "ops-debug": "ops-debug",
+  ops_debug: "ops-debug",
+  coding: "coding-agent",
+  codingagent: "coding-agent",
+  "coding-agent": "coding-agent",
+  coding_agent: "coding-agent",
+  ops: "ops-handoff",
+  opshandoff: "ops-handoff",
+  "ops-handoff": "ops-handoff",
+  ops_handoff: "ops-handoff",
+  handoff: "ops-handoff",
+  research: "research-brief",
+  researchbrief: "research-brief",
+  "research-brief": "research-brief",
+  research_brief: "research-brief"
+};
+function normalizeSmartRecallProfileInput(profile) {
+  return (profile ?? "").trim().toLowerCase().replace(/[\s_]+/g, "-").replace(/-+/g, "-");
+}
+function resolveSmartRecallProfile(profile) {
+  const normalized = normalizeSmartRecallProfileInput(profile);
+  if (!normalized) return null;
+  return PROFILE_ALIASES[normalized] ?? null;
+}
+
 // src/adapters.ts
 function withDefaultTopic(input, defaultTopic) {
   const normalized = storeMemoryInputSchema.parse(input);
@@ -6255,7 +6289,8 @@ var HttpAdapter = class {
     if (method === "GET" && path.startsWith("/memory/recall-profiles/")) {
       if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
       const profile = decodeURIComponent(path.split("/")[3] ?? "").trim();
-      const matched = this.memory.getRecallProfiles().find((item) => item.profile === profile);
+      const resolvedProfile = resolveSmartRecallProfile(profile);
+      const matched = resolvedProfile ? this.memory.getRecallProfiles().find((item) => item.profile === resolvedProfile) : void 0;
       if (!matched) {
         return { status: 404, body: { error: `Unknown recall profile: ${profile}` } };
       }
@@ -6269,7 +6304,11 @@ var HttpAdapter = class {
       if (typeof parsed.query !== "string" || !parsed.query.trim()) {
         return { status: 400, body: { error: "query string required" } };
       }
-      const options = smartRecallOptionsSchema.parse(parsed.options ?? {});
+      const optionPayload = parsed.options && typeof parsed.options === "object" ? {
+        ...parsed.options,
+        ...typeof parsed.options.profile === "string" ? { profile: resolveSmartRecallProfile(parsed.options.profile) ?? parsed.options.profile } : {}
+      } : parsed.options ?? {};
+      const options = smartRecallOptionsSchema.parse(optionPayload);
       const result = await this.memory.smartRecall(parsed.query, options);
       return { status: 200, body: result };
     }
@@ -6281,7 +6320,11 @@ var HttpAdapter = class {
       if (typeof parsed.query !== "string" || !parsed.query.trim()) {
         return { status: 400, body: { error: "query string required" } };
       }
-      const options = contextPackOptionsSchema.parse(parsed.options ?? {});
+      const optionPayload = parsed.options && typeof parsed.options === "object" ? {
+        ...parsed.options,
+        ...typeof parsed.options.profile === "string" ? { profile: resolveSmartRecallProfile(parsed.options.profile) ?? parsed.options.profile } : {}
+      } : parsed.options ?? {};
+      const options = contextPackOptionsSchema.parse(optionPayload);
       const result = await this.memory.contextPack(parsed.query, options);
       return { status: 200, body: result };
     }
@@ -6939,6 +6982,9 @@ function getSmartRecallProfile(profile) {
     defaultOptions: { ...descriptor.defaultOptions },
     contextPackTitles: { ...descriptor.contextPackTitles }
   };
+}
+function resolveRecallProfile(profile) {
+  return resolveSmartRecallProfile(profile);
 }
 var ReMEM = class {
   _store;
@@ -9090,6 +9136,7 @@ profile: ${profile}
   namespaceInputSchema,
   namespaceQueryScopeSchema,
   neighborPathSchema,
+  normalizeSmartRecallProfileInput,
   postgresStorageConfigSchema,
   proceduralMatchSchema,
   proceduralTriggerSchema,
@@ -9106,6 +9153,8 @@ profile: ${profile}
   rememberInputSchema,
   rememberKindSchema,
   rememberResultSchema,
+  resolveRecallProfile,
+  resolveSmartRecallProfile,
   smartRecallOptionsSchema,
   smartRecallProfileDefaultsSchema,
   smartRecallProfileDescriptorSchema,

@@ -5,7 +5,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ReMEM, MemoryStore, PostgresMemoryStore, MemoryREPL } from '../src/index.js';
+import { ReMEM, MemoryStore, PostgresMemoryStore, MemoryREPL, resolveSmartRecallProfile } from '../src/index.js';
 
 describe('ReMEM', () => {
   let memory: ReMEM;
@@ -470,6 +470,13 @@ describe('ReMEM', () => {
     expect(coding.label).toBe('Coding Agent');
     expect(coding.defaultOptions.includeProcedural).toBe(true);
     expect(coding.contextPackTitles.graph).toContain('Architecture');
+  });
+
+  it('normalizes recall profile aliases to canonical profile ids', () => {
+    expect(resolveSmartRecallProfile('Coding_Agent')).toBe('coding-agent');
+    expect(resolveSmartRecallProfile('ops handoff')).toBe('ops-handoff');
+    expect(resolveSmartRecallProfile('research')).toBe('research-brief');
+    expect(resolveSmartRecallProfile('unknown-profile')).toBeNull();
   });
 
   it('builds bounded prompt-ready context packs', async () => {
