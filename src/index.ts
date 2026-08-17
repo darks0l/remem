@@ -75,6 +75,9 @@ import {
   type RememberResult,
   type ReMEMConfig,
   type SmartRecallOptions,
+  type SmartRecallProfile,
+  type SmartRecallProfileDefaults,
+  type SmartRecallProfileDescriptor,
   type SmartRecallResult,
   type SmartRecallResponse,
   type StoreMemoryInput,
@@ -170,6 +173,184 @@ export interface MemoryGraphSnapshot {
   dot: string;
   cytoscape: MemoryGraphCytoscapeExport;
   generatedAt: number;
+}
+
+const SMART_RECALL_PROFILE_CATALOG = {
+  fast: {
+    label: 'Fast',
+    overview: 'Fast-pass recall for immediate answer shaping.',
+    recommendedFor: [
+      'short interactive replies',
+      'quick preference lookups',
+      'low-latency triage',
+    ],
+    defaultOptions: { profile: 'fast', hops: 1, includeRecent: false, includeProcedural: true, limit: 8 },
+    contextPackTitles: {
+      recall: 'Highest-signal memories',
+      graph: 'Linked context',
+      procedural: 'Guardrails',
+      recent: 'Recent context',
+      actions: 'Suggested next moves',
+    },
+  },
+  deep: {
+    label: 'Deep',
+    overview: 'Broader recall across semantic, graph, procedural, and recent lanes.',
+    recommendedFor: [
+      'general long-context synthesis',
+      'higher-signal handoffs',
+      'broader project recall',
+    ],
+    defaultOptions: { profile: 'deep', hops: 2, includeRecent: true, includeProcedural: true, limit: 12, recentLimit: 6 },
+    contextPackTitles: {
+      recall: 'High-signal memories',
+      graph: 'Linked graph context',
+      procedural: 'Procedural guidance',
+      recent: 'Recent context',
+      actions: 'Suggested next moves',
+    },
+  },
+  'agent-safe': {
+    label: 'Agent Safe',
+    overview: 'Prompt-safe recall tuned for bounded handoffs and minimal noise.',
+    recommendedFor: [
+      'compact worker handoffs',
+      'default bounded prompts',
+      'shared agent contexts',
+    ],
+    defaultOptions: { profile: 'agent-safe', hops: 1, includeRecent: true, includeProcedural: true, limit: 8, minNeighborScore: 0.3 },
+    contextPackTitles: {
+      recall: 'Prompt-safe memories',
+      graph: 'Relevant linked context',
+      procedural: 'Operating rules',
+      recent: 'Recent context',
+      actions: 'Suggested next moves',
+    },
+  },
+  'ops-debug': {
+    label: 'Ops Debug',
+    overview: 'Ops-heavy recall with extra recent and procedural weight for debugging and recovery work.',
+    recommendedFor: [
+      'production debugging',
+      'incident investigation',
+      'runbook-heavy workflows',
+    ],
+    defaultOptions: { profile: 'ops-debug', hops: 2, includeRecent: true, includeProcedural: true, limit: 15, recentLimit: 10, proceduralLimit: 10 },
+    contextPackTitles: {
+      recall: 'Operational memory',
+      graph: 'Linked investigation context',
+      procedural: 'Runbooks and guardrails',
+      recent: 'Recent operational context',
+      actions: 'Suggested next moves',
+    },
+  },
+  'coding-agent': {
+    label: 'Coding Agent',
+    overview: 'Coding-focused recall tuned for implementation context, linked architecture, and procedural release rules.',
+    recommendedFor: [
+      'implementation work',
+      'release prep',
+      'codebase-aware handoffs',
+    ],
+    defaultOptions: {
+      profile: 'coding-agent',
+      hops: 2,
+      includeRecent: true,
+      includeProcedural: true,
+      limit: 10,
+      recentLimit: 6,
+      proceduralLimit: 8,
+      minNeighborScore: 0.24,
+      neighborLimit: 30,
+    },
+    contextPackTitles: {
+      recall: 'Implementation-critical memories',
+      graph: 'Architecture and linked code context',
+      procedural: 'Coding and release guardrails',
+      recent: 'Recent project context',
+      actions: 'Suggested implementation moves',
+    },
+  },
+  'ops-handoff': {
+    label: 'Ops Handoff',
+    overview: 'Handoff-oriented recall tuned for state transfer, recent activity, and clear operational rules.',
+    recommendedFor: [
+      'shift handoffs',
+      'operator continuity',
+      'state-heavy debugging',
+    ],
+    defaultOptions: {
+      profile: 'ops-handoff',
+      hops: 2,
+      includeRecent: true,
+      includeProcedural: true,
+      limit: 14,
+      recentLimit: 10,
+      proceduralLimit: 10,
+      minNeighborScore: 0.2,
+      neighborLimit: 35,
+    },
+    contextPackTitles: {
+      recall: 'Handoff-critical memories',
+      graph: 'Linked system context',
+      procedural: 'Runbooks and escalation rules',
+      recent: 'Recent state and events',
+      actions: 'Suggested handoff actions',
+    },
+  },
+  'research-brief': {
+    label: 'Research Brief',
+    overview: 'Research-oriented recall tuned for breadth, linked evidence, and concise briefing output.',
+    recommendedFor: [
+      'research synthesis',
+      'evidence gathering',
+      'brief generation',
+    ],
+    defaultOptions: {
+      profile: 'research-brief',
+      hops: 2,
+      includeRecent: true,
+      includeProcedural: false,
+      limit: 14,
+      recentLimit: 4,
+      minNeighborScore: 0.16,
+      neighborLimit: 30,
+    },
+    contextPackTitles: {
+      recall: 'High-value findings',
+      graph: 'Connected evidence and supporting context',
+      procedural: 'Research guardrails',
+      recent: 'Recent research context',
+      actions: 'Suggested research follow-ups',
+    },
+  },
+} satisfies Record<SmartRecallProfile, Omit<SmartRecallProfileDescriptor, 'profile'>>;
+
+export function getSmartRecallProfiles(): SmartRecallProfileDescriptor[] {
+  return (Object.keys(SMART_RECALL_PROFILE_CATALOG) as SmartRecallProfile[])
+    .map((profile) => {
+      const descriptor = SMART_RECALL_PROFILE_CATALOG[profile];
+      return {
+      profile,
+      label: descriptor.label,
+      overview: descriptor.overview,
+      recommendedFor: [...descriptor.recommendedFor],
+      defaultOptions: { ...descriptor.defaultOptions } as SmartRecallProfileDefaults,
+      contextPackTitles: { ...descriptor.contextPackTitles },
+      };
+    });
+}
+
+export function getSmartRecallProfile(profile: SmartRecallProfile): SmartRecallProfileDescriptor {
+  const descriptor = SMART_RECALL_PROFILE_CATALOG[profile];
+  return {
+    profile,
+    label: descriptor.label,
+    overview: descriptor.overview,
+    recommendedFor: [...descriptor.recommendedFor],
+    defaultOptions: { ...descriptor.defaultOptions } as SmartRecallProfileDefaults,
+    contextPackTitles: { ...descriptor.contextPackTitles },
+  };
 }
 
 /**
@@ -779,15 +960,7 @@ export class ReMEM {
   async smartRecall(query: string, options?: SmartRecallOptions): Promise<SmartRecallResponse> {
     const start = Date.now();
     const opts = smartRecallOptionsSchema.parse(options ?? {});
-
-    const profileDefaults: Record<SmartRecallOptions['profile'], Partial<SmartRecallOptions>> = {
-      fast: { hops: 1, includeRecent: false, includeProcedural: true, limit: 8 },
-      deep: { hops: 2, includeRecent: true, includeProcedural: true, limit: 12, recentLimit: 6 },
-      'agent-safe': { hops: 1, includeRecent: true, includeProcedural: true, limit: 8, minNeighborScore: 0.3 },
-      'ops-debug': { hops: 2, includeRecent: true, includeProcedural: true, limit: 15, recentLimit: 10, proceduralLimit: 10 },
-    };
-
-    const merged = { ...profileDefaults[opts.profile], ...opts } as SmartRecallOptions;
+    const merged = { ...getSmartRecallProfile(opts.profile).defaultOptions, ...opts } as SmartRecallOptions;
     const semanticBase = await this.query(query, merged);
     const graphBase = await this.queryWithNeighbors(query, {
       ...merged,
@@ -795,7 +968,32 @@ export class ReMEM {
     });
 
     const proceduralMatches = merged.includeProcedural
-      ? this.matchProcedural(query).slice(0, merged.proceduralLimit)
+      ? (() => {
+          const matches = new Map<string, ProceduralMatch>();
+          const pushMatches = (items: ProceduralMatch[]) => {
+            for (const item of items) {
+              const existing = matches.get(item.entry.id);
+              if (!existing || item.score > existing.score) {
+                matches.set(item.entry.id, item);
+              }
+            }
+          };
+
+          pushMatches(this.matchProcedural(query));
+
+          if (matches.size < merged.proceduralLimit) {
+            const expansionContext = [
+              query,
+              ...semanticBase.results.slice(0, 3).map((result) => result.content),
+              ...semanticBase.results.slice(0, 3).flatMap((result) => result.topics),
+            ].join('\n');
+            pushMatches(this.matchProcedural(expansionContext));
+          }
+
+          return Array.from(matches.values())
+            .sort((a, b) => b.score - a.score)
+            .slice(0, merged.proceduralLimit);
+        })()
       : [];
 
     const recentResults = merged.includeRecent
@@ -1064,12 +1262,19 @@ export class ReMEM {
       return `${index + 1}. [${result.id}]${lane}${score}${topics}${reasons}${metadata}\n${result.content}`;
     };
 
+    const profileDescriptor = getSmartRecallProfile(recall.profile);
+    const semanticRecall = recall.results.filter((result) => result.sourceLane === 'semantic');
+
+    const laneGroups = {
+      recall: semanticRecall.length
+        ? semanticRecall
+        : recall.results.filter((result) => result.sourceLane !== 'recent').slice(0, 3),
+      graph: recall.results.filter((result) => result.sourceLane === 'graph' || result.reasons.some((reason) => reason.startsWith('graph:'))),
+      procedural: recall.results.filter((result) => result.sourceLane === 'procedural' || result.reasons.some((reason) => reason.startsWith('procedural:'))),
+    };
+
     const addSection = (section: ContextPackSection) => {
       const next = this.renderContextPack(query, recall.profile, [...sections, section], opts.maxChars);
-      if (next.truncated && sections.length > 0) {
-        truncated = true;
-        return;
-      }
       sections.push({
         ...section,
         content: next.sectionContents[next.sectionContents.length - 1] ?? section.content,
@@ -1079,22 +1284,41 @@ export class ReMEM {
     };
 
     addSection({
-      kind: 'overview',
-      title: 'Recall overview',
-      content: [
-        `profile: ${recall.profile}`,
-        `lanes: semantic=${recall.lanes.semantic}, graph=${recall.lanes.graph}, procedural=${recall.lanes.procedural}, recent=${recall.lanes.recent}`,
-        `totalAvailable: ${recall.totalAvailable}`,
-      ].join('\n'),
+        kind: 'overview',
+        title: 'Recall overview',
+        content: [
+          `profile: ${recall.profile}`,
+          `goal: ${profileDescriptor.overview}`,
+          `lanes: semantic=${recall.lanes.semantic}, graph=${recall.lanes.graph}, procedural=${recall.lanes.procedural}, recent=${recall.lanes.recent}`,
+          `totalAvailable: ${recall.totalAvailable}`,
+        ].join('\n'),
       sourceIds: [],
     });
 
-    if (recall.results.length) {
+    if (laneGroups.recall.length) {
       addSection({
         kind: 'recall',
-        title: 'High-signal memories',
-        content: recall.results.map(formatResult).join('\n\n'),
-        sourceIds: recall.results.map((result) => result.id),
+        title: profileDescriptor.contextPackTitles.recall,
+        content: laneGroups.recall.map(formatResult).join('\n\n'),
+        sourceIds: laneGroups.recall.map((result) => result.id),
+      });
+    }
+
+    if (laneGroups.graph.length) {
+      addSection({
+        kind: 'graph',
+        title: profileDescriptor.contextPackTitles.graph,
+        content: laneGroups.graph.map(formatResult).join('\n\n'),
+        sourceIds: laneGroups.graph.map((result) => result.id),
+      });
+    }
+
+    if (laneGroups.procedural.length) {
+      addSection({
+        kind: 'procedural',
+        title: profileDescriptor.contextPackTitles.procedural,
+        content: laneGroups.procedural.map(formatResult).join('\n\n'),
+        sourceIds: laneGroups.procedural.map((result) => result.id),
       });
     }
 
@@ -1103,11 +1327,26 @@ export class ReMEM {
       if (recent.length) {
         addSection({
           kind: 'recent',
-          title: 'Recent context',
+          title: profileDescriptor.contextPackTitles.recent,
           content: recent.map(formatResult).join('\n\n'),
           sourceIds: recent.map((entry) => entry.id),
         });
       }
+    }
+
+    const actionCandidates = [
+      ...laneGroups.procedural,
+      ...laneGroups.recall.filter((result) => result.topics.includes('decision') || result.topics.includes('procedure')),
+      ...laneGroups.graph.filter((result) => result.topics.includes('decision') || result.topics.includes('procedure')),
+    ];
+    const actionLines = Array.from(new Set(actionCandidates.map((result) => result.content.trim()))).slice(0, 5);
+    if (actionLines.length) {
+      addSection({
+        kind: 'actions',
+        title: profileDescriptor.contextPackTitles.actions,
+        content: actionLines.map((line, index) => `${index + 1}. ${line}`).join('\n'),
+        sourceIds: actionCandidates.map((result) => result.id),
+      });
     }
 
     if (opts.includeDream) {
@@ -1918,6 +2157,14 @@ export class ReMEM {
         visibility,
       },
     });
+  }
+
+  getRecallProfiles(): SmartRecallProfileDescriptor[] {
+    return getSmartRecallProfiles();
+  }
+
+  getRecallProfile(profile: SmartRecallProfile): SmartRecallProfileDescriptor {
+    return getSmartRecallProfile(profile);
   }
 
   async queryNamespace(

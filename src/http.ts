@@ -21,6 +21,7 @@ import type {
   RememberResult,
 } from './types.js';
 import {
+  contextPackOptionsSchema,
   knowledgeArtifactRegistrationSchema,
   knowledgeGraphArtifactSchema,
   knowledgeIngestOptionsSchema,
@@ -28,6 +29,7 @@ import {
   namespaceQueryScopeSchema,
   queryWithNeighborsOptionsSchema,
   rememberInputSchema,
+  smartRecallOptionsSchema,
   storeMemoryInputSchema,
 } from './types.js';
 import type { MemoryStoreLike, StorageMaintenanceOptions, StorageMaintenanceResult } from './storage-types.js';
@@ -39,6 +41,8 @@ export interface AdvancedMemoryRuntime {
   queryWithNeighbors(query: string, options?: QueryWithNeighborsOptions): Promise<QueryResponse & { linksTraversed: number; paths?: NeighborPath[] }>;
   smartRecall(query: string, options?: import('./types.js').SmartRecallOptions): Promise<import('./types.js').SmartRecallResponse>;
   contextPack(query: string, options?: import('./types.js').ContextPackOptions): Promise<import('./types.js').ContextPackResponse>;
+  getRecallProfiles(): Array<import('./types.js').SmartRecallProfileDescriptor>;
+  getRecallProfile(profile: import('./types.js').SmartRecallProfile): import('./types.js').SmartRecallProfileDescriptor;
   health(options?: MemoryHealthOptions): Promise<import('./types.js').MemoryHealthResponse>;
   storageMaintenance(options?: StorageMaintenanceOptions): Promise<StorageMaintenanceResult>;
   registerKnowledgeArtifact(input: KnowledgeArtifactRegistration): Promise<import('./types.js').KnowledgeArtifactRegistrationResult>;
@@ -254,6 +258,21 @@ export class HttpAdapter {
       return { status: 200, body: result };
     }
 
+    if (method === 'GET' && path === '/memory/recall-profiles') {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      return { status: 200, body: { profiles: this.memory.getRecallProfiles() } };
+    }
+
+    if (method === 'GET' && path.startsWith('/memory/recall-profiles/')) {
+      if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
+      const profile = decodeURIComponent(path.split('/')[3] ?? '').trim();
+      const matched = this.memory.getRecallProfiles().find((item) => item.profile === profile);
+      if (!matched) {
+        return { status: 404, body: { error: `Unknown recall profile: ${profile}` } };
+      }
+      return { status: 200, body: matched };
+    }
+
     // POST /memory/smart-recall — fused semantic/graph/procedural/recent retrieval
     if (method === 'POST' && path === '/memory/smart-recall') {
       if (!this.memory) return { status: 501, body: { error: 'Advanced memory runtime not configured' } };
@@ -263,7 +282,8 @@ export class HttpAdapter {
       if (typeof parsed.query !== 'string' || !parsed.query.trim()) {
         return { status: 400, body: { error: 'query string required' } };
       }
-      const result = await this.memory.smartRecall(parsed.query, parsed.options as import('./types.js').SmartRecallOptions | undefined);
+      const options = smartRecallOptionsSchema.parse(parsed.options ?? {});
+      const result = await this.memory.smartRecall(parsed.query, options);
       return { status: 200, body: result };
     }
 
@@ -276,7 +296,8 @@ export class HttpAdapter {
       if (typeof parsed.query !== 'string' || !parsed.query.trim()) {
         return { status: 400, body: { error: 'query string required' } };
       }
-      const result = await this.memory.contextPack(parsed.query, parsed.options as import('./types.js').ContextPackOptions | undefined);
+      const options = contextPackOptionsSchema.parse(parsed.options ?? {});
+      const result = await this.memory.contextPack(parsed.query, options);
       return { status: 200, body: result };
     }
 

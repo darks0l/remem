@@ -51,6 +51,7 @@ __export(index_exports, {
   contextPackOptionsSchema: () => contextPackOptionsSchema,
   contextPackResponseSchema: () => contextPackResponseSchema,
   contextPackSectionSchema: () => contextPackSectionSchema,
+  contextPackSectionTitlesSchema: () => contextPackSectionTitlesSchema,
   createCodebaseMemoryAdapter: () => createCodebaseMemoryAdapter,
   createHermesAdapter: () => createHermesAdapter,
   createIdentitySystem: () => createIdentitySystem,
@@ -68,6 +69,8 @@ __export(index_exports, {
   duplicationConfigSchema: () => duplicationConfigSchema,
   embeddingConfigSchema: () => embeddingConfigSchema,
   eventTypeSchema: () => eventTypeSchema,
+  getSmartRecallProfile: () => getSmartRecallProfile,
+  getSmartRecallProfiles: () => getSmartRecallProfiles,
   identityCategorySchema: () => identityCategorySchema,
   identityConfigSchema: () => identityConfigSchema,
   identityPackageSchema: () => identityPackageSchema,
@@ -119,6 +122,8 @@ __export(index_exports, {
   rememberKindSchema: () => rememberKindSchema,
   rememberResultSchema: () => rememberResultSchema,
   smartRecallOptionsSchema: () => smartRecallOptionsSchema,
+  smartRecallProfileDefaultsSchema: () => smartRecallProfileDefaultsSchema,
+  smartRecallProfileDescriptorSchema: () => smartRecallProfileDescriptorSchema,
   smartRecallProfileSchema: () => smartRecallProfileSchema,
   smartRecallResponseSchema: () => smartRecallResponseSchema,
   smartRecallResultSchema: () => smartRecallResultSchema,
@@ -288,13 +293,47 @@ var neighborPathSchema = import_zod.z.object({
   hop: import_zod.z.number().min(1),
   score: import_zod.z.number().min(0).max(2)
 });
-var smartRecallProfileSchema = import_zod.z.enum(["fast", "deep", "agent-safe", "ops-debug"]);
+var smartRecallProfileSchema = import_zod.z.enum([
+  "fast",
+  "deep",
+  "agent-safe",
+  "ops-debug",
+  "coding-agent",
+  "ops-handoff",
+  "research-brief"
+]);
 var smartRecallOptionsSchema = queryWithNeighborsOptionsSchema.extend({
   profile: smartRecallProfileSchema.default("fast"),
   includeProcedural: import_zod.z.boolean().default(true),
   proceduralLimit: import_zod.z.number().min(1).max(50).default(5),
   includeRecent: import_zod.z.boolean().default(false),
   recentLimit: import_zod.z.number().min(1).max(50).default(5)
+});
+var smartRecallProfileDefaultsSchema = import_zod.z.object({
+  profile: smartRecallProfileSchema,
+  limit: import_zod.z.number().min(1).max(100),
+  hops: import_zod.z.union([import_zod.z.literal(1), import_zod.z.literal(2)]),
+  includeRecent: import_zod.z.boolean(),
+  includeProcedural: import_zod.z.boolean(),
+  recentLimit: import_zod.z.number().min(1).max(50).optional(),
+  proceduralLimit: import_zod.z.number().min(1).max(50).optional(),
+  minNeighborScore: import_zod.z.number().min(0).max(1).optional(),
+  neighborLimit: import_zod.z.number().min(1).max(100).optional()
+});
+var contextPackSectionTitlesSchema = import_zod.z.object({
+  recall: import_zod.z.string(),
+  graph: import_zod.z.string(),
+  procedural: import_zod.z.string(),
+  recent: import_zod.z.string(),
+  actions: import_zod.z.string()
+});
+var smartRecallProfileDescriptorSchema = import_zod.z.object({
+  profile: smartRecallProfileSchema,
+  label: import_zod.z.string(),
+  overview: import_zod.z.string(),
+  recommendedFor: import_zod.z.array(import_zod.z.string()).min(1),
+  defaultOptions: smartRecallProfileDefaultsSchema,
+  contextPackTitles: contextPackSectionTitlesSchema
 });
 var smartRecallResultSchema = queryResultSchema.extend({
   sourceLane: import_zod.z.enum(["semantic", "graph", "procedural", "recent"]),
@@ -341,7 +380,7 @@ var contextPackOptionsSchema = smartRecallOptionsSchema.extend({
   includeMetadata: import_zod.z.boolean().default(false)
 });
 var contextPackSectionSchema = import_zod.z.object({
-  kind: import_zod.z.enum(["overview", "recall", "recent", "dream"]),
+  kind: import_zod.z.enum(["overview", "recall", "graph", "procedural", "recent", "actions", "dream"]),
   title: import_zod.z.string(),
   content: import_zod.z.string(),
   sourceIds: import_zod.z.array(import_zod.z.string()).default([])
@@ -6209,6 +6248,19 @@ var HttpAdapter = class {
       const result = await this.memory.queryWithNeighbors(parsed.query, options);
       return { status: 200, body: result };
     }
+    if (method === "GET" && path === "/memory/recall-profiles") {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      return { status: 200, body: { profiles: this.memory.getRecallProfiles() } };
+    }
+    if (method === "GET" && path.startsWith("/memory/recall-profiles/")) {
+      if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      const profile = decodeURIComponent(path.split("/")[3] ?? "").trim();
+      const matched = this.memory.getRecallProfiles().find((item) => item.profile === profile);
+      if (!matched) {
+        return { status: 404, body: { error: `Unknown recall profile: ${profile}` } };
+      }
+      return { status: 200, body: matched };
+    }
     if (method === "POST" && path === "/memory/smart-recall") {
       if (!this.memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
       if (!req) return { status: 400, body: { error: "Request body unavailable" } };
@@ -6217,7 +6269,8 @@ var HttpAdapter = class {
       if (typeof parsed.query !== "string" || !parsed.query.trim()) {
         return { status: 400, body: { error: "query string required" } };
       }
-      const result = await this.memory.smartRecall(parsed.query, parsed.options);
+      const options = smartRecallOptionsSchema.parse(parsed.options ?? {});
+      const result = await this.memory.smartRecall(parsed.query, options);
       return { status: 200, body: result };
     }
     if (method === "POST" && path === "/memory/context-pack") {
@@ -6228,7 +6281,8 @@ var HttpAdapter = class {
       if (typeof parsed.query !== "string" || !parsed.query.trim()) {
         return { status: 400, body: { error: "query string required" } };
       }
-      const result = await this.memory.contextPack(parsed.query, parsed.options);
+      const options = contextPackOptionsSchema.parse(parsed.options ?? {});
+      const result = await this.memory.contextPack(parsed.query, options);
       return { status: 200, body: result };
     }
     if ((method === "GET" || method === "POST") && path === "/memory/health") {
@@ -6712,6 +6766,180 @@ var EpisodicCapturePipeline = class {
 };
 
 // src/index.ts
+var SMART_RECALL_PROFILE_CATALOG = {
+  fast: {
+    label: "Fast",
+    overview: "Fast-pass recall for immediate answer shaping.",
+    recommendedFor: [
+      "short interactive replies",
+      "quick preference lookups",
+      "low-latency triage"
+    ],
+    defaultOptions: { profile: "fast", hops: 1, includeRecent: false, includeProcedural: true, limit: 8 },
+    contextPackTitles: {
+      recall: "Highest-signal memories",
+      graph: "Linked context",
+      procedural: "Guardrails",
+      recent: "Recent context",
+      actions: "Suggested next moves"
+    }
+  },
+  deep: {
+    label: "Deep",
+    overview: "Broader recall across semantic, graph, procedural, and recent lanes.",
+    recommendedFor: [
+      "general long-context synthesis",
+      "higher-signal handoffs",
+      "broader project recall"
+    ],
+    defaultOptions: { profile: "deep", hops: 2, includeRecent: true, includeProcedural: true, limit: 12, recentLimit: 6 },
+    contextPackTitles: {
+      recall: "High-signal memories",
+      graph: "Linked graph context",
+      procedural: "Procedural guidance",
+      recent: "Recent context",
+      actions: "Suggested next moves"
+    }
+  },
+  "agent-safe": {
+    label: "Agent Safe",
+    overview: "Prompt-safe recall tuned for bounded handoffs and minimal noise.",
+    recommendedFor: [
+      "compact worker handoffs",
+      "default bounded prompts",
+      "shared agent contexts"
+    ],
+    defaultOptions: { profile: "agent-safe", hops: 1, includeRecent: true, includeProcedural: true, limit: 8, minNeighborScore: 0.3 },
+    contextPackTitles: {
+      recall: "Prompt-safe memories",
+      graph: "Relevant linked context",
+      procedural: "Operating rules",
+      recent: "Recent context",
+      actions: "Suggested next moves"
+    }
+  },
+  "ops-debug": {
+    label: "Ops Debug",
+    overview: "Ops-heavy recall with extra recent and procedural weight for debugging and recovery work.",
+    recommendedFor: [
+      "production debugging",
+      "incident investigation",
+      "runbook-heavy workflows"
+    ],
+    defaultOptions: { profile: "ops-debug", hops: 2, includeRecent: true, includeProcedural: true, limit: 15, recentLimit: 10, proceduralLimit: 10 },
+    contextPackTitles: {
+      recall: "Operational memory",
+      graph: "Linked investigation context",
+      procedural: "Runbooks and guardrails",
+      recent: "Recent operational context",
+      actions: "Suggested next moves"
+    }
+  },
+  "coding-agent": {
+    label: "Coding Agent",
+    overview: "Coding-focused recall tuned for implementation context, linked architecture, and procedural release rules.",
+    recommendedFor: [
+      "implementation work",
+      "release prep",
+      "codebase-aware handoffs"
+    ],
+    defaultOptions: {
+      profile: "coding-agent",
+      hops: 2,
+      includeRecent: true,
+      includeProcedural: true,
+      limit: 10,
+      recentLimit: 6,
+      proceduralLimit: 8,
+      minNeighborScore: 0.24,
+      neighborLimit: 30
+    },
+    contextPackTitles: {
+      recall: "Implementation-critical memories",
+      graph: "Architecture and linked code context",
+      procedural: "Coding and release guardrails",
+      recent: "Recent project context",
+      actions: "Suggested implementation moves"
+    }
+  },
+  "ops-handoff": {
+    label: "Ops Handoff",
+    overview: "Handoff-oriented recall tuned for state transfer, recent activity, and clear operational rules.",
+    recommendedFor: [
+      "shift handoffs",
+      "operator continuity",
+      "state-heavy debugging"
+    ],
+    defaultOptions: {
+      profile: "ops-handoff",
+      hops: 2,
+      includeRecent: true,
+      includeProcedural: true,
+      limit: 14,
+      recentLimit: 10,
+      proceduralLimit: 10,
+      minNeighborScore: 0.2,
+      neighborLimit: 35
+    },
+    contextPackTitles: {
+      recall: "Handoff-critical memories",
+      graph: "Linked system context",
+      procedural: "Runbooks and escalation rules",
+      recent: "Recent state and events",
+      actions: "Suggested handoff actions"
+    }
+  },
+  "research-brief": {
+    label: "Research Brief",
+    overview: "Research-oriented recall tuned for breadth, linked evidence, and concise briefing output.",
+    recommendedFor: [
+      "research synthesis",
+      "evidence gathering",
+      "brief generation"
+    ],
+    defaultOptions: {
+      profile: "research-brief",
+      hops: 2,
+      includeRecent: true,
+      includeProcedural: false,
+      limit: 14,
+      recentLimit: 4,
+      minNeighborScore: 0.16,
+      neighborLimit: 30
+    },
+    contextPackTitles: {
+      recall: "High-value findings",
+      graph: "Connected evidence and supporting context",
+      procedural: "Research guardrails",
+      recent: "Recent research context",
+      actions: "Suggested research follow-ups"
+    }
+  }
+};
+function getSmartRecallProfiles() {
+  return Object.keys(SMART_RECALL_PROFILE_CATALOG).map((profile) => {
+    const descriptor = SMART_RECALL_PROFILE_CATALOG[profile];
+    return {
+      profile,
+      label: descriptor.label,
+      overview: descriptor.overview,
+      recommendedFor: [...descriptor.recommendedFor],
+      defaultOptions: { ...descriptor.defaultOptions },
+      contextPackTitles: { ...descriptor.contextPackTitles }
+    };
+  });
+}
+function getSmartRecallProfile(profile) {
+  const descriptor = SMART_RECALL_PROFILE_CATALOG[profile];
+  return {
+    profile,
+    label: descriptor.label,
+    overview: descriptor.overview,
+    recommendedFor: [...descriptor.recommendedFor],
+    defaultOptions: { ...descriptor.defaultOptions },
+    contextPackTitles: { ...descriptor.contextPackTitles }
+  };
+}
 var ReMEM = class {
   _store;
   model;
@@ -7193,19 +7421,33 @@ var ReMEM = class {
   async smartRecall(query, options) {
     const start = Date.now();
     const opts = smartRecallOptionsSchema.parse(options ?? {});
-    const profileDefaults = {
-      fast: { hops: 1, includeRecent: false, includeProcedural: true, limit: 8 },
-      deep: { hops: 2, includeRecent: true, includeProcedural: true, limit: 12, recentLimit: 6 },
-      "agent-safe": { hops: 1, includeRecent: true, includeProcedural: true, limit: 8, minNeighborScore: 0.3 },
-      "ops-debug": { hops: 2, includeRecent: true, includeProcedural: true, limit: 15, recentLimit: 10, proceduralLimit: 10 }
-    };
-    const merged = { ...profileDefaults[opts.profile], ...opts };
+    const merged = { ...getSmartRecallProfile(opts.profile).defaultOptions, ...opts };
     const semanticBase = await this.query(query, merged);
     const graphBase = await this.queryWithNeighbors(query, {
       ...merged,
       includeBaseResults: true
     });
-    const proceduralMatches = merged.includeProcedural ? this.matchProcedural(query).slice(0, merged.proceduralLimit) : [];
+    const proceduralMatches = merged.includeProcedural ? (() => {
+      const matches = /* @__PURE__ */ new Map();
+      const pushMatches = (items) => {
+        for (const item of items) {
+          const existing = matches.get(item.entry.id);
+          if (!existing || item.score > existing.score) {
+            matches.set(item.entry.id, item);
+          }
+        }
+      };
+      pushMatches(this.matchProcedural(query));
+      if (matches.size < merged.proceduralLimit) {
+        const expansionContext = [
+          query,
+          ...semanticBase.results.slice(0, 3).map((result) => result.content),
+          ...semanticBase.results.slice(0, 3).flatMap((result) => result.topics)
+        ].join("\n");
+        pushMatches(this.matchProcedural(expansionContext));
+      }
+      return Array.from(matches.values()).sort((a, b) => b.score - a.score).slice(0, merged.proceduralLimit);
+    })() : [];
     const recentResults = merged.includeRecent ? (await this.getRecent(merged.recentLimit)).filter((entry) => {
       if (merged.topics && merged.topics.length > 0 && !merged.topics.some((topic) => entry.topics.includes(topic))) return false;
       if (merged.minAccessCount && entry.accessCount < merged.minAccessCount) return false;
@@ -7417,12 +7659,15 @@ Return JSON shaped like {"title":"...","content":"...","themes":["..."],"actions
       return `${index + 1}. [${result.id}]${lane}${score}${topics}${reasons}${metadata}
 ${result.content}`;
     };
+    const profileDescriptor = getSmartRecallProfile(recall.profile);
+    const semanticRecall = recall.results.filter((result) => result.sourceLane === "semantic");
+    const laneGroups = {
+      recall: semanticRecall.length ? semanticRecall : recall.results.filter((result) => result.sourceLane !== "recent").slice(0, 3),
+      graph: recall.results.filter((result) => result.sourceLane === "graph" || result.reasons.some((reason) => reason.startsWith("graph:"))),
+      procedural: recall.results.filter((result) => result.sourceLane === "procedural" || result.reasons.some((reason) => reason.startsWith("procedural:")))
+    };
     const addSection = (section) => {
       const next = this.renderContextPack(query, recall.profile, [...sections, section], opts.maxChars);
-      if (next.truncated && sections.length > 0) {
-        truncated = true;
-        return;
-      }
       sections.push({
         ...section,
         content: next.sectionContents[next.sectionContents.length - 1] ?? section.content
@@ -7435,17 +7680,34 @@ ${result.content}`;
       title: "Recall overview",
       content: [
         `profile: ${recall.profile}`,
+        `goal: ${profileDescriptor.overview}`,
         `lanes: semantic=${recall.lanes.semantic}, graph=${recall.lanes.graph}, procedural=${recall.lanes.procedural}, recent=${recall.lanes.recent}`,
         `totalAvailable: ${recall.totalAvailable}`
       ].join("\n"),
       sourceIds: []
     });
-    if (recall.results.length) {
+    if (laneGroups.recall.length) {
       addSection({
         kind: "recall",
-        title: "High-signal memories",
-        content: recall.results.map(formatResult).join("\n\n"),
-        sourceIds: recall.results.map((result) => result.id)
+        title: profileDescriptor.contextPackTitles.recall,
+        content: laneGroups.recall.map(formatResult).join("\n\n"),
+        sourceIds: laneGroups.recall.map((result) => result.id)
+      });
+    }
+    if (laneGroups.graph.length) {
+      addSection({
+        kind: "graph",
+        title: profileDescriptor.contextPackTitles.graph,
+        content: laneGroups.graph.map(formatResult).join("\n\n"),
+        sourceIds: laneGroups.graph.map((result) => result.id)
+      });
+    }
+    if (laneGroups.procedural.length) {
+      addSection({
+        kind: "procedural",
+        title: profileDescriptor.contextPackTitles.procedural,
+        content: laneGroups.procedural.map(formatResult).join("\n\n"),
+        sourceIds: laneGroups.procedural.map((result) => result.id)
       });
     }
     if (opts.includeRecent) {
@@ -7453,11 +7715,25 @@ ${result.content}`;
       if (recent.length) {
         addSection({
           kind: "recent",
-          title: "Recent context",
+          title: profileDescriptor.contextPackTitles.recent,
           content: recent.map(formatResult).join("\n\n"),
           sourceIds: recent.map((entry) => entry.id)
         });
       }
+    }
+    const actionCandidates = [
+      ...laneGroups.procedural,
+      ...laneGroups.recall.filter((result) => result.topics.includes("decision") || result.topics.includes("procedure")),
+      ...laneGroups.graph.filter((result) => result.topics.includes("decision") || result.topics.includes("procedure"))
+    ];
+    const actionLines = Array.from(new Set(actionCandidates.map((result) => result.content.trim()))).slice(0, 5);
+    if (actionLines.length) {
+      addSection({
+        kind: "actions",
+        title: profileDescriptor.contextPackTitles.actions,
+        content: actionLines.map((line, index) => `${index + 1}. ${line}`).join("\n"),
+        sourceIds: actionCandidates.map((result) => result.id)
+      });
     }
     if (opts.includeDream) {
       const dream = await this.dream({
@@ -8183,6 +8459,12 @@ profile: ${profile}
       }
     });
   }
+  getRecallProfiles() {
+    return getSmartRecallProfiles();
+  }
+  getRecallProfile(profile) {
+    return getSmartRecallProfile(profile);
+  }
   async queryNamespace(namespace, query, options, scope) {
     const normalizedNamespace = this.normalizeNamespace(namespace);
     const parsedScope = namespaceQueryScopeSchema.parse(scope ?? {});
@@ -8754,6 +9036,7 @@ profile: ${profile}
   contextPackOptionsSchema,
   contextPackResponseSchema,
   contextPackSectionSchema,
+  contextPackSectionTitlesSchema,
   createCodebaseMemoryAdapter,
   createHermesAdapter,
   createIdentitySystem,
@@ -8771,6 +9054,8 @@ profile: ${profile}
   duplicationConfigSchema,
   embeddingConfigSchema,
   eventTypeSchema,
+  getSmartRecallProfile,
+  getSmartRecallProfiles,
   identityCategorySchema,
   identityConfigSchema,
   identityPackageSchema,
@@ -8822,6 +9107,8 @@ profile: ${profile}
   rememberKindSchema,
   rememberResultSchema,
   smartRecallOptionsSchema,
+  smartRecallProfileDefaultsSchema,
+  smartRecallProfileDescriptorSchema,
   smartRecallProfileSchema,
   smartRecallResponseSchema,
   smartRecallResultSchema,

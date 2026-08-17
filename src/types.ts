@@ -228,7 +228,15 @@ export const neighborPathSchema = z.object({
 
 export type NeighborPath = z.infer<typeof neighborPathSchema>;
 
-export const smartRecallProfileSchema = z.enum(['fast', 'deep', 'agent-safe', 'ops-debug']);
+export const smartRecallProfileSchema = z.enum([
+  'fast',
+  'deep',
+  'agent-safe',
+  'ops-debug',
+  'coding-agent',
+  'ops-handoff',
+  'research-brief',
+]);
 export type SmartRecallProfile = z.infer<typeof smartRecallProfileSchema>;
 
 export const smartRecallOptionsSchema = queryWithNeighborsOptionsSchema.extend({
@@ -240,6 +248,41 @@ export const smartRecallOptionsSchema = queryWithNeighborsOptionsSchema.extend({
 });
 
 export type SmartRecallOptions = z.infer<typeof smartRecallOptionsSchema>;
+
+export const smartRecallProfileDefaultsSchema = z.object({
+  profile: smartRecallProfileSchema,
+  limit: z.number().min(1).max(100),
+  hops: z.union([z.literal(1), z.literal(2)]),
+  includeRecent: z.boolean(),
+  includeProcedural: z.boolean(),
+  recentLimit: z.number().min(1).max(50).optional(),
+  proceduralLimit: z.number().min(1).max(50).optional(),
+  minNeighborScore: z.number().min(0).max(1).optional(),
+  neighborLimit: z.number().min(1).max(100).optional(),
+});
+
+export type SmartRecallProfileDefaults = z.infer<typeof smartRecallProfileDefaultsSchema>;
+
+export const contextPackSectionTitlesSchema = z.object({
+  recall: z.string(),
+  graph: z.string(),
+  procedural: z.string(),
+  recent: z.string(),
+  actions: z.string(),
+});
+
+export type ContextPackSectionTitles = z.infer<typeof contextPackSectionTitlesSchema>;
+
+export const smartRecallProfileDescriptorSchema = z.object({
+  profile: smartRecallProfileSchema,
+  label: z.string(),
+  overview: z.string(),
+  recommendedFor: z.array(z.string()).min(1),
+  defaultOptions: smartRecallProfileDefaultsSchema,
+  contextPackTitles: contextPackSectionTitlesSchema,
+});
+
+export type SmartRecallProfileDescriptor = z.infer<typeof smartRecallProfileDescriptorSchema>;
 
 export const smartRecallResultSchema = queryResultSchema.extend({
   sourceLane: z.enum(['semantic', 'graph', 'procedural', 'recent']),
@@ -303,7 +346,7 @@ export const contextPackOptionsSchema = smartRecallOptionsSchema.extend({
 export type ContextPackOptions = z.infer<typeof contextPackOptionsSchema>;
 
 export const contextPackSectionSchema = z.object({
-  kind: z.enum(['overview', 'recall', 'recent', 'dream']),
+  kind: z.enum(['overview', 'recall', 'graph', 'procedural', 'recent', 'actions', 'dream']),
   title: z.string(),
   content: z.string(),
   sourceIds: z.array(z.string()).default([]),

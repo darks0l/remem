@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-08-17
+
+### Added
+
+- Added new smart-recall/context-pack workload profiles: `coding-agent`, `ops-handoff`, and `research-brief`.
+- Added richer context-pack section shaping so packs can split linked graph context, procedural guidance, recent context, and suggested next actions instead of always collapsing into one flat recall block.
+- Added a first-class recall profile catalog with inspectable defaults and guidance through the core API (`getRecallProfiles()` / `getRecallProfile()`), CLI (`remem recall-profiles`), and HTTP (`GET /memory/recall-profiles`).
+
+### Changed
+
+- Improved context-pack overview text so each profile now declares its operating goal directly in the packed output.
+- Improved smart procedural recall for coding/release-style queries by expanding trigger matching from the strongest semantic context instead of only the raw query text.
+- Changed context-pack budgeting to keep clipped late sections instead of dropping them outright, so profile-specific graph/procedural/action sections survive tight budgets more reliably.
+- Expanded CLI/HTTP/core regression coverage to lock in the new profile surfaces, structured context-pack sections, and deterministic temp-db hygiene in CLI tests.
+
 ## [0.24.0] - 2026-08-15
 
 ### Added

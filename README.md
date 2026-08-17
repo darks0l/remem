@@ -12,11 +12,11 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.23.0](https://img.shields.io/badge/v0.23.0-graph--filtering-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.25.0](https://img.shields.io/badge/v0.25.0-profile--catalog-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
-> Production-minded agent memory for teams that need durable recall, scoped access, and benchmarked retrieval beyond the active prompt window.
+> Production-minded agent memory for teams that need durable intake policy, scoped recall, context packs, and benchmarked retrieval beyond the active prompt window.
 
 **Persistent, queryable memory for AI agents.**
 
@@ -87,6 +87,7 @@ remem knowledge-overview --db ./remem.db --project remem --labels Function,Route
 remem knowledge-subgraph --db ./remem.db --query "ProcessOrder" --project remem --connections calls,imports --owners src --json
 remem store --content "Meta likes dark mode" --topics preferences,ui
 remem remember --content "We decided to ship intake scoring before the next release" --topics release,roadmap --source operator
+remem recall-profiles --json
 remem query --query "What does Meta like?"
 remem context-pack --query "What context should the next agent carry?" --max-chars 6000 --json
 remem dream --query "What is long memory trying to tell us?" --json
@@ -291,10 +292,25 @@ Context packs combine smart recall, graph/procedural signals, recent context, an
 ```bash
 remem context-pack \
   --query "What should the next agent know before touching release code?" \
-  --profile agent-safe \
+  --profile coding-agent \
   --max-chars 6000 \
   --dream
 ```
+
+Profile guidance:
+
+- `coding-agent` emphasizes linked architecture context, implementation memory, and release guardrails.
+- `ops-handoff` emphasizes recent state, runbooks, and operational continuity during handoff/debug work.
+- `research-brief` emphasizes broader evidence recall with less procedural noise for synthesis-heavy tasks.
+- `agent-safe` remains the compact general-purpose handoff default.
+
+Need the full catalog from tooling instead of prose? Use:
+
+```bash
+remem recall-profiles --json
+```
+
+That exposes the same profile metadata the core runtime and HTTP adapter use: label, overview, recommended use cases, default tuning, and section titles.
 
 ---
 
@@ -495,7 +511,7 @@ Operational notes:
 - backfill embeddings before depending on semantic recall quality
 - tune `ivfflatLists` against actual corpus size and query latency instead of copying benchmark numbers blindly
 
-### Agent-safe recall profiles
+### Recall profiles
 
 Use recall modes intentionally:
 
@@ -504,6 +520,22 @@ Use recall modes intentionally:
 - **procedural recall** for rules that should fire when a trigger appears
 - **graph recall** when linked memories need neighborhood expansion
 - **smart recall** when an agent needs a fused answer across semantic, graph, procedural, and recent-context lanes
+
+ReMEM now ships an inspectable profile catalog instead of leaving these modes as magic strings:
+
+- `fast` for low-latency answer shaping
+- `deep` for broader general synthesis
+- `agent-safe` for bounded worker handoffs
+- `ops-debug` for incident and runbook-heavy debugging
+- `coding-agent` for implementation, release, and codebase-aware work
+- `ops-handoff` for operator continuity and shift transfer
+- `research-brief` for evidence gathering and synthesis
+
+The same catalog is available three ways:
+
+- core API: `memory.getRecallProfiles()` / `memory.getRecallProfile('coding-agent')`
+- CLI: `remem recall-profiles [--profile coding-agent] [--json]`
+- HTTP: `GET /memory/recall-profiles` and `GET /memory/recall-profiles/:profile`
 
 For long-running agents, pair recall with a maintenance loop: consolidate repeated memories, snapshot before migrations, audit identity alignment after risky sessions, and keep public claims tied to benchmark artifacts.
 
@@ -1176,6 +1208,8 @@ The advanced route surface includes graph recall, smart recall, context packs, m
 
 Additional advanced routes:
 
+- `GET /memory/recall-profiles` - inspect the shipped smart-recall/context-pack profile catalog
+- `GET /memory/recall-profiles/:profile` - inspect one recall profile with defaults and recommended use cases
 - `POST /memory/smart-recall` - multi-lane recall with profiles such as `fast`, `deep`, and `agent-safe`
 - `POST /memory/context-pack` - bounded context pack generation for handoffs and agent prompts
 - `GET /memory/health` / `POST /memory/health` - memory health triage with concrete recommendations

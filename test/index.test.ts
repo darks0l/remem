@@ -445,6 +445,33 @@ describe('ReMEM', () => {
     expect(recalled.profile).toBe('deep');
   });
 
+  it('supports coding-agent smart recall profiles', async () => {
+    await memory.enableLayers();
+    await memory.store({ content: 'Release code path lives in src/cli.ts and must keep JSON output stable.', topics: ['release', 'code'] });
+    const linked = await memory.storeInLayer({ content: 'CLI contract tests pin JSON output for release commands.', topics: ['release', 'tests'] }, 'semantic');
+    await memory.storeProcedural(
+      { content: 'Before publish, run lint, tests, build, and pack dry-run.', topics: ['release', 'procedure'] },
+      { phrases: ['publish remem'], terms: ['publish', 'release'], minScore: 0.2 }
+    );
+    const base = await memory.query('release code path');
+    await memory.linkMemories(base.results[0].id, linked!.id, 'supports');
+
+    const recalled = await memory.smartRecall('publish remem release code path', { profile: 'coding-agent' });
+    expect(recalled.profile).toBe('coding-agent');
+    expect(recalled.results.length).toBeGreaterThan(0);
+    expect(recalled.results.some((result) => result.sourceLane === 'graph')).toBe(true);
+    expect(recalled.results.some((result) => result.sourceLane === 'procedural')).toBe(true);
+  });
+
+  it('exposes recall profile descriptors for agents and tooling', async () => {
+    const profiles = memory.getRecallProfiles();
+    expect(profiles.some((profile) => profile.profile === 'coding-agent')).toBe(true);
+    const coding = memory.getRecallProfile('coding-agent');
+    expect(coding.label).toBe('Coding Agent');
+    expect(coding.defaultOptions.includeProcedural).toBe(true);
+    expect(coding.contextPackTitles.graph).toContain('Architecture');
+  });
+
   it('builds bounded prompt-ready context packs', async () => {
     await memory.enableLayers();
     await memory.store({ content: 'Meta wants serious ReMEM updates with agent-ready context', topics: ['remem', 'priority'], metadata: { project: 'remem' } });
@@ -467,6 +494,38 @@ describe('ReMEM', () => {
     expect(pack.sections.some((section) => section.kind === 'recall')).toBe(true);
     expect(pack.sourceIds.length).toBeGreaterThan(0);
     expect(pack.profile).toBe('deep');
+  });
+
+  it('builds profile-shaped context packs for coding agents', async () => {
+    await memory.enableLayers();
+    await memory.store({
+      content: 'Release workflow depends on stable CLI JSON contracts and typed exports.',
+      topics: ['release', 'code'],
+      metadata: { project: 'remem' },
+    });
+    const linked = await memory.storeInLayer({
+      content: 'CLI tests lock the context-pack and smart-recall contract in place.',
+      topics: ['tests', 'code'],
+    }, 'semantic');
+    await memory.storeProcedural(
+      { content: 'Always run lint, tests, build, and npm pack --dry-run before publish.', topics: ['release', 'procedure'] },
+      { terms: ['publish', 'release'], phrases: ['before publish'], minScore: 0.2 }
+    );
+    const base = await memory.query('release workflow');
+    await memory.linkMemories(base.results[0].id, linked!.id, 'supports');
+
+    const pack = await memory.contextPack('What should a coding agent know before shipping ReMEM?', {
+      profile: 'coding-agent',
+      maxChars: 1800,
+      limit: 10,
+    });
+
+    expect(pack.profile).toBe('coding-agent');
+    expect(pack.sections.some((section) => section.kind === 'graph')).toBe(true);
+    expect(pack.sections.some((section) => section.kind === 'procedural')).toBe(true);
+    expect(pack.sections.some((section) => section.kind === 'actions')).toBe(true);
+    expect(pack.content).toContain('Implementation-critical memories');
+    expect(pack.content.length).toBeLessThanOrEqual(1800);
   });
 
   it('reports memory health with concrete maintenance recommendations', async () => {

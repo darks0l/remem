@@ -121,26 +121,40 @@ describe('HttpAdapter', () => {
     expect(graphJson.results.length).toBeGreaterThan(0);
     expect(graphJson.paths?.length).toBeGreaterThan(0);
 
+    const recallProfiles = await fetch('http://127.0.0.1:18913/memory/recall-profiles');
+    expect(recallProfiles.status).toBe(200);
+    const recallProfilesJson = await readJson(recallProfiles) as { profiles: Array<{ profile: string }> };
+    expect(recallProfilesJson.profiles.some((profile) => profile.profile === 'ops-handoff')).toBe(true);
+
+    const recallProfile = await fetch('http://127.0.0.1:18913/memory/recall-profiles/coding-agent');
+    expect(recallProfile.status).toBe(200);
+    const recallProfileJson = await readJson(recallProfile) as { profile: string; recommendedFor: string[] };
+    expect(recallProfileJson.profile).toBe('coding-agent');
+    expect(recallProfileJson.recommendedFor.length).toBeGreaterThan(0);
+
     const smartRecall = await fetch('http://127.0.0.1:18913/memory/smart-recall', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'publish remem', options: { profile: 'deep', includeRecent: true } }),
+      body: JSON.stringify({ query: 'publish remem', options: { profile: 'ops-handoff', includeRecent: true } }),
     });
     expect(smartRecall.status).toBe(200);
-    const smartRecallJson = await readJson(smartRecall) as { results: Array<{ sourceLane: string }>; lanes: Record<string, number> };
+    const smartRecallJson = await readJson(smartRecall) as { profile: string; results: Array<{ sourceLane: string }>; lanes: Record<string, number> };
+    expect(smartRecallJson.profile).toBe('ops-handoff');
     expect(smartRecallJson.results.length).toBeGreaterThan(0);
     expect(Object.keys(smartRecallJson.lanes)).toContain('procedural');
 
     const contextPack = await fetch('http://127.0.0.1:18913/memory/context-pack', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'publish remem', options: { profile: 'agent-safe', maxChars: 1200 } }),
+      body: JSON.stringify({ query: 'publish remem', options: { profile: 'coding-agent', maxChars: 1400 } }),
     });
     expect(contextPack.status).toBe(200);
-    const contextPackJson = await readJson(contextPack) as { content: string; sourceIds: string[]; usedChars: number };
+    const contextPackJson = await readJson(contextPack) as { profile: string; content: string; sourceIds: string[]; usedChars: number; sections: Array<{ kind: string }> };
+    expect(contextPackJson.profile).toBe('coding-agent');
     expect(contextPackJson.content).toContain('ReMEM Context Pack');
+    expect(contextPackJson.sections.some((section) => section.kind === 'actions')).toBe(true);
     expect(contextPackJson.sourceIds.length).toBeGreaterThan(0);
-    expect(contextPackJson.usedChars).toBeLessThanOrEqual(1200);
+    expect(contextPackJson.usedChars).toBeLessThanOrEqual(1400);
 
     const memoryHealth = await fetch('http://127.0.0.1:18913/memory/health', {
       method: 'POST',

@@ -405,29 +405,44 @@ describe('ReMEM CLI', () => {
 
   it('returns smart recall JSON', async () => {
     const db = './.tmp-cli-smart-recall.db';
+    await fs.rm(db, { force: true });
     await invoke(['store', '--db', db, '--content', 'Meta prefers short direct replies', '--topics', 'prefs,tone', '--json']);
-    const result = await invoke(['smart-recall', '--db', db, '--query', 'How should I reply to Meta?', '--profile', 'fast', '--json']);
+    await invoke(['procedural-store', '--db', db, '--content', 'Always keep CLI JSON contracts stable before release.', '--trigger', 'release remem', '--topics', 'release,procedure', '--json']);
+    const result = await invoke(['smart-recall', '--db', db, '--query', 'How should I release remem safely?', '--profile', 'ops-handoff', '--json']);
     expect(result.exitCode).toBe(0);
     const payload = JSON.parse(result.stdout);
     expect(payload.ok).toBe(true);
     expect(payload.command).toBe('smart-recall');
-    expect(payload.profile).toBe('fast');
+    expect(payload.profile).toBe('ops-handoff');
     expect(Array.isArray(payload.results)).toBe(true);
     expect(payload.lanes).toBeTruthy();
   });
 
+  it('lists recall profiles in json mode', async () => {
+    const result = await invoke(['recall-profiles', '--json']);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.command).toBe('recall-profiles');
+    expect(Array.isArray(payload.profiles)).toBe(true);
+    expect(payload.profiles.some((profile: { profile: string }) => profile.profile === 'coding-agent')).toBe(true);
+  });
+
   it('returns context pack JSON and bounded text', async () => {
     const db = './.tmp-cli-context-pack.db';
+    await fs.rm(db, { force: true });
     await invoke(['store', '--db', db, '--content', 'ReMEM context packs should be prompt ready', '--topics', 'remem,context', '--json']);
     await invoke(['procedural-store', '--db', db, '--content', 'When packing context, keep source ids and budget visible', '--trigger', 'packing context', '--topics', 'context,procedure', '--json']);
 
-    const result = await invoke(['context-pack', '--db', db, '--query', 'packing context for remem', '--profile', 'agent-safe', '--max-chars', '1200', '--json']);
+    const result = await invoke(['context-pack', '--db', db, '--query', 'packing context for remem', '--profile', 'coding-agent', '--max-chars', '1400', '--json']);
     expect(result.exitCode).toBe(0);
     const payload = JSON.parse(result.stdout);
     expect(payload.ok).toBe(true);
     expect(payload.command).toBe('context-pack');
     expect(payload.content).toContain('ReMEM Context Pack');
-    expect(payload.usedChars).toBeLessThanOrEqual(1200);
+    expect(payload.profile).toBe('coding-agent');
+    expect(payload.sections.some((section: { kind: string }) => section.kind === 'procedural')).toBe(true);
+    expect(payload.usedChars).toBeLessThanOrEqual(1400);
     expect(payload.sourceIds.length).toBeGreaterThan(0);
   });
 

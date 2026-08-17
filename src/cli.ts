@@ -3,11 +3,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
-import { ReMEM, type StorageMaintenanceOptions } from './index.js';
+import { ReMEM, getSmartRecallProfiles, type StorageMaintenanceOptions } from './index.js';
 import { runSmokeChecks } from './smoke.js';
 import { generateInitArtifacts, type RuntimeFocus } from './setup.js';
 import { launchTerminalUi } from './ui.js';
-import { knowledgeArtifactRegistrationSchema, knowledgeGraphArtifactSchema, rememConfigSchema, type ContextPackOptions, type MemoryHealthOptions, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions, type RememberInput, type RememberKind } from './types.js';
+import { contextPackOptionsSchema, knowledgeArtifactRegistrationSchema, knowledgeGraphArtifactSchema, rememConfigSchema, smartRecallOptionsSchema, type ContextPackOptions, type MemoryHealthOptions, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions, type RememberInput, type RememberKind } from './types.js';
 
 const gunzipAsync = promisify(gunzip);
 
@@ -150,8 +150,9 @@ Usage:
   remem shared-store --namespace team/ops --content <text> [--visibility shared|private]
   remem namespace-query --namespace team/ops --query <text> [--visibility all|shared|private]
   remem namespace-recent --namespace team/ops [--limit 10] [--visibility all|shared|private]
-  remem smart-recall --query <text> [--profile fast|deep|agent-safe|ops-debug] [--limit 8]
-  remem context-pack --query <text> [--profile agent-safe|deep] [--max-chars 6000] [--dream]
+  remem recall-profiles [--profile <name>] [--json]
+  remem smart-recall --query <text> [--profile fast|deep|agent-safe|ops-debug|coding-agent|ops-handoff|research-brief] [--limit 8]
+  remem context-pack --query <text> [--profile fast|deep|agent-safe|ops-debug|coding-agent|ops-handoff|research-brief] [--max-chars 6000] [--dream]
   remem dream [--query <text>] [--layers identity,semantic,procedural] [--limit 12]
   remem snapshots --action list|create|restore|delete [--label <name>] [--snapshot-id <id>]
   remem consolidate [--summaries] [--procedural]
@@ -1051,11 +1052,45 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
     return 0;
   }
 
+  if (command === 'recall-profiles') {
+    const profiles = getSmartRecallProfiles();
+    const requested = asString(options.profile).trim();
+    const payload = requested
+      ? profiles.find((profile) => profile.profile === requested)
+      : { profiles };
+
+    if (!payload) {
+      emitError(runtime, jsonMode, `Unknown recall profile: ${requested}`);
+      return 1;
+    }
+
+    if (jsonMode) {
+      emitJson(runtime, { ok: true, command, ...('profile' in payload ? { profile: payload } : payload) });
+    } else if ('profile' in payload) {
+      emitText(
+        runtime,
+        [
+          `${payload.profile} (${payload.label})`,
+          payload.overview,
+          `recommended for: ${payload.recommendedFor.join('; ')}`,
+          `defaults: ${JSON.stringify(payload.defaultOptions)}`,
+          '',
+        ].join('\n')
+      );
+    } else {
+      emitText(
+        runtime,
+        `${payload.profiles.map((profile) => `${profile.profile} - ${profile.overview}`).join('\n')}\n`
+      );
+    }
+    return 0;
+  }
+
   if (command === 'smart-recall') {
     await withMemory(options, async (memory) => {
       const metadataFilters = parseMaybeJson(options.metadata) as QueryOptions['metadata'];
-      const smartRecallOptions: SmartRecallOptions = {
-        profile: asString(options.profile, 'fast') as 'fast' | 'deep' | 'agent-safe' | 'ops-debug',
+      const smartRecallOptions = smartRecallOptionsSchema.parse({
+        profile: asString(options.profile, 'fast') as SmartRecallOptions['profile'],
         limit: Number(asString(options.limit, '8')) || 8,
         includeRecent: Boolean(options.recent),
         recentLimit: Number(asString(options['recent-limit'], '5')) || 5,
@@ -1069,7 +1104,7 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
         topics: asCsv(options.topics).length ? asCsv(options.topics) : undefined,
         minAccessCount: options['min-access-count'] ? Number(asString(options['min-access-count'])) : undefined,
         metadata: metadataFilters && Object.keys(metadataFilters).length ? metadataFilters : undefined,
-      };
+      });
       const payload = {
         ok: true,
         command,
@@ -1084,7 +1119,7 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
   if (command === 'context-pack') {
     await withMemory(options, async (memory) => {
       const metadataFilters = parseMaybeJson(options.metadata) as QueryOptions['metadata'];
-      const contextPackOptions: ContextPackOptions = {
+      const contextPackOptions = contextPackOptionsSchema.parse({
         profile: asString(options.profile, 'agent-safe') as ContextPackOptions['profile'],
         limit: Number(asString(options.limit, '8')) || 8,
         maxChars: Number(asString(options['max-chars'], '6000')) || 6000,
@@ -1102,7 +1137,7 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
         topics: asCsv(options.topics).length ? asCsv(options.topics) : undefined,
         minAccessCount: options['min-access-count'] ? Number(asString(options['min-access-count'])) : undefined,
         metadata: metadataFilters && Object.keys(metadataFilters).length ? metadataFilters : undefined,
-      };
+      });
       const payload = {
         ok: true,
         command,
