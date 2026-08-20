@@ -4,7 +4,21 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.26.0] - 2026-08-20
+
+### Added
+
+- Added structural graph diagnostics to `memory.graph()` with connected clusters plus articulation/bridge analysis so graph snapshots can expose chokepoints instead of only flat nodes and links.
+- Added codebase-graph cluster and bridge analysis to `knowledgeOverview()` and inventory-style codebase graph snapshots.
+
+### Changed
+
+- Added explicit `analysisScope` metadata to memory graph snapshots, codebase graph snapshots, and knowledge overviews so callers can tell exactly which node/link scope the structural diagnostics came from.
+
+### Fixed
+
+- Fixed graph/link collection for structural analysis so dense nodes no longer stop at the first 100 linked memories.
+- Fixed inventory-style codebase graph summaries to stay aligned with the filtered snapshot graph instead of recomputing owners, hotspots, deadzones, clusters, and bridges from a broader scope.
 
 ## [0.25.1] - 2026-08-17
 

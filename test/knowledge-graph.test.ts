@@ -253,10 +253,34 @@ describe('knowledge graph ingestion', () => {
       limit: 5,
       neighborLimit: 5,
     });
+    expect(inventorySnapshot.analysisScope).toMatchObject({
+      nodeSet: 'subgraph-results',
+      linkSet: 'internal-links-between-returned-nodes',
+      structureSet: 'snapshot-internal',
+      resourceScoped: false,
+      connectionTypes: ['knowledge:http_calls', 'knowledge:calls'],
+    });
     expect(inventorySnapshot.inventory?.owners.some((owner) => owner.owner === 'src')).toBe(true);
     expect(inventorySnapshot.inventory?.hotspots[0].node.metadata?.name).toBe('ProcessOrder');
     expect(inventorySnapshot.inventory?.hotspots[0].relationTypes).toContain('knowledge:calls');
     expect(inventorySnapshot.connections.every((connection) => ['knowledge:http_calls', 'knowledge:calls'].includes(connection.type))).toBe(true);
+
+    const routeOnlyInventory = await adapter.graphAsMemory('ProcessOrder', {
+      project: 'checkout-service',
+      displayType: 'inventory',
+      nodeLabels: ['Route'],
+      owners: ['src'],
+      limit: 5,
+      neighborLimit: 5,
+    });
+    expect(routeOnlyInventory.nodes).toHaveLength(1);
+    expect(routeOnlyInventory.inventory?.owners).toEqual([
+      expect.objectContaining({ owner: 'src', nodes: 1 }),
+    ]);
+    expect(routeOnlyInventory.inventory?.hotspots).toHaveLength(0);
+    expect(routeOnlyInventory.inventory?.deadzones).toHaveLength(0);
+    expect(routeOnlyInventory.inventory?.clusters).toHaveLength(1);
+    expect(routeOnlyInventory.inventory?.clusters[0].nodeIds).toEqual([routeOnlyInventory.nodes[0].id]);
 
     const explanation = await adapter.explain('ProcessOrder', { project: 'checkout-service' });
     expect(explanation.summary).toContain('connects to');
@@ -280,6 +304,9 @@ describe('knowledge graph ingestion', () => {
     const overview = await adapter.overview('checkout-service');
     expect(overview.labels.Function).toBe(3);
     expect(overview.hotspots[0].node.metadata?.name).toBe('ProcessOrder');
+    expect(overview.clusters).toHaveLength(2);
+    expect(overview.bridges.nodes.some((entry) => entry.node.metadata?.name === 'ProcessOrder')).toBe(true);
+    expect(overview.bridges.links.some((entry) => entry.type === 'knowledge:http_calls')).toBe(true);
 
     const filteredOverview = await adapter.overview({
       project: 'checkout-service',
@@ -289,6 +316,15 @@ describe('knowledge graph ingestion', () => {
     });
     expect(filteredOverview.nodes).toBe(1);
     expect(filteredOverview.labels.Route).toBe(1);
+    expect(filteredOverview.analysisScope).toMatchObject({
+      nodeSet: 'inventory-scope',
+      linkSet: 'internal-links-between-returned-nodes',
+      structureSet: 'snapshot-internal',
+      nodeLabels: ['Route'],
+      owners: ['src'],
+    });
+    expect(filteredOverview.clusters).toHaveLength(1);
+    expect(filteredOverview.bridges.nodes).toHaveLength(0);
   });
 
   it('filters codebase graph snapshots by resource grants', async () => {

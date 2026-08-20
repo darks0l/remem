@@ -361,10 +361,10 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     }
     if (opts?.agentId) { where.push(`(agent_id = $${idx} OR agent_id IS NULL)`); params.push(opts.agentId); idx++; }
     if (opts?.userId) { where.push(`(user_id = $${idx} OR user_id IS NULL)`); params.push(opts.userId); idx++; }
-    params.push(query.limit);
+    params.push(query.limit, query.offset);
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const result = await this.pgQuery<Record<string, unknown>>(
-      `SELECT * FROM ${this.table('memory_links')} ${whereSql} ORDER BY created_at DESC LIMIT $${idx}`,
+      `SELECT * FROM ${this.table('memory_links')} ${whereSql} ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx + 1}`,
       params
     );
     return result.rows.map((row) => this.rowToLink(row));

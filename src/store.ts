@@ -560,8 +560,9 @@ export class MemoryStore implements MemoryStoreLike {
       params.push(opts.userId);
     }
 
-    sql += ' ORDER BY created_at DESC LIMIT ?';
+    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     params.push(query.limit);
+    params.push(query.offset);
 
     const result = this.db!.exec(sql, params);
     if (result.length === 0) return [];

@@ -201,9 +201,10 @@ export const linkedMemoryQueryOptionsSchema = z.object({
   direction: z.enum(['outgoing', 'incoming', 'both']).default('both'),
   types: z.array(z.string()).optional(),
   limit: z.number().min(1).max(100).default(20),
+  offset: z.number().int().min(0).default(0),
 });
 
-export type LinkedMemoryQueryOptions = z.infer<typeof linkedMemoryQueryOptionsSchema>;
+export type LinkedMemoryQueryOptions = z.input<typeof linkedMemoryQueryOptionsSchema>;
 
 export const queryWithNeighborsOptionsSchema = queryOptionsSchema.extend({
   hops: z.union([z.literal(1), z.literal(2)]).default(1),

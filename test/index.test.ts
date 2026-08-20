@@ -386,19 +386,38 @@ describe('ReMEM', () => {
   it('builds visualization-ready memory graph snapshots', async () => {
     await memory.store({ content: 'Meta likes dark mode', topics: ['preferences', 'ui'] });
     await memory.store({ content: 'Dark mode belongs in project obsidian', topics: ['project-obsidian', 'ui'] });
+    await memory.store({ content: 'UI rollout checklist depends on project obsidian', topics: ['ui', 'release'] });
     await memory.store({ content: 'Unrelated archive note', topics: ['archive'] });
 
     const base = await memory.query('dark mode', { limit: 10 });
     const fromId = base.results.find((entry) => entry.content.includes('Meta likes'))!.id;
     const toId = base.results.find((entry) => entry.content.includes('project obsidian'))!.id;
+    const thirdId = (await memory.query('rollout checklist', { limit: 10 })).results[0].id;
     await memory.linkMemories(fromId, toId, 'about', { weight: 1.2 });
+    await memory.linkMemories(toId, thirdId, 'supports', { weight: 1.1 });
 
-    const graph = await memory.graph({ query: 'dark mode', limit: 10, includeIsolated: false });
+    const graph = await memory.graph({ limit: 10, includeIsolated: false });
     expect(graph.name).toBe('ReMEM Memory Graph');
-    expect(graph.nodes.map((node) => node.id)).toEqual(expect.arrayContaining([fromId, toId]));
-    expect(graph.links).toHaveLength(1);
-    expect(graph.links[0]).toMatchObject({ fromId, toId, type: 'about', weight: 1.2 });
-    expect(graph.topics.some((topic) => topic.topic === 'ui' && topic.count === 2)).toBe(true);
+    expect(graph.nodes.map((node) => node.id)).toEqual(expect.arrayContaining([fromId, toId, thirdId]));
+    expect(graph.links).toHaveLength(2);
+    expect(graph.links[0]).toMatchObject({ type: 'about', weight: 1.2 });
+    expect(graph.topics.some((topic) => topic.topic === 'ui' && topic.count === 3)).toBe(true);
+    expect(graph.clusters).toHaveLength(1);
+    expect(graph.clusters[0].nodeIds).toEqual(expect.arrayContaining([fromId, toId, thirdId]));
+    expect(graph.bridges.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ nodeId: toId }),
+      ])
+    );
+    expect(graph.bridges.links).toHaveLength(2);
+    expect(graph.analysisScope).toMatchObject({
+      nodeSet: 'query-results',
+      linkSet: 'internal-links-between-returned-nodes',
+      structureSet: 'snapshot-internal',
+      querySource: 'filtered-query',
+      includeIsolated: false,
+      truncated: false,
+    });
     expect(graph.dot).toContain('digraph remem_memory');
     expect(graph.dot).toContain('about');
     expect(graph.cytoscape.elements).toEqual(

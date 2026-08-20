@@ -12,7 +12,7 @@ Built by DARKSOL 🌑
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
 [![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.25.1](https://img.shields.io/badge/v0.25.1-profile--aliases-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
+[![v0.26.0](https://img.shields.io/badge/v0.26.0-graph--topology-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
 
 </p>
 
@@ -152,7 +152,7 @@ remem remember \
 
 `POST /memory/remember` accepts the same shape for remote runtimes.
 
-Use `graph` when an agent needs a visualization-ready map of a memory scope. It returns weighted memory nodes, internal links, topic clusters, Graphviz DOT, and Cytoscape-compatible elements so you can inspect recall shape before pruning, consolidation, handoff, or web rendering.
+Use `graph` when an agent needs a visualization-ready map of a memory scope. It returns weighted memory nodes, internal links, topic clusters, structural clusters, articulation/bridge diagnostics, explicit `analysisScope` metadata, Graphviz DOT, and Cytoscape-compatible elements so you can inspect recall shape before pruning, consolidation, handoff, or web rendering.
 
 Use `health` when an agent needs a maintenance plan, not just counts. It scores the current memory scope and flags missing/stale snapshots, duplicate memories, stale unaccessed entries, weak topic coverage, and long-memory layer pressure.
 
@@ -195,7 +195,7 @@ Portable graph nodes and edges may include `weight` values from `0` to `2`. When
 - `memory` - balanced default with nodes, selected connections, traversal paths, and prompt context
 - `graph` - visualization-friendly nodes and connections for dense screenshots or UI rendering
 - `context` - LLM-ready context text backed by the selected graph neighborhood
-- `inventory` - graph snapshot plus owners, entrypoints, hotspots, and deadzone diagnostics
+- `inventory` - graph snapshot plus owners, entrypoints, hotspots, deadzone diagnostics, clusters, bridges, and explicit `analysisScope`
 
 ```bash
 # Register a compressed code graph produced by another local tool.
@@ -338,7 +338,7 @@ ReMEM does something different:
 - **Shared memory namespaces** (v0.12.0) - Store reusable memory inside explicit team/project lanes with private/shared visibility controls and scoped recall
 - **Smart recall** (v0.12.0) - Fuse semantic, graph, procedural, and recent-context lanes into one higher-signal retrieval pass
 - **Context packs** (v0.14.0) - Generate bounded, prompt-ready recall packets from smart recall, recent context, procedural signals, and optional dream synthesis
-- **Memory graph visualization** - Export weighted memory nodes, links, topic clusters, Graphviz DOT, and Cytoscape-ready elements from `memory.graph()` or `remem graph`
+- **Memory graph visualization** - Export weighted memory nodes, links, topic clusters, structural clusters, bridge diagnostics, Graphviz DOT, and Cytoscape-ready elements from `memory.graph()` or `remem graph`
 - **Consolidation workflows** (v0.12.5) - Run full memory curation passes that deduplicate, resolve conflicts, promote durable summaries, and optionally turn repeated patterns into procedures
 - **External knowledge graph ingestion** (v0.18.0) - Register compressed graph artifacts or ingest portable node/edge graphs from codebase intelligence tools as ReMEM memories and traversable links
 - **Memory links + neighbor-aware retrieval** (v0.8.0, expanded in v0.8.5) - Explicit typed links between memories (`about`, `supports`, `contradicts`, etc.), weighted graph-adjacent recall, and optional traversal path details

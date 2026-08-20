@@ -277,7 +277,8 @@ var memoryLinkInputSchema = import_zod.z.object({
 var linkedMemoryQueryOptionsSchema = import_zod.z.object({
   direction: import_zod.z.enum(["outgoing", "incoming", "both"]).default("both"),
   types: import_zod.z.array(import_zod.z.string()).optional(),
-  limit: import_zod.z.number().min(1).max(100).default(20)
+  limit: import_zod.z.number().min(1).max(100).default(20),
+  offset: import_zod.z.number().int().min(0).default(0)
 });
 var queryWithNeighborsOptionsSchema = queryOptionsSchema.extend({
   hops: import_zod.z.union([import_zod.z.literal(1), import_zod.z.literal(2)]).default(1),
@@ -1309,8 +1310,9 @@ var MemoryStore = class {
       sql += " AND (user_id = ? OR user_id IS NULL)";
       params.push(opts.userId);
     }
-    sql += " ORDER BY created_at DESC LIMIT ?";
+    sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
     params.push(query.limit);
+    params.push(query.offset);
     const result = this.db.exec(sql, params);
     if (result.length === 0) return [];
     return result[0].values.map((v) => this.rowToLink(result[0].columns, v));
@@ -2420,10 +2422,10 @@ var PostgresMemoryStore = class {
       params.push(opts.userId);
       idx++;
     }
-    params.push(query.limit);
+    params.push(query.limit, query.offset);
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
     const result = await this.pgQuery(
-      `SELECT * FROM ${this.table("memory_links")} ${whereSql} ORDER BY created_at DESC LIMIT $${idx}`,
+      `SELECT * FROM ${this.table("memory_links")} ${whereSql} ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx + 1}`,
       params
     );
     return result.rows.map((row) => this.rowToLink(row));
@@ -5840,6 +5842,7 @@ function createHermesAdapter(memory, options = {}) {
 }
 function createCodebaseMemoryAdapter(memory, options = {}) {
   const defaultLimit = options.defaultLimit ?? 10;
+  const linkedPageSize = 100;
   const codebaseLinkTypeWeights = {
     "knowledge:http_calls": 1.35,
     "knowledge:calls": 1.25,
@@ -5857,9 +5860,24 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
     const nodes = await knowledgeNodes(inventoryOptions.project);
     return nodes.filter((node) => hasKnowledgeResourceAccess(node, inventoryOptions.resourceGrant)).filter((node) => matchesCodebaseFilters(node, inventoryOptions));
   };
-  const nodeHealth = async (node) => {
-    const links = await memory.getLinkedMemories(node.id, { direction: "both", limit: 100 });
-    const rawLinks = links.map((item) => item.link);
+  const getAllLinkedMemories = async (memoryId, options2 = {}) => {
+    const items = [];
+    let offset = 0;
+    while (true) {
+      const page = await memory.getLinkedMemories(memoryId, {
+        direction: options2.direction ?? "both",
+        types: options2.types,
+        limit: linkedPageSize,
+        offset
+      });
+      if (page.length === 0) break;
+      items.push(...page);
+      if (page.length < linkedPageSize) break;
+      offset += page.length;
+    }
+    return items;
+  };
+  const healthFromLinks = (node, rawLinks) => {
     const incomingLinks = rawLinks.filter((link) => link.toId === node.id);
     const outgoingLinks = rawLinks.filter((link) => link.fromId === node.id);
     const incomingWeight = incomingLinks.reduce((sum, link) => sum + codebaseLinkWeight(link), 0);
@@ -5876,13 +5894,214 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
       links: rawLinks
     };
   };
+  const buildScopedKnowledgeGraph = async (nodes, options2) => {
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const linksById = /* @__PURE__ */ new Map();
+    const allowedTypes = normalizeCodebaseConnectionTypes(options2.connectionTypes);
+    const minWeight = options2.minConnectionWeight ?? 0;
+    for (const node of nodes) {
+      const linked = await getAllLinkedMemories(node.id, { direction: "both", types: allowedTypes });
+      for (const item of linked) {
+        const link = item.link;
+        if (!nodeById.has(link.fromId) || !nodeById.has(link.toId)) continue;
+        if (!connectionTypeMatches(link.type, allowedTypes)) continue;
+        if (codebaseLinkWeight(link) < minWeight) continue;
+        linksById.set(link.id, link);
+      }
+    }
+    const links = Array.from(linksById.values());
+    const adjacency = /* @__PURE__ */ new Map();
+    for (const node of nodes) {
+      adjacency.set(node.id, []);
+    }
+    for (const link of links) {
+      adjacency.get(link.fromId)?.push({ neighborId: link.toId, link });
+      adjacency.get(link.toId)?.push({ neighborId: link.fromId, link });
+    }
+    return {
+      nodes,
+      nodeById,
+      links,
+      adjacency,
+      analysisScope: {
+        nodeSet: options2.nodeSet,
+        linkSet: "internal-links-between-returned-nodes",
+        structureSet: "snapshot-internal",
+        pageSize: linkedPageSize,
+        uniqueLinks: links.length,
+        truncated: false,
+        ...allowedTypes?.length ? { connectionTypes: allowedTypes } : {},
+        ...typeof options2.minConnectionWeight === "number" ? { minConnectionWeight: options2.minConnectionWeight } : {},
+        ...options2.nodeLabels?.length ? { nodeLabels: options2.nodeLabels } : {},
+        ...options2.owners?.length ? { owners: options2.owners } : {},
+        resourceScoped: Boolean(options2.resourceScoped)
+      }
+    };
+  };
+  const analyzeCodebaseGraphStructure = async (graph) => {
+    const { nodes, nodeById, links, adjacency } = graph;
+    const linkById = new Map(links.map((link) => [link.id, link]));
+    const visited = /* @__PURE__ */ new Set();
+    const clusters = [];
+    let clusterIndex = 0;
+    for (const node of nodes) {
+      if (visited.has(node.id)) continue;
+      const stack = [node.id];
+      const componentIds = [];
+      const componentLinkIds = /* @__PURE__ */ new Set();
+      visited.add(node.id);
+      while (stack.length > 0) {
+        const currentId = stack.pop();
+        componentIds.push(currentId);
+        for (const edge of adjacency.get(currentId) ?? []) {
+          componentLinkIds.add(edge.link.id);
+          if (!visited.has(edge.neighborId)) {
+            visited.add(edge.neighborId);
+            stack.push(edge.neighborId);
+          }
+        }
+      }
+      const labels = {};
+      const owners = /* @__PURE__ */ new Set();
+      for (const id of componentIds) {
+        const componentNode = nodeById.get(id);
+        const label = getStringMetadata(componentNode, "label") ?? "Node";
+        labels[label] = (labels[label] ?? 0) + 1;
+        owners.add(topLevelOwner(componentNode).owner);
+      }
+      clusters.push({
+        id: `cluster-${++clusterIndex}`,
+        nodeIds: componentIds.sort(),
+        linkIds: Array.from(componentLinkIds).sort(),
+        size: componentIds.length,
+        totalNodeWeight: Number(componentIds.reduce((sum, id) => sum + codebaseNodeWeight(nodeById.get(id)), 0).toFixed(3)),
+        totalLinkWeight: Number(Array.from(componentLinkIds).reduce((sum, id) => sum + codebaseLinkWeight(linkById.get(id)), 0).toFixed(3)),
+        labels,
+        owners: Array.from(owners).sort()
+      });
+    }
+    const discovery = /* @__PURE__ */ new Map();
+    const low = /* @__PURE__ */ new Map();
+    const parent = /* @__PURE__ */ new Map();
+    const articulationIds = /* @__PURE__ */ new Set();
+    const bridgeLinkIds = /* @__PURE__ */ new Set();
+    let time = 0;
+    const dfs = (nodeId) => {
+      discovery.set(nodeId, ++time);
+      low.set(nodeId, time);
+      let childCount = 0;
+      for (const edge of adjacency.get(nodeId) ?? []) {
+        const neighborId = edge.neighborId;
+        if (!discovery.has(neighborId)) {
+          parent.set(neighborId, nodeId);
+          childCount += 1;
+          dfs(neighborId);
+          low.set(nodeId, Math.min(low.get(nodeId), low.get(neighborId)));
+          if (parent.get(nodeId) == null && childCount > 1) articulationIds.add(nodeId);
+          if (parent.get(nodeId) != null && low.get(neighborId) >= discovery.get(nodeId)) articulationIds.add(nodeId);
+          if (low.get(neighborId) > discovery.get(nodeId)) bridgeLinkIds.add(edge.link.id);
+        } else if (neighborId !== parent.get(nodeId)) {
+          low.set(nodeId, Math.min(low.get(nodeId), discovery.get(neighborId)));
+        }
+      }
+    };
+    for (const node of nodes) {
+      if (!discovery.has(node.id)) {
+        parent.set(node.id, null);
+        dfs(node.id);
+      }
+    }
+    const bridgeNodes = await Promise.all(
+      Array.from(articulationIds).map(async (nodeId) => {
+        const node = nodeById.get(nodeId);
+        const rawLinks = adjacency.get(nodeId)?.map((entry) => entry.link) ?? [];
+        return healthFromLinks(node, rawLinks);
+      })
+    );
+    const bridgeLinks = links.filter((link) => bridgeLinkIds.has(link.id)).map((link) => ({
+      fromId: link.fromId,
+      toId: link.toId,
+      type: link.type,
+      weight: codebaseLinkWeight(link),
+      from: nodeById.get(link.fromId),
+      to: nodeById.get(link.toId)
+    })).sort((a, b) => b.weight - a.weight || a.type.localeCompare(b.type));
+    return {
+      clusters: clusters.sort((a, b) => b.totalNodeWeight - a.totalNodeWeight || b.size - a.size || a.id.localeCompare(b.id)),
+      bridges: {
+        nodes: bridgeNodes.sort((a, b) => b.weight - a.weight || b.outgoing - a.outgoing || b.incoming - a.incoming),
+        links: bridgeLinks
+      }
+    };
+  };
+  const summarizeOwners = (nodes, limit) => {
+    const owners = /* @__PURE__ */ new Map();
+    for (const node of nodes) {
+      const { owner, type } = topLevelOwner(node);
+      const key = `${type}:${owner}`;
+      const summary = owners.get(key) ?? { owner, type, nodes: 0, files: 0, symbols: 0, packages: 0, averageWeight: 0, paths: [] };
+      const label = (getStringMetadata(node, "label") ?? "").toLowerCase();
+      const path = getStringMetadata(node, "path");
+      const previousTotal = summary.averageWeight * summary.nodes;
+      summary.nodes += 1;
+      summary.averageWeight = (previousTotal + codebaseNodeWeight(node)) / summary.nodes;
+      if (label === "file") summary.files += 1;
+      if (["function", "class", "constant", "symbol"].includes(label)) summary.symbols += 1;
+      if (label === "package") summary.packages += 1;
+      if (path && !summary.paths.includes(path)) summary.paths.push(path);
+      owners.set(key, summary);
+    }
+    return Array.from(owners.values()).sort((a, b) => b.nodes * b.averageWeight - a.nodes * a.averageWeight || a.owner.localeCompare(b.owner)).slice(0, limit).map((owner) => ({ ...owner, averageWeight: Number(owner.averageWeight.toFixed(3)), paths: owner.paths.slice(0, 10) }));
+  };
+  const summarizeEntrypoints = (nodes, graph, limit) => {
+    const candidates = [];
+    for (const node of nodes) {
+      const label = (getStringMetadata(node, "label") ?? "").toLowerCase();
+      const path = getStringMetadata(node, "path") ?? "";
+      const name = getStringMetadata(node, "name") ?? "";
+      const looksLikeEntrypoint = ["project", "route", "command", "entrypoint", "api"].includes(label) || label === "file" && /\b(cli|server|index|main|app|route|command)s?\b/i.test(`${path} ${name}`);
+      if (!looksLikeEntrypoint) continue;
+      candidates.push(healthFromLinks(node, graph.adjacency.get(node.id)?.map((entry) => entry.link) ?? []));
+    }
+    return candidates.sort((a, b) => b.weight - a.weight || b.outgoing - a.outgoing || a.incoming - b.incoming).slice(0, limit);
+  };
+  const summarizeHotspots = (nodes, graph, limit) => {
+    const scored = nodes.map((node) => healthFromLinks(node, graph.adjacency.get(node.id)?.map((entry) => entry.link) ?? []));
+    return scored.filter((entry) => entry.incoming > 0 || entry.outgoing > 0).sort((a, b) => b.weight - a.weight || b.outgoing - a.outgoing || b.incoming - a.incoming).slice(0, limit);
+  };
+  const summarizeDeadzones = (nodes, graph, limit) => {
+    const dead = [];
+    for (const node of nodes) {
+      const label = (getStringMetadata(node, "label") ?? "").toLowerCase();
+      if (!["file", "function", "class", "constant", "symbol", "package"].includes(label)) continue;
+      const health = healthFromLinks(node, graph.adjacency.get(node.id)?.map((entry) => entry.link) ?? []);
+      if (health.incoming === 0 && health.outgoing === 0) {
+        dead.push({
+          ...health,
+          weight: codebaseNodeWeight(node)
+        });
+      }
+    }
+    return dead.sort((a, b) => b.weight - a.weight).slice(0, limit);
+  };
+  const buildInventorySummary = async (nodes, options2) => {
+    const graph = await buildScopedKnowledgeGraph(nodes, options2);
+    return {
+      analysisScope: graph.analysisScope,
+      owners: summarizeOwners(nodes, options2.limit),
+      entrypoints: summarizeEntrypoints(nodes, graph, options2.limit),
+      hotspots: summarizeHotspots(nodes, graph, options2.limit),
+      deadzones: summarizeDeadzones(nodes, graph, options2.limit),
+      ...await analyzeCodebaseGraphStructure(graph)
+    };
+  };
   const collectConnections = async (nodes, options2 = {}) => {
     const byId = new Map(nodes.map((node) => [node.id, node]));
     const allowedTypes = normalizeCodebaseConnectionTypes(options2.connectionTypes);
     const minWeight = options2.minConnectionWeight ?? 0;
     const connections = /* @__PURE__ */ new Map();
     for (const node of nodes) {
-      const linked = await memory.getLinkedMemories(node.id, { direction: "both", limit: 100 });
+      const linked = await getAllLinkedMemories(node.id, { direction: "both", types: allowedTypes });
       for (const item of linked) {
         const link = item.link;
         const type = link.type.toLowerCase();
@@ -6009,7 +6228,15 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
       });
       const relationTypes = Array.from(new Set(connections.map((connection) => connection.type))).sort();
       const project = queryOptions.project;
-      const inventoryOptions = { project, resourceGrant: queryOptions.resourceGrant, limit: 10 };
+      const inventorySummary = await buildInventorySummary(nodes, {
+        limit: queryOptions.limit ?? defaultLimit,
+        connectionTypes: selectedConnectionTypes,
+        minConnectionWeight: queryOptions.minConnectionWeight,
+        nodeLabels: queryOptions.nodeLabels,
+        owners: queryOptions.owners,
+        resourceScoped: Boolean(queryOptions.resourceGrant),
+        nodeSet: "subgraph-results"
+      });
       const summary = `${queryOptions.snapshotName ?? "Codebase Graph as memory"} captured ${nodes.length} nodes and ${connections.length} selected connections${project ? ` for ${project}` : ""}${relationTypes.length ? ` (${relationTypes.join(", ")})` : ""}.`;
       return {
         name: "Codebase Graph as memory",
@@ -6022,13 +6249,9 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
         paths: subgraph.paths,
         linksTraversed: subgraph.linksTraversed,
         context: displayType === "graph" ? formatCodebaseContext(nodes, queryOptions.maxContextChars ?? 4e3) : subgraph.context,
+        analysisScope: inventorySummary.analysisScope,
         ...displayType === "inventory" ? {
-          inventory: {
-            owners: await this.owners(inventoryOptions),
-            entrypoints: await this.entrypoints(inventoryOptions),
-            hotspots: await this.hotspots(inventoryOptions),
-            deadzones: await this.deadzones(inventoryOptions)
-          }
+          inventory: (({ analysisScope, ...inventory }) => inventory)(inventorySummary)
         } : {}
       };
     },
@@ -6051,63 +6274,43 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
       const inventoryOptions = typeof projectOrOptions === "string" ? { project: projectOrOptions } : projectOrOptions ?? {};
       const limit = inventoryOptions.limit ?? defaultLimit;
       const nodes = await scopedKnowledgeNodes(inventoryOptions);
-      const candidates = [];
-      for (const node of nodes) {
-        const label = (getStringMetadata(node, "label") ?? "").toLowerCase();
-        const path = getStringMetadata(node, "path") ?? "";
-        const name = getStringMetadata(node, "name") ?? "";
-        const looksLikeEntrypoint = ["project", "route", "command", "entrypoint", "api"].includes(label) || label === "file" && /\b(cli|server|index|main|app|route|command)s?\b/i.test(`${path} ${name}`);
-        if (!looksLikeEntrypoint) continue;
-        candidates.push(await nodeHealth(node));
-      }
-      return candidates.sort((a, b) => b.weight - a.weight || b.outgoing - a.outgoing || a.incoming - b.incoming).slice(0, limit);
+      const graph = await buildScopedKnowledgeGraph(nodes, {
+        nodeLabels: inventoryOptions.nodeLabels,
+        owners: inventoryOptions.owners,
+        resourceScoped: Boolean(inventoryOptions.resourceGrant),
+        nodeSet: "inventory-scope"
+      });
+      return summarizeEntrypoints(nodes, graph, limit);
     },
     async owners(projectOrOptions) {
       const inventoryOptions = typeof projectOrOptions === "string" ? { project: projectOrOptions } : projectOrOptions ?? {};
       const limit = inventoryOptions.limit ?? defaultLimit;
       const nodes = await scopedKnowledgeNodes(inventoryOptions);
-      const owners = /* @__PURE__ */ new Map();
-      for (const node of nodes) {
-        const { owner, type } = topLevelOwner(node);
-        const key = `${type}:${owner}`;
-        const summary = owners.get(key) ?? { owner, type, nodes: 0, files: 0, symbols: 0, packages: 0, averageWeight: 0, paths: [] };
-        const label = (getStringMetadata(node, "label") ?? "").toLowerCase();
-        const path = getStringMetadata(node, "path");
-        const previousTotal = summary.averageWeight * summary.nodes;
-        summary.nodes += 1;
-        summary.averageWeight = (previousTotal + codebaseNodeWeight(node)) / summary.nodes;
-        if (label === "file") summary.files += 1;
-        if (["function", "class", "constant", "symbol"].includes(label)) summary.symbols += 1;
-        if (label === "package") summary.packages += 1;
-        if (path && !summary.paths.includes(path)) summary.paths.push(path);
-        owners.set(key, summary);
-      }
-      return Array.from(owners.values()).sort((a, b) => b.nodes * b.averageWeight - a.nodes * a.averageWeight || a.owner.localeCompare(b.owner)).slice(0, limit).map((owner) => ({ ...owner, averageWeight: Number(owner.averageWeight.toFixed(3)), paths: owner.paths.slice(0, 10) }));
+      return summarizeOwners(nodes, limit);
     },
     async hotspots(projectOrOptions) {
       const inventoryOptions = typeof projectOrOptions === "string" ? { project: projectOrOptions } : projectOrOptions ?? {};
       const limit = inventoryOptions.limit ?? defaultLimit;
       const nodes = await scopedKnowledgeNodes(inventoryOptions);
-      const scored = await Promise.all(nodes.map((node) => nodeHealth(node)));
-      return scored.filter((entry) => entry.incoming > 0 || entry.outgoing > 0).sort((a, b) => b.weight - a.weight || b.outgoing - a.outgoing || b.incoming - a.incoming).slice(0, limit);
+      const graph = await buildScopedKnowledgeGraph(nodes, {
+        nodeLabels: inventoryOptions.nodeLabels,
+        owners: inventoryOptions.owners,
+        resourceScoped: Boolean(inventoryOptions.resourceGrant),
+        nodeSet: "inventory-scope"
+      });
+      return summarizeHotspots(nodes, graph, limit);
     },
     async deadzones(projectOrOptions) {
       const inventoryOptions = typeof projectOrOptions === "string" ? { project: projectOrOptions } : projectOrOptions ?? {};
       const limit = inventoryOptions.limit ?? defaultLimit;
       const nodes = await scopedKnowledgeNodes(inventoryOptions);
-      const dead = [];
-      for (const node of nodes) {
-        const label = (getStringMetadata(node, "label") ?? "").toLowerCase();
-        if (!["file", "function", "class", "constant", "symbol", "package"].includes(label)) continue;
-        const health = await nodeHealth(node);
-        if (health.incoming === 0 && health.outgoing === 0) {
-          dead.push({
-            ...health,
-            weight: codebaseNodeWeight(node)
-          });
-        }
-      }
-      return dead.sort((a, b) => b.weight - a.weight).slice(0, limit);
+      const graph = await buildScopedKnowledgeGraph(nodes, {
+        nodeLabels: inventoryOptions.nodeLabels,
+        owners: inventoryOptions.owners,
+        resourceScoped: Boolean(inventoryOptions.resourceGrant),
+        nodeSet: "inventory-scope"
+      });
+      return summarizeDeadzones(nodes, graph, limit);
     },
     async overview(projectOrOptions) {
       const inventoryOptions = typeof projectOrOptions === "string" ? { project: projectOrOptions } : projectOrOptions ?? {};
@@ -6117,14 +6320,24 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
         const label = getStringMetadata(node, "label") ?? "Node";
         counts[label] = (counts[label] ?? 0) + 1;
       }
+      const inventory = await buildInventorySummary(nodes, {
+        limit: inventoryOptions.limit ?? 10,
+        nodeLabels: inventoryOptions.nodeLabels,
+        owners: inventoryOptions.owners,
+        resourceScoped: Boolean(inventoryOptions.resourceGrant),
+        nodeSet: "inventory-scope"
+      });
       return {
         project: inventoryOptions.project,
         nodes: nodes.length,
         labels: counts,
-        owners: await this.owners({ ...inventoryOptions, limit: 10 }),
-        entrypoints: await this.entrypoints({ ...inventoryOptions, limit: 10 }),
-        hotspots: await this.hotspots({ ...inventoryOptions, limit: 10 }),
-        deadzones: await this.deadzones({ ...inventoryOptions, limit: 10 })
+        analysisScope: inventory.analysisScope,
+        owners: inventory.owners,
+        entrypoints: inventory.entrypoints,
+        hotspots: inventory.hotspots,
+        deadzones: inventory.deadzones,
+        clusters: inventory.clusters,
+        bridges: inventory.bridges
       };
     },
     async context(query, queryOptions = { limit: defaultLimit }) {
@@ -7852,6 +8065,113 @@ profile: ${profile}
       truncated
     };
   }
+  analyzeMemoryGraphStructure(nodes, links, topics) {
+    const adjacency = /* @__PURE__ */ new Map();
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const linkById = new Map(links.map((link) => [link.id, link]));
+    for (const node of nodes) {
+      adjacency.set(node.id, []);
+    }
+    for (const link of links) {
+      adjacency.get(link.fromId)?.push({ neighborId: link.toId, link });
+      adjacency.get(link.toId)?.push({ neighborId: link.fromId, link });
+    }
+    const visited = /* @__PURE__ */ new Set();
+    const clusters = [];
+    let clusterIndex = 0;
+    for (const node of nodes) {
+      if (visited.has(node.id)) continue;
+      const stack = [node.id];
+      const componentIds = [];
+      const componentLinkIds = /* @__PURE__ */ new Set();
+      visited.add(node.id);
+      while (stack.length > 0) {
+        const currentId = stack.pop();
+        componentIds.push(currentId);
+        for (const edge of adjacency.get(currentId) ?? []) {
+          componentLinkIds.add(edge.link.id);
+          if (!visited.has(edge.neighborId)) {
+            visited.add(edge.neighborId);
+            stack.push(edge.neighborId);
+          }
+        }
+      }
+      const componentIdSet = new Set(componentIds);
+      const topTopics = topics.map((topic) => ({
+        topic: topic.topic,
+        count: topic.nodeIds.filter((id) => componentIdSet.has(id)).length
+      })).filter((topic) => topic.count > 0).sort((a, b) => b.count - a.count || a.topic.localeCompare(b.topic)).slice(0, 5);
+      clusters.push({
+        id: `cluster-${++clusterIndex}`,
+        nodeIds: componentIds.sort(),
+        linkIds: Array.from(componentLinkIds).sort(),
+        size: componentIds.length,
+        totalNodeWeight: Number(componentIds.reduce((sum, id) => sum + (nodeById.get(id)?.weight ?? 0), 0).toFixed(4)),
+        totalLinkWeight: Number(Array.from(componentLinkIds).reduce((sum, id) => sum + (linkById.get(id)?.weight ?? 0), 0).toFixed(4)),
+        topTopics
+      });
+    }
+    const discovery = /* @__PURE__ */ new Map();
+    const low = /* @__PURE__ */ new Map();
+    const parent = /* @__PURE__ */ new Map();
+    const articulationIds = /* @__PURE__ */ new Set();
+    const bridgeLinkIds = /* @__PURE__ */ new Set();
+    let time = 0;
+    const dfs = (nodeId) => {
+      discovery.set(nodeId, ++time);
+      low.set(nodeId, time);
+      let childCount = 0;
+      for (const edge of adjacency.get(nodeId) ?? []) {
+        const neighborId = edge.neighborId;
+        if (!discovery.has(neighborId)) {
+          parent.set(neighborId, nodeId);
+          childCount += 1;
+          dfs(neighborId);
+          low.set(nodeId, Math.min(low.get(nodeId), low.get(neighborId)));
+          if (parent.get(nodeId) == null && childCount > 1) {
+            articulationIds.add(nodeId);
+          }
+          if (parent.get(nodeId) != null && low.get(neighborId) >= discovery.get(nodeId)) {
+            articulationIds.add(nodeId);
+          }
+          if (low.get(neighborId) > discovery.get(nodeId)) {
+            bridgeLinkIds.add(edge.link.id);
+          }
+        } else if (neighborId !== parent.get(nodeId)) {
+          low.set(nodeId, Math.min(low.get(nodeId), discovery.get(neighborId)));
+        }
+      }
+    };
+    for (const node of nodes) {
+      if (!discovery.has(node.id)) {
+        parent.set(node.id, null);
+        dfs(node.id);
+      }
+    }
+    return {
+      clusters,
+      bridges: {
+        nodes: Array.from(articulationIds).map((nodeId) => {
+          const node = nodeById.get(nodeId);
+          const bridgeLinkIdsForNode = (adjacency.get(nodeId) ?? []).filter((edge) => bridgeLinkIds.has(edge.link.id)).map((edge) => edge.link.id).sort();
+          return {
+            nodeId,
+            label: node.label,
+            degree: (adjacency.get(nodeId) ?? []).length,
+            topics: node.topics,
+            bridgeLinkIds: bridgeLinkIdsForNode
+          };
+        }).sort((a, b) => b.bridgeLinkIds.length - a.bridgeLinkIds.length || b.degree - a.degree || a.label.localeCompare(b.label)),
+        links: links.filter((link) => bridgeLinkIds.has(link.id)).map((link) => ({
+          linkId: link.id,
+          fromId: link.fromId,
+          toId: link.toId,
+          type: link.type,
+          weight: link.weight
+        })).sort((a, b) => b.weight - a.weight || a.type.localeCompare(b.type))
+      }
+    };
+  }
   /**
    * Returns true if semantic embeddings are enabled and configured.
    */
@@ -7999,22 +8319,33 @@ profile: ${profile}
     const nodeIds = new Set(initialNodes.map((node) => node.id));
     const linksById = /* @__PURE__ */ new Map();
     const maxLinks = Math.min(Math.max(options.maxLinks ?? 250, 0), 1e3);
+    const pageSize = 100;
+    let truncated = false;
     for (const node of initialNodes) {
       if (linksById.size >= maxLinks) break;
-      const linked = await this.getLinkedMemories(node.id, { direction: "both", limit: 100 });
-      for (const item of linked) {
-        if (linksById.size >= maxLinks) break;
-        const link = item.link;
-        if (!nodeIds.has(link.fromId) || !nodeIds.has(link.toId)) continue;
-        linksById.set(link.id, {
-          id: link.id,
-          fromId: link.fromId,
-          toId: link.toId,
-          type: link.type,
-          weight: this.metadataNumericWeight(link.metadata ?? {}, ["graphWeight", "weight", "strength"], this.defaultLinkWeight(link.type)),
-          metadata: link.metadata ?? {},
-          createdAt: link.createdAt
-        });
+      let offset = 0;
+      while (linksById.size < maxLinks) {
+        const linked = await this.getLinkedMemories(node.id, { direction: "both", limit: pageSize, offset });
+        if (linked.length === 0) break;
+        for (const item of linked) {
+          const link = item.link;
+          if (!nodeIds.has(link.fromId) || !nodeIds.has(link.toId)) continue;
+          linksById.set(link.id, {
+            id: link.id,
+            fromId: link.fromId,
+            toId: link.toId,
+            type: link.type,
+            weight: this.metadataNumericWeight(link.metadata ?? {}, ["graphWeight", "weight", "strength"], this.defaultLinkWeight(link.type)),
+            metadata: link.metadata ?? {},
+            createdAt: link.createdAt
+          });
+          if (linksById.size >= maxLinks) {
+            truncated = true;
+            break;
+          }
+        }
+        if (linked.length < pageSize || linksById.size >= maxLinks) break;
+        offset += linked.length;
       }
     }
     const links = Array.from(linksById.values()).sort((a, b) => b.weight - a.weight || a.type.localeCompare(b.type));
@@ -8030,6 +8361,7 @@ profile: ${profile}
       }
     }
     const topicClusters = Array.from(topicMap.entries()).map(([topic, ids]) => ({ topic, count: ids.size, nodeIds: Array.from(ids).sort() })).sort((a, b) => b.count - a.count || a.topic.localeCompare(b.topic));
+    const structure = this.analyzeMemoryGraphStructure(nodes, finalLinks, topicClusters);
     const dotLines = [
       "digraph remem_memory {",
       "  graph [rankdir=LR];",
@@ -8076,8 +8408,21 @@ profile: ${profile}
       nodes,
       links: finalLinks,
       topics: topicClusters,
+      clusters: structure.clusters,
+      bridges: structure.bridges,
       dot: dotLines.join("\n"),
       cytoscape,
+      analysisScope: {
+        nodeSet: "query-results",
+        linkSet: "internal-links-between-returned-nodes",
+        structureSet: "snapshot-internal",
+        querySource: "filtered-query",
+        pageSize,
+        uniqueLinks: finalLinks.length,
+        truncated,
+        includeIsolated: options.includeIsolated !== false,
+        maxLinks
+      },
       generatedAt: Date.now()
     };
   }

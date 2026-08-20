@@ -1,6 +1,6 @@
 {
   "name": "@darksol/remem",
-  "version": "0.25.1",
+  "version": "0.26.0",
   "description": "Persistent, queryable memory for AI agents with intake policy, smart recall, context packs, graph recall, and multi-agent scoping",
   "bin": {
     "remem": "dist/cli.js"

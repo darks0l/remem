@@ -132,6 +132,32 @@ export interface MemoryGraphTopicCluster {
   nodeIds: string[];
 }
 
+export interface MemoryGraphStructureCluster {
+  id: string;
+  nodeIds: string[];
+  linkIds: string[];
+  size: number;
+  totalNodeWeight: number;
+  totalLinkWeight: number;
+  topTopics: Array<{ topic: string; count: number }>;
+}
+
+export interface MemoryGraphBridgeNode {
+  nodeId: string;
+  label: string;
+  degree: number;
+  topics: string[];
+  bridgeLinkIds: string[];
+}
+
+export interface MemoryGraphBridgeLink {
+  linkId: string;
+  fromId: string;
+  toId: string;
+  type: string;
+  weight: number;
+}
+
 export interface MemoryGraphCytoscapeNode {
   group: 'nodes';
   data: {
@@ -165,14 +191,32 @@ export interface MemoryGraphCytoscapeExport {
   elements: Array<MemoryGraphCytoscapeNode | MemoryGraphCytoscapeEdge>;
 }
 
+export interface MemoryGraphAnalysisScope {
+  nodeSet: 'query-results';
+  linkSet: 'internal-links-between-returned-nodes';
+  structureSet: 'snapshot-internal';
+  querySource: 'filtered-query';
+  pageSize: number;
+  uniqueLinks: number;
+  truncated: boolean;
+  includeIsolated: boolean;
+  maxLinks: number;
+}
+
 export interface MemoryGraphSnapshot {
   name: 'ReMEM Memory Graph';
   query?: string;
   nodes: MemoryGraphNode[];
   links: MemoryGraphLink[];
   topics: MemoryGraphTopicCluster[];
+  clusters: MemoryGraphStructureCluster[];
+  bridges: {
+    nodes: MemoryGraphBridgeNode[];
+    links: MemoryGraphBridgeLink[];
+  };
   dot: string;
   cytoscape: MemoryGraphCytoscapeExport;
+  analysisScope: MemoryGraphAnalysisScope;
   generatedAt: number;
 }
 
@@ -1426,6 +1470,146 @@ export class ReMEM {
     };
   }
 
+  private analyzeMemoryGraphStructure(
+    nodes: MemoryGraphNode[],
+    links: MemoryGraphLink[],
+    topics: MemoryGraphTopicCluster[]
+  ): {
+    clusters: MemoryGraphStructureCluster[];
+    bridges: { nodes: MemoryGraphBridgeNode[]; links: MemoryGraphBridgeLink[] };
+  } {
+    const adjacency = new Map<string, Array<{ neighborId: string; link: MemoryGraphLink }>>();
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const linkById = new Map(links.map((link) => [link.id, link]));
+
+    for (const node of nodes) {
+      adjacency.set(node.id, []);
+    }
+
+    for (const link of links) {
+      adjacency.get(link.fromId)?.push({ neighborId: link.toId, link });
+      adjacency.get(link.toId)?.push({ neighborId: link.fromId, link });
+    }
+
+    const visited = new Set<string>();
+    const clusters: MemoryGraphStructureCluster[] = [];
+    let clusterIndex = 0;
+
+    for (const node of nodes) {
+      if (visited.has(node.id)) continue;
+      const stack = [node.id];
+      const componentIds: string[] = [];
+      const componentLinkIds = new Set<string>();
+      visited.add(node.id);
+
+      while (stack.length > 0) {
+        const currentId = stack.pop()!;
+        componentIds.push(currentId);
+        for (const edge of adjacency.get(currentId) ?? []) {
+          componentLinkIds.add(edge.link.id);
+          if (!visited.has(edge.neighborId)) {
+            visited.add(edge.neighborId);
+            stack.push(edge.neighborId);
+          }
+        }
+      }
+
+      const componentIdSet = new Set(componentIds);
+      const topTopics = topics
+        .map((topic) => ({
+          topic: topic.topic,
+          count: topic.nodeIds.filter((id) => componentIdSet.has(id)).length,
+        }))
+        .filter((topic) => topic.count > 0)
+        .sort((a, b) => b.count - a.count || a.topic.localeCompare(b.topic))
+        .slice(0, 5);
+
+      clusters.push({
+        id: `cluster-${++clusterIndex}`,
+        nodeIds: componentIds.sort(),
+        linkIds: Array.from(componentLinkIds).sort(),
+        size: componentIds.length,
+        totalNodeWeight: Number(componentIds.reduce((sum, id) => sum + (nodeById.get(id)?.weight ?? 0), 0).toFixed(4)),
+        totalLinkWeight: Number(Array.from(componentLinkIds).reduce((sum, id) => sum + (linkById.get(id)?.weight ?? 0), 0).toFixed(4)),
+        topTopics,
+      });
+    }
+
+    const discovery = new Map<string, number>();
+    const low = new Map<string, number>();
+    const parent = new Map<string, string | null>();
+    const articulationIds = new Set<string>();
+    const bridgeLinkIds = new Set<string>();
+    let time = 0;
+
+    const dfs = (nodeId: string) => {
+      discovery.set(nodeId, ++time);
+      low.set(nodeId, time);
+      let childCount = 0;
+
+      for (const edge of adjacency.get(nodeId) ?? []) {
+        const neighborId = edge.neighborId;
+        if (!discovery.has(neighborId)) {
+          parent.set(neighborId, nodeId);
+          childCount += 1;
+          dfs(neighborId);
+          low.set(nodeId, Math.min(low.get(nodeId)!, low.get(neighborId)!));
+
+          if (parent.get(nodeId) == null && childCount > 1) {
+            articulationIds.add(nodeId);
+          }
+          if (parent.get(nodeId) != null && low.get(neighborId)! >= discovery.get(nodeId)!) {
+            articulationIds.add(nodeId);
+          }
+          if (low.get(neighborId)! > discovery.get(nodeId)!) {
+            bridgeLinkIds.add(edge.link.id);
+          }
+        } else if (neighborId !== parent.get(nodeId)) {
+          low.set(nodeId, Math.min(low.get(nodeId)!, discovery.get(neighborId)!));
+        }
+      }
+    };
+
+    for (const node of nodes) {
+      if (!discovery.has(node.id)) {
+        parent.set(node.id, null);
+        dfs(node.id);
+      }
+    }
+
+    return {
+      clusters,
+      bridges: {
+        nodes: Array.from(articulationIds)
+          .map((nodeId) => {
+            const node = nodeById.get(nodeId)!;
+            const bridgeLinkIdsForNode = (adjacency.get(nodeId) ?? [])
+              .filter((edge) => bridgeLinkIds.has(edge.link.id))
+              .map((edge) => edge.link.id)
+              .sort();
+            return {
+              nodeId,
+              label: node.label,
+              degree: (adjacency.get(nodeId) ?? []).length,
+              topics: node.topics,
+              bridgeLinkIds: bridgeLinkIdsForNode,
+            };
+          })
+          .sort((a, b) => b.bridgeLinkIds.length - a.bridgeLinkIds.length || b.degree - a.degree || a.label.localeCompare(b.label)),
+        links: links
+          .filter((link) => bridgeLinkIds.has(link.id))
+          .map((link) => ({
+            linkId: link.id,
+            fromId: link.fromId,
+            toId: link.toId,
+            type: link.type,
+            weight: link.weight,
+          }))
+          .sort((a, b) => b.weight - a.weight || a.type.localeCompare(b.type)),
+      },
+    };
+  }
+
   /**
    * Returns true if semantic embeddings are enabled and configured.
    */
@@ -1600,23 +1784,34 @@ export class ReMEM {
     const nodeIds = new Set(initialNodes.map((node) => node.id));
     const linksById = new Map<string, MemoryGraphLink>();
     const maxLinks = Math.min(Math.max(options.maxLinks ?? 250, 0), 1_000);
+    const pageSize = 100;
+    let truncated = false;
 
     for (const node of initialNodes) {
       if (linksById.size >= maxLinks) break;
-      const linked = await this.getLinkedMemories(node.id, { direction: 'both', limit: 100 });
-      for (const item of linked) {
-        if (linksById.size >= maxLinks) break;
-        const link = item.link;
-        if (!nodeIds.has(link.fromId) || !nodeIds.has(link.toId)) continue;
-        linksById.set(link.id, {
-          id: link.id,
-          fromId: link.fromId,
-          toId: link.toId,
-          type: link.type,
-          weight: this.metadataNumericWeight(link.metadata ?? {}, ['graphWeight', 'weight', 'strength'], this.defaultLinkWeight(link.type)),
-          metadata: link.metadata ?? {},
-          createdAt: link.createdAt,
-        });
+      let offset = 0;
+      while (linksById.size < maxLinks) {
+        const linked = await this.getLinkedMemories(node.id, { direction: 'both', limit: pageSize, offset });
+        if (linked.length === 0) break;
+        for (const item of linked) {
+          const link = item.link;
+          if (!nodeIds.has(link.fromId) || !nodeIds.has(link.toId)) continue;
+          linksById.set(link.id, {
+            id: link.id,
+            fromId: link.fromId,
+            toId: link.toId,
+            type: link.type,
+            weight: this.metadataNumericWeight(link.metadata ?? {}, ['graphWeight', 'weight', 'strength'], this.defaultLinkWeight(link.type)),
+            metadata: link.metadata ?? {},
+            createdAt: link.createdAt,
+          });
+          if (linksById.size >= maxLinks) {
+            truncated = true;
+            break;
+          }
+        }
+        if (linked.length < pageSize || linksById.size >= maxLinks) break;
+        offset += linked.length;
       }
     }
 
@@ -1640,6 +1835,7 @@ export class ReMEM {
     const topicClusters = Array.from(topicMap.entries())
       .map(([topic, ids]) => ({ topic, count: ids.size, nodeIds: Array.from(ids).sort() }))
       .sort((a, b) => b.count - a.count || a.topic.localeCompare(b.topic));
+    const structure = this.analyzeMemoryGraphStructure(nodes, finalLinks, topicClusters);
     const dotLines = [
       'digraph remem_memory {',
       '  graph [rankdir=LR];',
@@ -1687,8 +1883,21 @@ export class ReMEM {
       nodes,
       links: finalLinks,
       topics: topicClusters,
+      clusters: structure.clusters,
+      bridges: structure.bridges,
       dot: dotLines.join('\n'),
       cytoscape,
+      analysisScope: {
+        nodeSet: 'query-results',
+        linkSet: 'internal-links-between-returned-nodes',
+        structureSet: 'snapshot-internal',
+        querySource: 'filtered-query',
+        pageSize,
+        uniqueLinks: finalLinks.length,
+        truncated,
+        includeIsolated: options.includeIsolated !== false,
+        maxLinks,
+      },
       generatedAt: Date.now(),
     };
   }
