@@ -99,9 +99,10 @@ import {
   smartRecallProfileSchema,
   smartRecallResponseSchema,
   smartRecallResultSchema,
+  storageScopeConfigSchema,
   storeMemoryInputSchema,
   uploadPackage
-} from "./chunk-7MMVSVFD.mjs";
+} from "./chunk-54F7NTJN.mjs";
 export {
   ConstitutionInjector,
   ConstitutionManager,
@@ -203,6 +204,7 @@ export {
   smartRecallProfileSchema,
   smartRecallResponseSchema,
   smartRecallResultSchema,
+  storageScopeConfigSchema,
   storeMemoryInputSchema,
   uploadPackage
 };

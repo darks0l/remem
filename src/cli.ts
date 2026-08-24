@@ -75,12 +75,14 @@ function resolveProfileOption(value: string | boolean | undefined, fallback: Con
 function buildConfig(options: Record<string, string | boolean>): { config: ReMEMConfig; storageLabel: string; dbLabel: string; scopeLabel: string } {
   const storage = asString(options.storage, 'sqlite') as 'sqlite' | 'memory' | 'postgres';
   const dbPath = asString(options.db, storage === 'memory' ? ':memory:' : './remem.db');
+  const workspaceId = asString(options['workspace-id']) || undefined;
   const agentId = asString(options['agent-id']) || undefined;
   const userId = asString(options['user-id']) || undefined;
   const config: ReMEMConfig = {
     storage,
     dbPath,
     storageConfig: {
+      workspaceId,
       agentId,
       userId,
     },
@@ -124,7 +126,7 @@ function buildConfig(options: Record<string, string | boolean>): { config: ReMEM
     config,
     storageLabel: storage,
     dbLabel: storage === 'postgres' ? (postgresUrl || 'postgres') : dbPath,
-    scopeLabel: [agentId ? `agent:${agentId}` : null, userId ? `user:${userId}` : null].filter(Boolean).join(' | ') || 'global',
+    scopeLabel: [workspaceId ? `workspace:${workspaceId}` : null, agentId ? `agent:${agentId}` : null, userId ? `user:${userId}` : null].filter(Boolean).join(' | ') || 'global',
   };
 }
 
@@ -132,7 +134,7 @@ function helpText() {
   return `ReMEM CLI
 
 Usage:
-  remem ui [--db <path>] [--storage sqlite|memory|postgres] [--agent-id <id>] [--user-id <id>]
+  remem ui [--db <path>] [--storage sqlite|memory|postgres] [--workspace-id <id>] [--agent-id <id>] [--user-id <id>]
   remem init [same flags as ui] [--runtime openclaw|hermes|generic] [--out-dir <path>] [--json]
   remem status [--db <path>]
   remem stats [--db <path>] [--json]
@@ -142,7 +144,12 @@ Usage:
   remem knowledge-artifact --path <file> [--source codebase-memory-mcp] [--project <name>] [--resource-uri <uri>] [--required-scopes a,b] [--format sqlite] [--compression zstd] [--json]
   remem knowledge-ingest --artifact <graph.json|graph.json.gz> [--source <name>] [--project <name>] [--namespace team/code] [--visibility shared|private] [--json]
   remem knowledge-overview [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
+  remem knowledge-explain --query <text> [--project <name>] [--limit 8] [--neighbor-limit 8] [--connections calls,imports] [--labels Function,Route] [--owners src,packages] [--max-context-chars 6000] [--json]
   remem knowledge-subgraph --query <text> [--project <name>] [--limit 8] [--neighbor-limit 8] [--connections calls,imports] [--labels Function,Route] [--owners src,packages] [--max-context-chars 6000] [--json]
+  remem knowledge-entrypoints [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
+  remem knowledge-owners [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
+  remem knowledge-hotspots [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
+  remem knowledge-deadzones [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
   remem store --content <text> [--topics a,b] [--metadata '{"kind":"note"}']
   remem remember --content <text> [--kind fact|preference|decision|procedure|recent-event|artifact-note] [--topics a,b] [--source <name>] [--dry-run]
   remem remember-batch --file <items.json> [--stop-on-error] [--json]
@@ -177,6 +184,7 @@ Common config flags:
   --db <path>                SQLite path (default ./remem.db)
   --storage <mode>           sqlite | memory | postgres
   --postgres-url <url>       Postgres connection string
+  --workspace-id <id>        Workspace scope
   --agent-id <id>            Agent scope
   --user-id <id>             User scope
   --embeddings               Enable embedding search
@@ -843,6 +851,132 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
           ].join('\n')
         );
       }
+    });
+    return 0;
+  }
+
+  if (command === 'knowledge-explain') {
+    await withMemory(options, async (memory, context) => {
+      const query = requireOption(options.query, 'query', jsonMode, runtime);
+      if (query === null) return;
+      const result = await memory.knowledgeExplain(query, {
+        project: asString(options.project) || undefined,
+        limit: asNumber(options.limit, 8),
+        neighborLimit: asNumber(options['neighbor-limit'], asNumber(options.limit, 8)),
+        maxContextChars: asNumber(options['max-context-chars'], 6000),
+        connectionTypes: asCsv(options.connections),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners),
+        minConnectionWeight: options['min-connection-weight'] ? asNumber(options['min-connection-weight'], 0) : undefined,
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...result,
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        emitText(
+          runtime,
+          [
+            payload.summary,
+            '',
+            payload.context,
+            '',
+          ].join('\n')
+        );
+      }
+    });
+    return 0;
+  }
+
+  if (command === 'knowledge-entrypoints') {
+    await withMemory(options, async (memory, context) => {
+      const entrypoints = await memory.knowledgeEntrypoints({
+        project: asString(options.project) || undefined,
+        limit: asNumber(options.limit, 10),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners),
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        entrypoints,
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, entrypoints.length ? `${entrypoints.map((item) => `- ${item.node.content.split('\n')[0]}`).join('\n')}\n` : 'No entrypoints.\n');
+    });
+    return 0;
+  }
+
+  if (command === 'knowledge-owners') {
+    await withMemory(options, async (memory, context) => {
+      const owners = await memory.knowledgeOwners({
+        project: asString(options.project) || undefined,
+        limit: asNumber(options.limit, 10),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners),
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        owners,
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, owners.length ? `${owners.map((item) => `- ${item.owner} (${item.type}) nodes:${item.nodes}`).join('\n')}\n` : 'No owners.\n');
+    });
+    return 0;
+  }
+
+  if (command === 'knowledge-hotspots') {
+    await withMemory(options, async (memory, context) => {
+      const hotspots = await memory.knowledgeHotspots({
+        project: asString(options.project) || undefined,
+        limit: asNumber(options.limit, 10),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners),
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        hotspots,
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, hotspots.length ? `${hotspots.map((item) => `- ${item.node.content.split('\n')[0]} in:${item.incoming} out:${item.outgoing}`).join('\n')}\n` : 'No hotspots.\n');
+    });
+    return 0;
+  }
+
+  if (command === 'knowledge-deadzones') {
+    await withMemory(options, async (memory, context) => {
+      const deadzones = await memory.knowledgeDeadzones({
+        project: asString(options.project) || undefined,
+        limit: asNumber(options.limit, 10),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners),
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        deadzones,
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, deadzones.length ? `${deadzones.map((item) => `- ${item.node.content.split('\n')[0]} in:${item.incoming} out:${item.outgoing}`).join('\n')}\n` : 'No deadzones.\n');
     });
     return 0;
   }

@@ -1,26 +1,24 @@
+<p align="center">
+  <img src="./assets/darksol-banner.png" alt="DARKSOL banner" width="600"/>
+</p>
+
+<p align="center"><strong>Built by DARKSOL 🌑</strong></p>
+
+[![npm](https://img.shields.io/npm/v/@darksol/remem?color=gold&style=flat-square)](https://www.npmjs.com/package/@darksol/remem)
+[![license](https://img.shields.io/npm/l/@darksol/remem?color=green&style=flat-square)](./LICENSE)
+[![node](https://img.shields.io/node/v/@darksol/remem?style=flat-square)](https://nodejs.org)
+
 # ReMEM - Recursive Memory for AI Agents
 
 Built by DARKSOL 🌑
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/darks0l/remem/master/assets/remem-hero.jpg" alt="DARKSOL ReMEM" width="800"/>
-</p>
-
-<p align="center">
-
-[![npm version](https://img.shields.io/npm/v/@darksol/remem?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.npmjs.com/package/@darksol/remem)
-[![License: MIT](https://img.shields.io/badge/License-MIT-red.svg?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://opensource.org/licenses/MIT)
-[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?colorA=1a1a2e&colorB=16213e&style=flat-square)](https://www.typescriptlang.org/)
-[![Test Status](https://img.shields.io/badge/tests-passing-00e676?colorA=1a1a2e&colorB=16213e&style=flat-square)]()
-[![v0.26.0](https://img.shields.io/badge/v0.26.0-graph--topology-blue?colorA=1a1a2e&colorB=0d47a1&style=flat-square)]()
-
-</p>
-
-> Production-minded agent memory for teams that need durable intake policy, scoped recall, context packs, and benchmarked retrieval beyond the active prompt window.
+> Production-minded agent memory for teams that need durable intake policy, scoped recall, context packs, graph recall, and benchmarked retrieval beyond the active prompt window.
 
 **Persistent, queryable memory for AI agents.**
 
 ReMEM is a lightweight, framework-agnostic memory substrate for AI agents. It gives agents a persistent memory layer they can store to, query by meaning, organize across layers, and carry across restarts.
+
+For hosted/service-style deployments, ReMEM now has a first-class `workspaceId` scope lane alongside `agentId` and `userId`, which makes it much easier to isolate memory by tenant or project before the deeper service extraction work begins.
 
 It applies the core insight from [Recursive Language Models (RLMs)](https://arxiv.org/pdf/2512.24601) - that prompts should be external environment variables, not direct context - to the problem of persistent, queryable agent memory.
 
@@ -84,7 +82,12 @@ remem storage-maintenance --db ./remem.db --dry-run --json
 remem knowledge-artifact --db ./remem.db --path .codebase-memory/graph.db.zst --source codebase-memory-mcp --project remem --format sqlite --compression zstd --json
 remem knowledge-ingest --db ./remem.db --artifact ./code-graph.json --source codebase-memory-mcp --project remem --json
 remem knowledge-overview --db ./remem.db --project remem --labels Function,Route --json
+remem knowledge-explain --db ./remem.db --query "ProcessOrder" --project remem --connections calls --json
 remem knowledge-subgraph --db ./remem.db --query "ProcessOrder" --project remem --connections calls,imports --owners src --json
+remem knowledge-entrypoints --db ./remem.db --project remem --json
+remem knowledge-owners --db ./remem.db --project remem --json
+remem knowledge-hotspots --db ./remem.db --project remem --json
+remem knowledge-deadzones --db ./remem.db --project remem --json
 remem store --content "Meta likes dark mode" --topics preferences,ui
 remem remember --content "We decided to ship intake scoring before the next release" --topics release,roadmap --source operator
 remem recall-profiles --json
@@ -231,6 +234,20 @@ remem knowledge-subgraph \
   --owners src \
   --max-context-chars 4000 \
   --json
+
+# Ask for one concise explanation of how a graph node fits the imported codebase.
+remem knowledge-explain \
+  --db ./remem.db \
+  --query "ProcessOrder" \
+  --project remem \
+  --connections calls \
+  --json
+
+# Pull focused inventory slices without building custom adapter glue.
+remem knowledge-entrypoints --db ./remem.db --project remem --json
+remem knowledge-owners --db ./remem.db --project remem --json
+remem knowledge-hotspots --db ./remem.db --project remem --json
+remem knowledge-deadzones --db ./remem.db --project remem --json
 ```
 
 ```typescript
@@ -1198,6 +1215,23 @@ await adapter.start();
 
 The advanced route surface includes graph recall, smart recall, context packs, memory health triage, storage maintenance, shared namespaces, procedural matching, and identity audit endpoints.
 
+For hosted multi-tenant deployments, the HTTP adapter can also resolve a scoped runtime per request. Turn on `trustScopeHeaders` to read `x-remem-workspace-id`, `x-remem-agent-id`, `x-remem-user-id`, `x-remem-session-id`, and `x-remem-subject`, then use `runtimeResolver` to map that request context into the right isolated ReMEM runtime:
+
+```typescript
+const adapter = new HttpAdapter({
+  port: 8787,
+  store: alphaMemory.getStore(),
+  memory: alphaMemory,
+  trustScopeHeaders: true,
+  runtimeResolver(scope) {
+    if (scope.workspaceId === 'beta') {
+      return { store: betaMemory.getStore(), memory: betaMemory };
+    }
+    return { store: alphaMemory.getStore(), memory: alphaMemory };
+  },
+});
+```
+
 - `POST /memory/query-with-neighbors` — graph-aware retrieval with `query` + `options`
 - `POST /memory/shared` — store namespaced shared/private memory with `namespace` + `visibility`
 - `POST /memory/namespace/query` — query a namespace with optional visibility scope
@@ -1216,6 +1250,13 @@ Additional advanced routes:
 - `POST /storage/maintenance` - dry-run or apply expired/orphan storage cleanup
 - `POST /knowledge/artifact` - register an external compressed or tool-owned knowledge graph artifact
 - `POST /knowledge/ingest` - ingest portable graph nodes/edges as ReMEM memories and links
+- `POST /knowledge/overview` - summarize an imported graph by labels, owners, hotspots, deadzones, and structure
+- `POST /knowledge/subgraph` - return a prompt-ready scoped graph neighborhood around a query
+- `POST /knowledge/explain` - return one focused graph explanation with a compact summary
+- `POST /knowledge/entrypoints` - list likely entrypoint nodes in the imported graph scope
+- `POST /knowledge/owners` - summarize top-level owner/directory/package distribution
+- `POST /knowledge/hotspots` - rank the most connected imported graph nodes
+- `POST /knowledge/deadzones` - surface isolated or weakly connected imported graph nodes
 
 ### Shared memory namespaces
 
@@ -1485,6 +1526,29 @@ curl -X POST "http://localhost:8787/knowledge/subgraph" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $REMEM_TOKEN" \
   -d '{"query":"ProcessOrder","options":{"project":"remem","connectionTypes":["calls","imports"],"limit":8,"neighborLimit":8,"maxContextChars":4000}}'
+
+# Ask for one focused graph explanation
+curl -X POST "http://localhost:8787/knowledge/explain" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -d '{"query":"ProcessOrder","options":{"project":"remem","connectionTypes":["calls"],"limit":8,"neighborLimit":8}}'
+
+# Pull focused graph inventory slices
+curl -X POST "http://localhost:8787/knowledge/entrypoints" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -d '{"project":"remem","limit":10}'
+curl -X POST "http://localhost:8787/knowledge/owners" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -d '{"project":"remem","limit":10}'
+
+# Route one adapter into a specific workspace runtime
+curl -X POST "http://localhost:8787/memory" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $REMEM_TOKEN" \
+  -H "X-ReMEM-Workspace-Id: alpha" \
+  -d '{"content":"Alpha workspace deploy memory","topics":["deploy"]}'
 
 # Health
 curl -H "Authorization: Bearer $REMEM_TOKEN" \

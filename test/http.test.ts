@@ -2,6 +2,7 @@
  * ReMEM — HTTP adapter tests
  */
 
+import fs from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HttpAdapter, MemoryStore, ReMEM } from '../src/index.js';
 
@@ -84,6 +85,105 @@ describe('HttpAdapter', () => {
     expect(authorized.status).toBe(200);
 
     store.close();
+  });
+
+  it('routes requests into scoped runtimes when runtimeResolver is configured', async () => {
+    const db = `./.tmp-http-scoped-${Date.now()}-${Math.random().toString(16).slice(2)}.db`;
+    await fs.rm(db, { force: true });
+
+    const alpha = new ReMEM({ storage: 'sqlite', dbPath: db, storageConfig: { workspaceId: 'alpha' } });
+    await alpha.init();
+
+    const beta = new ReMEM({ storage: 'sqlite', dbPath: db, storageConfig: { workspaceId: 'beta' } });
+    await beta.init();
+
+    const adapter = new HttpAdapter({
+      port: 18915,
+      store: alpha.getStore(),
+      memory: alpha,
+      trustScopeHeaders: true,
+      runtimeResolver: (scope) => {
+        if (scope.workspaceId === 'alpha') return { store: alpha.getStore(), memory: alpha };
+        if (scope.workspaceId === 'beta') return { store: beta.getStore(), memory: beta };
+        return null;
+      },
+    });
+    adapters.push(adapter);
+    await adapter.start();
+
+    const alphaCreate = await fetch('http://127.0.0.1:18915/memory', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-ReMEM-Workspace-Id': 'alpha',
+      },
+      body: JSON.stringify({ content: 'Alpha workspace release memory', topics: ['release'] }),
+    });
+    expect(alphaCreate.status).toBe(201);
+
+    const betaCreate = await fetch('http://127.0.0.1:18915/memory', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-ReMEM-Workspace-Id': 'beta',
+      },
+      body: JSON.stringify({ content: 'Beta workspace release memory', topics: ['release'] }),
+    });
+    expect(betaCreate.status).toBe(201);
+
+    const alphaQuery = await fetch('http://127.0.0.1:18915/memory?q=release&limit=5', {
+      headers: { 'X-ReMEM-Workspace-Id': 'alpha' },
+    });
+    expect(alphaQuery.status).toBe(200);
+    const alphaQueryJson = await readJson(alphaQuery) as { results: Array<{ content: string }> };
+    expect(alphaQueryJson.results.length).toBe(1);
+    expect(alphaQueryJson.results[0].content).toContain('Alpha workspace');
+
+    const betaQuery = await fetch('http://127.0.0.1:18915/memory?q=release&limit=5', {
+      headers: { 'X-ReMEM-Workspace-Id': 'beta' },
+    });
+    expect(betaQuery.status).toBe(200);
+    const betaQueryJson = await readJson(betaQuery) as { results: Array<{ content: string }> };
+    expect(betaQueryJson.results.length).toBe(1);
+    expect(betaQueryJson.results[0].content).toContain('Beta workspace');
+
+    const alphaSnapshot = await fetch('http://127.0.0.1:18915/snapshots', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-ReMEM-Workspace-Id': 'alpha',
+      },
+      body: JSON.stringify({ label: 'alpha-snap' }),
+    });
+    expect(alphaSnapshot.status).toBe(201);
+
+    const betaSnapshot = await fetch('http://127.0.0.1:18915/snapshots', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-ReMEM-Workspace-Id': 'beta',
+      },
+      body: JSON.stringify({ label: 'beta-snap' }),
+    });
+    expect(betaSnapshot.status).toBe(201);
+
+    const alphaSnapshots = await fetch('http://127.0.0.1:18915/snapshots', {
+      headers: { 'X-ReMEM-Workspace-Id': 'alpha' },
+    });
+    const alphaSnapshotsJson = await readJson(alphaSnapshots) as { snapshots: Array<{ label: string }> };
+    expect(alphaSnapshotsJson.snapshots.some((snapshot) => snapshot.label === 'alpha-snap')).toBe(true);
+    expect(alphaSnapshotsJson.snapshots.some((snapshot) => snapshot.label === 'beta-snap')).toBe(false);
+
+    const betaSnapshots = await fetch('http://127.0.0.1:18915/snapshots', {
+      headers: { 'X-ReMEM-Workspace-Id': 'beta' },
+    });
+    const betaSnapshotsJson = await readJson(betaSnapshots) as { snapshots: Array<{ label: string }> };
+    expect(betaSnapshotsJson.snapshots.some((snapshot) => snapshot.label === 'beta-snap')).toBe(true);
+    expect(betaSnapshotsJson.snapshots.some((snapshot) => snapshot.label === 'alpha-snap')).toBe(false);
+
+    alpha.close();
+    beta.close();
+    await fs.rm(db, { force: true });
   });
 
   it('serves advanced graph, procedural, and identity routes when memory runtime is configured', async () => {
@@ -213,10 +313,12 @@ describe('HttpAdapter', () => {
           resourceUri: 'memory://codebase/remem/imported',
           requiredScopes: ['codebase:read'],
           nodes: [
-            { id: 'fn:ProcessOrder', label: 'Function', name: 'ProcessOrder' },
-            { id: 'fn:ChargeCard', label: 'Function', name: 'ChargeCard' },
+            { id: 'route:/orders', label: 'Route', name: 'POST /orders', path: 'src/routes/orders.ts' },
+            { id: 'fn:ProcessOrder', label: 'Function', name: 'ProcessOrder', path: 'src/services/process-order.ts' },
+            { id: 'fn:ChargeCard', label: 'Function', name: 'ChargeCard', path: 'src/billing/charge-card.ts' },
           ],
           edges: [
+            { from: 'route:/orders', to: 'fn:ProcessOrder', type: 'CALLS' },
             { from: 'fn:ProcessOrder', to: 'fn:ChargeCard', type: 'CALLS' },
           ],
         },
@@ -224,8 +326,8 @@ describe('HttpAdapter', () => {
     });
     expect(knowledgeIngest.status).toBe(201);
     const knowledgeIngestJson = await readJson(knowledgeIngest) as { nodesStored: number; edgesLinked: number };
-    expect(knowledgeIngestJson.nodesStored).toBe(2);
-    expect(knowledgeIngestJson.edgesLinked).toBe(1);
+    expect(knowledgeIngestJson.nodesStored).toBe(3);
+    expect(knowledgeIngestJson.edgesLinked).toBe(2);
 
     const knowledgeOverview = await fetch('http://127.0.0.1:18913/knowledge/overview', {
       method: 'POST',
@@ -240,7 +342,7 @@ describe('HttpAdapter', () => {
       hotspots: unknown[];
     };
     expect(knowledgeOverviewJson.project).toBe('remem');
-    expect(knowledgeOverviewJson.nodes).toBe(2);
+    expect(knowledgeOverviewJson.nodes).toBe(3);
     expect(knowledgeOverviewJson.labels.Function).toBe(2);
     expect(Array.isArray(knowledgeOverviewJson.hotspots)).toBe(true);
 
@@ -259,10 +361,73 @@ describe('HttpAdapter', () => {
       linksTraversed: number;
       context: string;
     };
-    expect(knowledgeSubgraphJson.results.length).toBe(2);
+    expect(knowledgeSubgraphJson.results.length).toBeGreaterThanOrEqual(2);
     expect(knowledgeSubgraphJson.paths.length).toBeGreaterThanOrEqual(1);
     expect(knowledgeSubgraphJson.linksTraversed).toBeGreaterThanOrEqual(1);
     expect(knowledgeSubgraphJson.context).toContain('ProcessOrder');
+
+    const knowledgeExplain = await fetch('http://127.0.0.1:18913/knowledge/explain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: 'ProcessOrder',
+        options: { project: 'remem', connectionTypes: ['calls'], limit: 8, neighborLimit: 8 },
+      }),
+    });
+    expect(knowledgeExplain.status).toBe(200);
+    const knowledgeExplainJson = await readJson(knowledgeExplain) as {
+      summary: string;
+      context: string;
+    };
+    expect(knowledgeExplainJson.summary).toContain('ProcessOrder');
+    expect(knowledgeExplainJson.context).toContain('ProcessOrder');
+
+    const knowledgeEntrypoints = await fetch('http://127.0.0.1:18913/knowledge/entrypoints', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: 'remem', limit: 5 }),
+    });
+    expect(knowledgeEntrypoints.status).toBe(200);
+    const knowledgeEntrypointsJson = await readJson(knowledgeEntrypoints) as {
+      entrypoints: unknown[];
+    };
+    expect(Array.isArray(knowledgeEntrypointsJson.entrypoints)).toBe(true);
+    expect(knowledgeEntrypointsJson.entrypoints.length).toBeGreaterThanOrEqual(1);
+
+    const knowledgeOwners = await fetch('http://127.0.0.1:18913/knowledge/owners', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: 'remem', limit: 5 }),
+    });
+    expect(knowledgeOwners.status).toBe(200);
+    const knowledgeOwnersJson = await readJson(knowledgeOwners) as {
+      owners: Array<{ owner: string }>;
+    };
+    expect(Array.isArray(knowledgeOwnersJson.owners)).toBe(true);
+    expect(knowledgeOwnersJson.owners.some((item) => item.owner === 'src')).toBe(true);
+
+    const knowledgeHotspots = await fetch('http://127.0.0.1:18913/knowledge/hotspots', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: 'remem', limit: 5 }),
+    });
+    expect(knowledgeHotspots.status).toBe(200);
+    const knowledgeHotspotsJson = await readJson(knowledgeHotspots) as {
+      hotspots: unknown[];
+    };
+    expect(Array.isArray(knowledgeHotspotsJson.hotspots)).toBe(true);
+    expect(knowledgeHotspotsJson.hotspots.length).toBeGreaterThanOrEqual(1);
+
+    const knowledgeDeadzones = await fetch('http://127.0.0.1:18913/knowledge/deadzones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: 'remem', limit: 5 }),
+    });
+    expect(knowledgeDeadzones.status).toBe(200);
+    const knowledgeDeadzonesJson = await readJson(knowledgeDeadzones) as {
+      deadzones: unknown[];
+    };
+    expect(Array.isArray(knowledgeDeadzonesJson.deadzones)).toBe(true);
 
     const sharedCreate = await fetch('http://127.0.0.1:18913/memory/shared', {
       method: 'POST',

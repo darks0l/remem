@@ -26,6 +26,8 @@ import { resolveSmartRecallProfile } from './recall-profiles.js';
 import {
   createCodebaseMemoryAdapter,
   type CodebaseGraphInventoryOptions,
+  type CodebaseGraphNodeHealth,
+  type CodebaseGraphOwnerSummary,
   type CodebaseGraphSubgraph,
   type CodebaseSubgraphOptions,
 } from './adapters.js';
@@ -426,12 +428,21 @@ export class ReMEM {
   private _identityEnabled: boolean = false;
   private _layersEnabled: boolean = false;
   private _layerConfig?: Partial<LayerConfig>;
+  private _workspaceId?: string;
   private _agentId?: string;
   private _userId?: string;
 
   private normalizeNamespace(namespace: NamespaceInput): string {
     const parsed = namespaceInputSchema.parse(namespace);
     return Array.isArray(parsed) ? parsed.join('/') : parsed;
+  }
+
+  private getStoreScope(): import('./storage-types.js').StoreMemoryOptions {
+    return {
+      workspaceId: this._workspaceId,
+      agentId: this._agentId,
+      userId: this._userId,
+    };
   }
 
   private namespaceTopicTrail(namespace: string): string[] {
@@ -636,6 +647,7 @@ export class ReMEM {
     }
 
     // Agent/user scoping for multi-agent support
+    this._workspaceId = validated.storageConfig?.workspaceId as string | undefined;
     this._agentId = validated.storageConfig?.agentId as string | undefined;
     this._userId = validated.storageConfig?.userId as string | undefined;
 
@@ -671,7 +683,7 @@ export class ReMEM {
 
     // Restore persisted layer entries from the configured store
     if (this._layersEnabled && this.layers) {
-      const storeOpts = { agentId: this._agentId, userId: this._userId };
+      const storeOpts = this.getStoreScope();
       const persisted = await this._store.loadAllLayerEntries(storeOpts);
       for (const entry of persisted) {
         this.layers.restoreEntry(entry);
@@ -691,18 +703,12 @@ export class ReMEM {
     const normalized = storeMemoryInputSchema.parse(input);
 
     // Store in the underlying store to get the entry ID for embedding
-    const stored = await this._store.store(normalized, {
-      agentId: this._agentId,
-      userId: this._userId,
-    });
+    const stored = await this._store.store(normalized, this.getStoreScope());
 
     // Also store in layers if enabled (layers are persisted to the configured store)
     if (this._layersEnabled && this.layers) {
       const result = this.layers.store(normalized);
-      await this._store.persistLayerEntry(result, {
-        agentId: this._agentId,
-        userId: this._userId,
-      });
+        await this._store.persistLayerEntry(result, this.getStoreScope());
     }
 
     // Generate embedding (sync or async) if enabled
@@ -882,7 +888,7 @@ export class ReMEM {
           query,
           queryVector,
           options,
-          { agentId: this._agentId, userId: this._userId }
+          this.getStoreScope()
         );
         return { results, totalAvailable, query, tookMs: Date.now() - start };
       } catch (err) {
@@ -892,35 +898,23 @@ export class ReMEM {
     }
 
     // Fallback: standard keyword + access_count query
-    const { results, totalAvailable } = await this._store.query(query, options, {
-      agentId: this._agentId,
-      userId: this._userId,
-    });
+    const { results, totalAvailable } = await this._store.query(query, options, this.getStoreScope());
     return { results, totalAvailable, query, tookMs: Date.now() - start };
   }
 
   async linkMemories(fromId: string, toId: string, type: string, metadata: Record<string, unknown> = {}): Promise<MemoryLink> {
-    return this._store.createLink({ fromId, toId, type, metadata }, {
-      agentId: this._agentId,
-      userId: this._userId,
-    });
+    return this._store.createLink({ fromId, toId, type, metadata }, this.getStoreScope());
   }
 
   async getLinkedMemories(memoryId: string, options?: LinkedMemoryQueryOptions): Promise<Array<{ link: MemoryLink; memory: QueryResult | null }>> {
     const opts = linkedMemoryQueryOptionsSchema.parse(options ?? {});
-    const links = await this._store.getLinks(memoryId, opts, {
-      agentId: this._agentId,
-      userId: this._userId,
-    });
+    const links = await this._store.getLinks(memoryId, opts, this.getStoreScope());
 
     return Promise.all(links.map(async (link) => {
       const otherId = link.fromId === memoryId ? link.toId : link.fromId;
       return {
         link,
-        memory: await this._store.getEntryById(otherId, {
-          agentId: this._agentId,
-          userId: this._userId,
-        }),
+        memory: await this._store.getEntryById(otherId, this.getStoreScope()),
       };
     }));
   }
@@ -1696,10 +1690,7 @@ export class ReMEM {
    * Get recent memory entries.
    */
   async getRecent(n: number = 10): Promise<QueryResult[]> {
-    return this._store.getRecent(n, {
-      agentId: this._agentId,
-      userId: this._userId,
-    });
+    return this._store.getRecent(n, this.getStoreScope());
   }
 
   /**
@@ -1716,7 +1707,7 @@ export class ReMEM {
     oldestMemoryAt: number | null;
     newestMemoryAt: number | null;
   }> {
-    const scope = { agentId: this._agentId, userId: this._userId };
+    const scope = this.getStoreScope();
     const [coreEntries, layerEntries, snapshots] = await Promise.all([
       this._store.getAllEntries(scope),
       this._store.loadAllLayerEntries(scope),
@@ -1987,7 +1978,7 @@ export class ReMEM {
     const source = opts.source ?? graph.source;
     const project = opts.project ?? graph.project;
     const namespace = this.normalizeNamespace(opts.namespace ?? ['knowledge', source, project ?? 'default']);
-    const scope = { agentId: this._agentId, userId: this._userId };
+    const scope = this.getStoreScope();
     const nodeMemoryIds: Record<string, string> = {};
     let nodesStored = 0;
     let edgesLinked = 0;
@@ -2084,6 +2075,53 @@ export class ReMEM {
     return createCodebaseMemoryAdapter(this).subgraph(query, options);
   }
 
+  /**
+   * Explain a focused codebase/knowledge graph query with a compact summary.
+   * Useful when a caller needs one inspectable answer instead of building custom adapter glue.
+   */
+  async knowledgeExplain(
+    query: string,
+    options: CodebaseSubgraphOptions = {}
+  ): Promise<CodebaseGraphSubgraph & { summary: string }> {
+    return createCodebaseMemoryAdapter(this).explain(query, options);
+  }
+
+  /**
+   * Return likely entrypoints from imported knowledge/codebase graph memories.
+   */
+  async knowledgeEntrypoints(
+    options: CodebaseGraphInventoryOptions & { resourceGrant?: KnowledgeResourceGrant } = {}
+  ): Promise<CodebaseGraphNodeHealth[]> {
+    return createCodebaseMemoryAdapter(this).entrypoints(options);
+  }
+
+  /**
+   * Return owner/directory/package summaries from imported knowledge/codebase graph memories.
+   */
+  async knowledgeOwners(
+    options: CodebaseGraphInventoryOptions & { resourceGrant?: KnowledgeResourceGrant } = {}
+  ): Promise<CodebaseGraphOwnerSummary[]> {
+    return createCodebaseMemoryAdapter(this).owners(options);
+  }
+
+  /**
+   * Return the most connected graph nodes inside the current imported knowledge scope.
+   */
+  async knowledgeHotspots(
+    options: CodebaseGraphInventoryOptions & { resourceGrant?: KnowledgeResourceGrant } = {}
+  ): Promise<CodebaseGraphNodeHealth[]> {
+    return createCodebaseMemoryAdapter(this).hotspots(options);
+  }
+
+  /**
+   * Return isolated or weakly connected graph nodes inside the current imported knowledge scope.
+   */
+  async knowledgeDeadzones(
+    options: CodebaseGraphInventoryOptions & { resourceGrant?: KnowledgeResourceGrant } = {}
+  ): Promise<CodebaseGraphNodeHealth[]> {
+    return createCodebaseMemoryAdapter(this).deadzones(options);
+  }
+
   private renderKnowledgeNodeContent(node: KnowledgeNode): string {
     const title = node.name ?? node.id;
     const lines = [
@@ -2143,7 +2181,7 @@ export class ReMEM {
   async health(options?: MemoryHealthOptions): Promise<MemoryHealthResponse> {
     const opts = memoryHealthOptionsSchema.parse(options ?? {});
     const checkedAt = Date.now();
-    const scope = { agentId: this._agentId, userId: this._userId };
+    const scope = this.getStoreScope();
     const [coreEntries, layerEntries, snapshots, stats] = await Promise.all([
       this._store.getAllEntries(scope),
       this._store.loadAllLayerEntries(scope),
@@ -2350,10 +2388,7 @@ export class ReMEM {
    * Get entries by topic.
    */
   async getByTopic(topic: string, limit: number = 20): Promise<QueryResult[]> {
-    return this._store.getByTopic(topic, limit, {
-      agentId: this._agentId,
-      userId: this._userId,
-    });
+    return this._store.getByTopic(topic, limit, this.getStoreScope());
   }
 
   async storeShared(input: StoreMemoryInput & { namespace: NamespaceInput; visibility?: 'private' | 'shared' }): Promise<void> {
@@ -2587,7 +2622,7 @@ export class ReMEM {
     // Restore persisted layer entries from SQLite after init
     if (this._store) {
       try {
-        const storeOpts = { agentId: this._agentId, userId: this._userId };
+        const storeOpts = this.getStoreScope();
         const persisted = await this._store.loadAllLayerEntries(storeOpts);
         for (const entry of persisted) {
           this.layers.restoreEntry(entry);
@@ -2844,10 +2879,7 @@ export class ReMEM {
     layerCounts: Record<string, number>;
     checksum: string | null;
   }> {
-    const meta = await this._store.createSnapshot(label, {
-      agentId: this._agentId,
-      userId: this._userId,
-    });
+    const meta = await this._store.createSnapshot(label, this.getStoreScope());
     return meta;
   }
 
@@ -2857,10 +2889,7 @@ export class ReMEM {
    * @returns Number of entries restored
    */
   async restoreSnapshot(snapshotId: string): Promise<number> {
-    const restored = await this._store.restoreSnapshot(snapshotId, {
-      agentId: this._agentId,
-      userId: this._userId,
-    });
+    const restored = await this._store.restoreSnapshot(snapshotId, this.getStoreScope());
     if (this._layersEnabled) {
       await this.enableLayers(this._layerConfig);
     }
@@ -2877,10 +2906,7 @@ export class ReMEM {
     memoryCount: number;
     checksum: string | null;
   }>> {
-    const snapshots = await this._store.listSnapshots({
-      agentId: this._agentId,
-      userId: this._userId,
-    });
+    const snapshots = await this._store.listSnapshots(this.getStoreScope());
     return snapshots.map((s) => ({
       id: s.id,
       label: s.label,

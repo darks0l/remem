@@ -210,6 +210,67 @@ describe('ReMEM', () => {
     expect(results.results[0].metadata).toEqual({ project: 'remem', kind: 'note', shipped: true });
   });
 
+  it('isolates memories by workspaceId while preserving global fallback memories', async () => {
+    const sharedDb = path.resolve('.temp-remem-workspace-scope.db');
+    await fs.rm(sharedDb, { force: true });
+    await fs.rm(`${sharedDb}.tmp`, { force: true });
+
+    const workspaceA = new ReMEM({
+      dbPath: sharedDb,
+      storageConfig: { workspaceId: 'workspace-a' },
+    });
+    await workspaceA.init();
+    await workspaceA.store({
+      content: 'Workspace A release memory',
+      topics: ['release'],
+    });
+    workspaceA.close();
+
+    const workspaceB = new ReMEM({
+      dbPath: sharedDb,
+      storageConfig: { workspaceId: 'workspace-b' },
+    });
+    await workspaceB.init();
+    await workspaceB.store({
+      content: 'Workspace B release memory',
+      topics: ['release'],
+    });
+    workspaceB.close();
+
+    const globalMemory = new ReMEM({ dbPath: sharedDb });
+    await globalMemory.init();
+    await globalMemory.store({
+      content: 'Global release memory',
+      topics: ['release'],
+    });
+    globalMemory.close();
+
+    const readA = new ReMEM({
+      dbPath: sharedDb,
+      storageConfig: { workspaceId: 'workspace-a' },
+    });
+    await readA.init();
+    const resultsA = await readA.query('release memory');
+    expect(resultsA.results.map((entry) => entry.content)).toContain('Workspace A release memory');
+    expect(resultsA.results.map((entry) => entry.content)).toContain('Global release memory');
+    expect(resultsA.results.map((entry) => entry.content)).not.toContain('Workspace B release memory');
+    readA.close();
+
+    const readB = new ReMEM({
+      dbPath: sharedDb,
+      storageConfig: { workspaceId: 'workspace-b' },
+    });
+    await readB.init();
+    const resultsB = await readB.query('release memory');
+    expect(resultsB.results.map((entry) => entry.content)).toContain('Workspace B release memory');
+    expect(resultsB.results.map((entry) => entry.content)).toContain('Global release memory');
+    expect(resultsB.results.map((entry) => entry.content)).not.toContain('Workspace A release memory');
+    readB.close();
+
+    await fs.rm(sharedDb, { force: true });
+    await fs.rm(`${sharedDb}.tmp`, { force: true });
+  });
+
   it('supports richer metadata operators', async () => {
     await memory.store({
       content: 'Production release memory',

@@ -469,7 +469,7 @@ export class PostgresMemoryStore implements MemoryStoreLike {
       [id, label, JSON.stringify(snapshotData), layerEntries.length + coreEntries.length, now, opts?.agentId ?? null, opts?.userId ?? null, checksum]
     );
     await this.logEvent('snapshot.created', { id, label, memoryCount: layerEntries.length + coreEntries.length, checksum });
-    return { id, label, createdAt: now, memoryCount: layerEntries.length + coreEntries.length, layerCounts, checksum, agentId: opts?.agentId ?? null, userId: opts?.userId ?? null };
+    return { id, label, createdAt: now, memoryCount: layerEntries.length + coreEntries.length, layerCounts, checksum, workspaceId: opts?.workspaceId ?? null, agentId: opts?.agentId ?? null, userId: opts?.userId ?? null };
   }
 
   async restoreSnapshot(snapshotId: string, opts?: StoreMemoryOptions): Promise<number> {
@@ -508,6 +508,7 @@ export class PostgresMemoryStore implements MemoryStoreLike {
       memoryCount: Number(row.memory_count),
       layerCounts: { episodic: 0, semantic: 0, identity: 0, procedural: 0 },
       checksum: row.checksum as string | null,
+      workspaceId: null,
       agentId: row.agent_id as string | null,
       userId: row.user_id as string | null,
     }));
@@ -520,7 +521,7 @@ export class PostgresMemoryStore implements MemoryStoreLike {
     const snapshotData = this.parseJson(row.snapshot_data);
     const checksum = (row.checksum as string | null) ?? this.snapshotChecksum(snapshotData);
     if (this.snapshotChecksum(snapshotData) !== checksum) throw new Error(`Snapshot checksum mismatch: ${snapshotId}`);
-    return { id: row.id as string, label: row.label as string, createdAt: Number(row.created_at), memoryCount: Number(row.memory_count), checksum, agentId: row.agent_id as string | null, userId: row.user_id as string | null, snapshotData };
+    return { id: row.id as string, label: row.label as string, createdAt: Number(row.created_at), memoryCount: Number(row.memory_count), checksum, workspaceId: null, agentId: row.agent_id as string | null, userId: row.user_id as string | null, snapshotData };
   }
 
   async importSnapshot(snapshot: SnapshotExport, opts?: { overwrite?: boolean }): Promise<SnapshotMeta> {
@@ -535,7 +536,7 @@ export class PostgresMemoryStore implements MemoryStoreLike {
         created_at=EXCLUDED.created_at, agent_id=EXCLUDED.agent_id, user_id=EXCLUDED.user_id, checksum=EXCLUDED.checksum`,
       [snapshot.id, snapshot.label, JSON.stringify(snapshot.snapshotData), snapshot.memoryCount, snapshot.createdAt, snapshot.agentId, snapshot.userId, checksum]
     );
-    return { id: snapshot.id, label: snapshot.label, createdAt: snapshot.createdAt, memoryCount: snapshot.memoryCount, layerCounts: { episodic: 0, semantic: 0, identity: 0, procedural: 0 }, checksum, agentId: snapshot.agentId, userId: snapshot.userId };
+    return { id: snapshot.id, label: snapshot.label, createdAt: snapshot.createdAt, memoryCount: snapshot.memoryCount, layerCounts: { episodic: 0, semantic: 0, identity: 0, procedural: 0 }, checksum, workspaceId: snapshot.workspaceId, agentId: snapshot.agentId, userId: snapshot.userId };
   }
 
   async deleteSnapshot(snapshotId: string): Promise<boolean> {

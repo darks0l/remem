@@ -6,7 +6,7 @@
  * v0.3.1 adds:
  * - layered_memories table (persists LayerManager entries to SQLite)
  * - snapshots table (snapshot/restore for long-running agents)
- * - agent_id/user_id scoping (multi-agent support)
+ * - workspace_id/agent_id/user_id scoping (multi-tenant, multi-agent support)
  * - WAL mode for better concurrent write handling
  * - Atomic persist with rename
  *
@@ -101,12 +101,17 @@ export class MemoryStore implements MemoryStoreLike {
         created_at INTEGER NOT NULL,
         accessed_at INTEGER NOT NULL,
         access_count INTEGER NOT NULL DEFAULT 0,
+        workspace_id TEXT,
         agent_id TEXT,
         user_id TEXT
       )
     `);
+    this.ensureColumn('memory', 'workspace_id', 'TEXT');
+    this.ensureColumn('memory', 'agent_id', 'TEXT');
+    this.ensureColumn('memory', 'user_id', 'TEXT');
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_created_at ON memory(created_at DESC)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_accessed_at ON memory(accessed_at DESC)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_workspace ON memory(workspace_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_agent ON memory(agent_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_memory_user ON memory(user_id)`);
 
@@ -118,13 +123,18 @@ export class MemoryStore implements MemoryStoreLike {
         type TEXT NOT NULL,
         metadata TEXT NOT NULL DEFAULT '{}',
         created_at INTEGER NOT NULL,
+        workspace_id TEXT,
         agent_id TEXT,
         user_id TEXT
       )
     `);
+    this.ensureColumn('memory_links', 'workspace_id', 'TEXT');
+    this.ensureColumn('memory_links', 'agent_id', 'TEXT');
+    this.ensureColumn('memory_links', 'user_id', 'TEXT');
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_ml_from ON memory_links(from_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_ml_to ON memory_links(to_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_ml_type ON memory_links(type)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_ml_workspace ON memory_links(workspace_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_ml_agent ON memory_links(agent_id)`);
 
     // Layered memory table — persists LayerManager entries to SQLite
@@ -145,13 +155,18 @@ export class MemoryStore implements MemoryStoreLike {
         valid_until INTEGER,
         supersedes TEXT,
         superseded_by TEXT,
+        workspace_id TEXT,
         agent_id TEXT,
         user_id TEXT,
         created_ts INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
       )
     `);
+    this.ensureColumn('layered_memories', 'workspace_id', 'TEXT');
+    this.ensureColumn('layered_memories', 'agent_id', 'TEXT');
+    this.ensureColumn('layered_memories', 'user_id', 'TEXT');
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_lm_layer ON layered_memories(layer)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_lm_expires ON layered_memories(expires_at)`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_lm_workspace ON layered_memories(workspace_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_lm_agent ON layered_memories(agent_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_lm_supersedes ON layered_memories(supersedes)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_lm_superseded_by ON layered_memories(superseded_by)`);
@@ -164,12 +179,17 @@ export class MemoryStore implements MemoryStoreLike {
         snapshot_data TEXT NOT NULL,
         memory_count INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
+        workspace_id TEXT,
         agent_id TEXT,
         user_id TEXT,
         checksum TEXT
       )
     `);
+    this.ensureColumn('snapshots', 'workspace_id', 'TEXT');
+    this.ensureColumn('snapshots', 'agent_id', 'TEXT');
+    this.ensureColumn('snapshots', 'user_id', 'TEXT');
     this.ensureColumn('snapshots', 'checksum', 'TEXT');
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_snap_workspace ON snapshots(workspace_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_snap_agent ON snapshots(agent_id)`);
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_snap_created ON snapshots(created_at DESC)`);
 
@@ -221,8 +241,8 @@ export class MemoryStore implements MemoryStoreLike {
     const validated = memoryEntrySchema.parse(entry);
 
     this.db!.run(
-      `INSERT INTO memory (id, content, topics, metadata, created_at, accessed_at, access_count, agent_id, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO memory (id, content, topics, metadata, created_at, accessed_at, access_count, workspace_id, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         validated.id,
         validated.content,
@@ -231,6 +251,7 @@ export class MemoryStore implements MemoryStoreLike {
         validated.createdAt,
         validated.accessedAt,
         validated.accessCount,
+        opts?.workspaceId ?? null,
         opts?.agentId ?? null,
         opts?.userId ?? null,
       ]
@@ -248,6 +269,10 @@ export class MemoryStore implements MemoryStoreLike {
     let sql = 'SELECT * FROM memory WHERE id = ?';
     const params: (string | number | null)[] = [id];
 
+    if (opts?.workspaceId) {
+      sql += ' AND (workspace_id = ? OR workspace_id IS NULL)';
+      params.push(opts.workspaceId);
+    }
     if (opts?.agentId) {
       sql += ' AND (agent_id = ? OR agent_id IS NULL)';
       params.push(opts.agentId);
@@ -288,6 +313,10 @@ export class MemoryStore implements MemoryStoreLike {
       params.push(...terms.map((term) => `%${term}%`));
     }
 
+    if (scope?.workspaceId) {
+      sql += ' AND (workspace_id = ? OR workspace_id IS NULL)';
+      params.push(scope.workspaceId);
+    }
     if (scope?.agentId) {
       sql += ' AND (agent_id = ? OR agent_id IS NULL)';
       params.push(scope.agentId);
@@ -368,6 +397,10 @@ export class MemoryStore implements MemoryStoreLike {
     let sql = 'SELECT * FROM memory WHERE 1=1';
     const params: (string | null)[] = [];
 
+    if (opts?.workspaceId) {
+      sql += ' AND (workspace_id = ? OR workspace_id IS NULL)';
+      params.push(opts.workspaceId);
+    }
     if (opts?.agentId) {
       sql += ' AND (agent_id = ? OR agent_id IS NULL)';
       params.push(opts.agentId);
@@ -404,6 +437,10 @@ export class MemoryStore implements MemoryStoreLike {
     let sql = 'SELECT * FROM memory WHERE 1=1';
     const params: (string | number | null)[] = [];
 
+    if (opts?.workspaceId) {
+      sql += ' AND (workspace_id = ? OR workspace_id IS NULL)';
+      params.push(opts.workspaceId);
+    }
     if (opts?.agentId) {
       sql += ' AND (agent_id = ? OR agent_id IS NULL)';
       params.push(opts.agentId);
@@ -440,6 +477,10 @@ export class MemoryStore implements MemoryStoreLike {
     let sql = 'SELECT * FROM memory WHERE 1=1';
     const params: (string | null)[] = [];
 
+    if (opts?.workspaceId) {
+      sql += ' AND (workspace_id = ? OR workspace_id IS NULL)';
+      params.push(opts.workspaceId);
+    }
     if (opts?.agentId) {
       sql += ' AND (agent_id = ? OR agent_id IS NULL)';
       params.push(opts.agentId);
@@ -478,6 +519,10 @@ export class MemoryStore implements MemoryStoreLike {
     let sql = 'DELETE FROM memory WHERE id = ?';
     const params: (string | null)[] = [id];
 
+    if (opts?.workspaceId) {
+      sql += ' AND (workspace_id = ? OR workspace_id IS NULL)';
+      params.push(opts.workspaceId);
+    }
     if (opts?.agentId) {
       sql += ' AND (agent_id = ? OR agent_id IS NULL)';
       params.push(opts.agentId);
@@ -511,8 +556,8 @@ export class MemoryStore implements MemoryStoreLike {
     });
 
     this.db!.run(
-      `INSERT INTO memory_links (id, from_id, to_id, type, metadata, created_at, agent_id, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO memory_links (id, from_id, to_id, type, metadata, created_at, workspace_id, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         link.id,
         link.fromId,
@@ -520,6 +565,7 @@ export class MemoryStore implements MemoryStoreLike {
         link.type,
         JSON.stringify(link.metadata),
         link.createdAt,
+        opts?.workspaceId ?? null,
         opts?.agentId ?? null,
         opts?.userId ?? null,
       ]
@@ -550,6 +596,10 @@ export class MemoryStore implements MemoryStoreLike {
     if (query.types && query.types.length > 0) {
       sql += ` AND type IN (${query.types.map(() => '?').join(', ')})`;
       params.push(...query.types);
+    }
+    if (opts?.workspaceId) {
+      sql += ' AND (workspace_id = ? OR workspace_id IS NULL)';
+      params.push(opts.workspaceId);
     }
     if (opts?.agentId) {
       sql += ' AND (agent_id = ? OR agent_id IS NULL)';
@@ -587,6 +637,10 @@ export class MemoryStore implements MemoryStoreLike {
 
     let coreSql = 'SELECT * FROM memory WHERE id = ?';
     const coreParams: (string | null)[] = [id];
+    if (opts?.workspaceId) {
+      coreSql += ' AND (workspace_id = ? OR workspace_id IS NULL)';
+      coreParams.push(opts.workspaceId);
+    }
     if (opts?.agentId) {
       coreSql += ' AND (agent_id = ? OR agent_id IS NULL)';
       coreParams.push(opts.agentId);
@@ -612,6 +666,10 @@ export class MemoryStore implements MemoryStoreLike {
 
     let layeredSql = 'SELECT * FROM layered_memories WHERE id = ?';
     const layeredParams: (string | null)[] = [id];
+    if (opts?.workspaceId) {
+      layeredSql += ' AND (workspace_id = ? OR workspace_id IS NULL)';
+      layeredParams.push(opts.workspaceId);
+    }
     if (opts?.agentId) {
       layeredSql += ' AND (agent_id = ? OR agent_id IS NULL)';
       layeredParams.push(opts.agentId);
@@ -648,8 +706,8 @@ export class MemoryStore implements MemoryStoreLike {
     this.db!.run(
       `INSERT OR REPLACE INTO layered_memories
        (id, content, topics, metadata, layer, created_at, accessed_at, access_count,
-        expires_at, importance, valid_from, valid_until, supersedes, superseded_by, agent_id, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        expires_at, importance, valid_from, valid_until, supersedes, superseded_by, workspace_id, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         entry.id,
         entry.content,
@@ -665,6 +723,7 @@ export class MemoryStore implements MemoryStoreLike {
         entry.validUntil ?? null,
         entry.supersedes ?? null,
         entry.supersededBy ?? null,
+        opts?.workspaceId ?? null,
         opts?.agentId ?? null,
         opts?.userId ?? null,
       ]
@@ -682,6 +741,10 @@ export class MemoryStore implements MemoryStoreLike {
     let sql = 'SELECT * FROM layered_memories WHERE 1=1';
     const params: (string | null)[] = [];
 
+    if (opts?.workspaceId) {
+      sql += ' AND (workspace_id = ? OR workspace_id IS NULL)';
+      params.push(opts.workspaceId);
+    }
     if (opts?.agentId) {
       sql += ' AND (agent_id = ? OR agent_id IS NULL)';
       params.push(opts.agentId);
@@ -738,6 +801,7 @@ export class MemoryStore implements MemoryStoreLike {
     let sql = 'SELECT * FROM memory WHERE 1=1';
     const params: (string | null)[] = [];
 
+    if (opts?.workspaceId) { sql += ' AND (workspace_id = ? OR workspace_id IS NULL)'; params.push(opts.workspaceId); }
     if (opts?.agentId) { sql += ' AND (agent_id = ? OR agent_id IS NULL)'; params.push(opts.agentId); }
     if (opts?.userId) { sql += ' AND (user_id = ? OR user_id IS NULL)'; params.push(opts.userId); }
 
@@ -761,8 +825,8 @@ export class MemoryStore implements MemoryStoreLike {
     const validated = memoryEntrySchema.parse(entry);
 
     this.db!.run(
-      `INSERT OR REPLACE INTO memory (id, content, topics, metadata, created_at, accessed_at, access_count, agent_id, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO memory (id, content, topics, metadata, created_at, accessed_at, access_count, workspace_id, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         validated.id,
         validated.content,
@@ -771,6 +835,7 @@ export class MemoryStore implements MemoryStoreLike {
         validated.createdAt,
         validated.accessedAt,
         validated.accessCount,
+        opts?.workspaceId ?? null,
         opts?.agentId ?? null,
         opts?.userId ?? null,
       ]
@@ -811,14 +876,15 @@ export class MemoryStore implements MemoryStoreLike {
     const checksum = this.snapshotChecksum(snapshotData);
 
     this.db!.run(
-      `INSERT INTO snapshots (id, label, snapshot_data, memory_count, created_at, agent_id, user_id, checksum)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO snapshots (id, label, snapshot_data, memory_count, created_at, workspace_id, agent_id, user_id, checksum)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         label,
         serialized,
         layerEntries.length + coreEntries.length,
         now,
+        opts?.workspaceId ?? null,
         opts?.agentId ?? null,
         opts?.userId ?? null,
         checksum,
@@ -834,6 +900,7 @@ export class MemoryStore implements MemoryStoreLike {
       memoryCount: layerEntries.length + coreEntries.length,
       layerCounts,
       checksum,
+      workspaceId: opts?.workspaceId ?? null,
       agentId: opts?.agentId ?? null,
       userId: opts?.userId ?? null,
     };
@@ -847,7 +914,7 @@ export class MemoryStore implements MemoryStoreLike {
   async restoreSnapshot(snapshotId: string, opts?: StoreMemoryOptions): Promise<number> {
     this.ensureInitialized();
 
-    const result = this.db!.exec('SELECT snapshot_data, checksum, agent_id, user_id FROM snapshots WHERE id = ?', [snapshotId]);
+    const result = this.db!.exec('SELECT snapshot_data, checksum, workspace_id, agent_id, user_id FROM snapshots WHERE id = ?', [snapshotId]);
     if (result.length === 0 || result[0].values.length === 0) {
       throw new Error(`Snapshot not found: ${snapshotId}`);
     }
@@ -870,9 +937,10 @@ export class MemoryStore implements MemoryStoreLike {
     const scopedCoreEntries = data.coreEntries ?? [];
 
     // Clear current scoped entries
-    if (opts?.agentId || opts?.userId) {
+    if (opts?.workspaceId || opts?.agentId || opts?.userId) {
       const conditions = [];
       const params: (string | null)[] = [];
+      if (opts.workspaceId) { conditions.push('workspace_id = ?'); params.push(opts.workspaceId); }
       if (opts.agentId) { conditions.push('agent_id = ?'); params.push(opts.agentId); }
       if (opts.userId) { conditions.push('user_id = ?'); params.push(opts.userId); }
       this.db!.run(`DELETE FROM layered_memories WHERE ${conditions.join(' AND ')}`, params);
@@ -888,6 +956,7 @@ export class MemoryStore implements MemoryStoreLike {
     let restored = 0;
     for (const entry of scopedCoreEntries) {
       await this.restoreMemoryEntry(entry, {
+        workspaceId: opts?.workspaceId,
         agentId: opts?.agentId,
         userId: opts?.userId,
       });
@@ -897,6 +966,7 @@ export class MemoryStore implements MemoryStoreLike {
     // Restore layered entries from snapshot
     for (const entry of scopedEntries) {
       await this.persistLayerEntry(entry, {
+        workspaceId: opts?.workspaceId,
         agentId: opts?.agentId,
         userId: opts?.userId,
       });
@@ -905,6 +975,7 @@ export class MemoryStore implements MemoryStoreLike {
 
     for (const link of data.links ?? []) {
       await this.restoreLink(link, {
+        workspaceId: opts?.workspaceId,
         agentId: opts?.agentId,
         userId: opts?.userId,
       });
@@ -922,9 +993,10 @@ export class MemoryStore implements MemoryStoreLike {
   async listSnapshots(opts?: StoreMemoryOptions): Promise<SnapshotMeta[]> {
     this.ensureInitialized();
 
-    let sql = 'SELECT id, label, memory_count, created_at, agent_id, user_id, checksum FROM snapshots WHERE 1=1';
+    let sql = 'SELECT id, label, memory_count, created_at, workspace_id, agent_id, user_id, checksum FROM snapshots WHERE 1=1';
     const params: (string | null)[] = [];
 
+    if (opts?.workspaceId) { sql += ' AND (workspace_id = ? OR workspace_id IS NULL)'; params.push(opts.workspaceId); }
     if (opts?.agentId) { sql += ' AND (agent_id = ? OR agent_id IS NULL)'; params.push(opts.agentId); }
     if (opts?.userId) { sql += ' AND (user_id = ? OR user_id IS NULL)'; params.push(opts.userId); }
     sql += ' ORDER BY created_at DESC';
@@ -941,6 +1013,7 @@ export class MemoryStore implements MemoryStoreLike {
         memoryCount: obj['memory_count'] as number,
         layerCounts: { episodic: 0, semantic: 0, identity: 0, procedural: 0 },
         checksum: obj['checksum'] as string | null,
+        workspaceId: obj['workspace_id'] as string | null,
         agentId: obj['agent_id'] as string | null,
         userId: obj['user_id'] as string | null,
       };
@@ -970,6 +1043,7 @@ export class MemoryStore implements MemoryStoreLike {
       createdAt: row['createdAt'] as number,
       memoryCount: row['memory_count'] as number,
       checksum,
+      workspaceId: row['workspace_id'] as string | null,
       agentId: row['agent_id'] as string | null,
       userId: row['user_id'] as string | null,
       snapshotData,
@@ -993,14 +1067,15 @@ export class MemoryStore implements MemoryStoreLike {
 
     const serialized = JSON.stringify(snapshot.snapshotData);
     this.db!.run(
-      `INSERT OR REPLACE INTO snapshots (id, label, snapshot_data, memory_count, created_at, agent_id, user_id, checksum)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO snapshots (id, label, snapshot_data, memory_count, created_at, workspace_id, agent_id, user_id, checksum)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         snapshot.id,
         snapshot.label,
         serialized,
         snapshot.memoryCount,
         snapshot.createdAt,
+        snapshot.workspaceId,
         snapshot.agentId,
         snapshot.userId,
         checksum,
@@ -1015,6 +1090,7 @@ export class MemoryStore implements MemoryStoreLike {
       memoryCount: snapshot.memoryCount,
       layerCounts: { episodic: 0, semantic: 0, identity: 0, procedural: 0 },
       checksum,
+      workspaceId: snapshot.workspaceId,
       agentId: snapshot.agentId,
       userId: snapshot.userId,
     };
@@ -1054,7 +1130,7 @@ export class MemoryStore implements MemoryStoreLike {
     let orphanLinks = 0;
     let orphanEmbeddings = 0;
 
-    const scope = this.scopeClause(opts, 'agent_id', 'user_id');
+    const scope = this.scopeClause(opts, 'workspace_id', 'agent_id', 'user_id');
 
     if (pruneExpired) {
       const where = ['expires_at IS NOT NULL', 'expires_at <= ?', ...scope.conditions];
@@ -1189,6 +1265,10 @@ export class MemoryStore implements MemoryStoreLike {
     let sql = 'SELECT id, content, topics, metadata, created_at, accessed_at, access_count FROM memory m WHERE 1=1';
     const params: (string | number | null)[] = [];
 
+    if (scope?.workspaceId) {
+      sql += ' AND (m.workspace_id = ? OR m.workspace_id IS NULL)';
+      params.push(scope.workspaceId);
+    }
     if (scope?.agentId) {
       sql += ' AND (m.agent_id = ? OR m.agent_id IS NULL)';
       params.push(scope.agentId);
@@ -1327,11 +1407,16 @@ export class MemoryStore implements MemoryStoreLike {
 
   private scopeClause(
     opts: StoreMemoryOptions | undefined,
+    workspaceColumn: string,
     agentColumn: string,
     userColumn: string
   ): { conditions: string[]; params: string[] } {
     const conditions: string[] = [];
     const params: string[] = [];
+    if (opts?.workspaceId) {
+      conditions.push(`${workspaceColumn} = ?`);
+      params.push(opts.workspaceId);
+    }
     if (opts?.agentId) {
       conditions.push(`${agentColumn} = ?`);
       params.push(opts.agentId);
@@ -1351,6 +1436,7 @@ export class MemoryStore implements MemoryStoreLike {
     this.ensureInitialized();
     let sql = 'SELECT * FROM memory_links WHERE 1=1';
     const params: (string | null)[] = [];
+    if (opts?.workspaceId) { sql += ' AND (workspace_id = ? OR workspace_id IS NULL)'; params.push(opts.workspaceId); }
     if (opts?.agentId) { sql += ' AND (agent_id = ? OR agent_id IS NULL)'; params.push(opts.agentId); }
     if (opts?.userId) { sql += ' AND (user_id = ? OR user_id IS NULL)'; params.push(opts.userId); }
     sql += ' ORDER BY created_at DESC';
@@ -1363,8 +1449,8 @@ export class MemoryStore implements MemoryStoreLike {
     this.ensureInitialized();
     const validated = memoryLinkSchema.parse(link);
     this.db!.run(
-      `INSERT OR REPLACE INTO memory_links (id, from_id, to_id, type, metadata, created_at, agent_id, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO memory_links (id, from_id, to_id, type, metadata, created_at, workspace_id, agent_id, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         validated.id,
         validated.fromId,
@@ -1372,6 +1458,7 @@ export class MemoryStore implements MemoryStoreLike {
         validated.type,
         JSON.stringify(validated.metadata),
         validated.createdAt,
+        opts?.workspaceId ?? null,
         opts?.agentId ?? null,
         opts?.userId ?? null,
       ]

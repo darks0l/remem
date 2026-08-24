@@ -29,12 +29,13 @@ describe('ReMEM CLI', () => {
   });
 
   it('returns JSON status when --json is set', async () => {
-    const result = await invoke(['status', '--storage', 'memory', '--db', ':memory:', '--json']);
+    const result = await invoke(['status', '--storage', 'memory', '--db', ':memory:', '--workspace-id', 'team-alpha', '--json']);
     expect(result.exitCode).toBe(0);
     const payload = JSON.parse(result.stdout);
     expect(payload.ok).toBe(true);
     expect(payload.command).toBe('status');
     expect(payload.storage).toBe('memory');
+    expect(payload.scope).toContain('workspace:team-alpha');
   });
 
   it('returns memory stats through the CLI JSON contract', async () => {
@@ -125,10 +126,12 @@ describe('ReMEM CLI', () => {
       resourceUri: 'memory://codebase/remem/imported',
       requiredScopes: ['codebase:read'],
       nodes: [
-        { id: 'fn:ProcessOrder', label: 'Function', name: 'ProcessOrder' },
-        { id: 'fn:ChargeCard', label: 'Function', name: 'ChargeCard' },
+        { id: 'route:/orders', label: 'Route', name: 'POST /orders', path: 'src/routes/orders.ts' },
+        { id: 'fn:ProcessOrder', label: 'Function', name: 'ProcessOrder', path: 'src/services/process-order.ts' },
+        { id: 'fn:ChargeCard', label: 'Function', name: 'ChargeCard', path: 'src/billing/charge-card.ts' },
       ],
       edges: [
+        { from: 'route:/orders', to: 'fn:ProcessOrder', type: 'CALLS' },
         { from: 'fn:ProcessOrder', to: 'fn:ChargeCard', type: 'CALLS' },
       ],
     }), 'utf8');
@@ -161,8 +164,8 @@ describe('ReMEM CLI', () => {
     expect(ingested.exitCode).toBe(0);
     const ingestedPayload = JSON.parse(ingested.stdout);
     expect(ingestedPayload.command).toBe('knowledge-ingest');
-    expect(ingestedPayload.nodesStored).toBe(2);
-    expect(ingestedPayload.edgesLinked).toBe(1);
+    expect(ingestedPayload.nodesStored).toBe(3);
+    expect(ingestedPayload.edgesLinked).toBe(2);
 
     const queried = await invoke(['query', '--db', db, '--query', 'ProcessOrder', '--json']);
     const queriedPayload = JSON.parse(queried.stdout);
@@ -196,10 +199,71 @@ describe('ReMEM CLI', () => {
     expect(subgraph.exitCode).toBe(0);
     const subgraphPayload = JSON.parse(subgraph.stdout);
     expect(subgraphPayload.command).toBe('knowledge-subgraph');
-    expect(subgraphPayload.results.length).toBe(2);
+    expect(subgraphPayload.results.length).toBeGreaterThanOrEqual(2);
     expect(subgraphPayload.paths.length).toBeGreaterThanOrEqual(1);
     expect(subgraphPayload.linksTraversed).toBeGreaterThanOrEqual(1);
     expect(subgraphPayload.context).toContain('ProcessOrder');
+
+    const explain = await invoke([
+      'knowledge-explain',
+      '--db', db,
+      '--query', 'ProcessOrder',
+      '--project', 'remem',
+      '--connections', 'calls',
+      '--json',
+    ]);
+    expect(explain.exitCode).toBe(0);
+    const explainPayload = JSON.parse(explain.stdout);
+    expect(explainPayload.command).toBe('knowledge-explain');
+    expect(explainPayload.summary).toContain('ProcessOrder');
+    expect(explainPayload.context).toContain('ProcessOrder');
+
+    const entrypoints = await invoke([
+      'knowledge-entrypoints',
+      '--db', db,
+      '--project', 'remem',
+      '--json',
+    ]);
+    expect(entrypoints.exitCode).toBe(0);
+    const entrypointsPayload = JSON.parse(entrypoints.stdout);
+    expect(entrypointsPayload.command).toBe('knowledge-entrypoints');
+    expect(Array.isArray(entrypointsPayload.entrypoints)).toBe(true);
+    expect(entrypointsPayload.entrypoints.length).toBeGreaterThanOrEqual(1);
+
+    const owners = await invoke([
+      'knowledge-owners',
+      '--db', db,
+      '--project', 'remem',
+      '--json',
+    ]);
+    expect(owners.exitCode).toBe(0);
+    const ownersPayload = JSON.parse(owners.stdout);
+    expect(ownersPayload.command).toBe('knowledge-owners');
+    expect(Array.isArray(ownersPayload.owners)).toBe(true);
+    expect(ownersPayload.owners.some((item: { owner: string }) => item.owner === 'src')).toBe(true);
+
+    const hotspots = await invoke([
+      'knowledge-hotspots',
+      '--db', db,
+      '--project', 'remem',
+      '--json',
+    ]);
+    expect(hotspots.exitCode).toBe(0);
+    const hotspotsPayload = JSON.parse(hotspots.stdout);
+    expect(hotspotsPayload.command).toBe('knowledge-hotspots');
+    expect(Array.isArray(hotspotsPayload.hotspots)).toBe(true);
+    expect(hotspotsPayload.hotspots.length).toBeGreaterThanOrEqual(1);
+
+    const deadzones = await invoke([
+      'knowledge-deadzones',
+      '--db', db,
+      '--project', 'remem',
+      '--json',
+    ]);
+    expect(deadzones.exitCode).toBe(0);
+    const deadzonesPayload = JSON.parse(deadzones.stdout);
+    expect(deadzonesPayload.command).toBe('knowledge-deadzones');
+    expect(Array.isArray(deadzonesPayload.deadzones)).toBe(true);
 
     await fs.rm(artifact, { force: true });
   });

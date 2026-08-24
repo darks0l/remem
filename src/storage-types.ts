@@ -19,6 +19,7 @@ export interface SnapshotMeta {
   memoryCount: number;
   layerCounts: Record<MemoryLayer, number>;
   checksum: string | null;
+  workspaceId: string | null;
   agentId: string | null;
   userId: string | null;
 }
@@ -29,12 +30,14 @@ export interface SnapshotExport {
   createdAt: number;
   memoryCount: number;
   checksum: string;
+  workspaceId: string | null;
   agentId: string | null;
   userId: string | null;
   snapshotData: unknown;
 }
 
 export interface StoreMemoryOptions {
+  workspaceId?: string;
   agentId?: string;
   userId?: string;
 }

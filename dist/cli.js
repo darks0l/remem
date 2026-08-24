@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 "use strict";
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -27,114 +28,16 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/index.ts
-var index_exports = {};
-__export(index_exports, {
-  ConstitutionInjector: () => ConstitutionInjector,
-  ConstitutionManager: () => ConstitutionManager,
-  DEFAULT_LAYER_CONFIG: () => DEFAULT_LAYER_CONFIG,
-  DriftDetector: () => DriftDetector,
-  EpisodicCapturePipeline: () => EpisodicCapturePipeline,
-  HttpAdapter: () => HttpAdapter,
-  LayerManager: () => LayerManager,
-  MemoryConsolidator: () => MemoryConsolidator,
-  MemoryREPL: () => MemoryREPL,
-  MemoryStore: () => MemoryStore,
-  ModelAbstraction: () => ModelAbstraction,
-  PostgresMemoryStore: () => PostgresMemoryStore,
-  QueryEngine: () => QueryEngine,
-  ReMEM: () => ReMEM,
-  authorizeKnowledgeResourceAccess: () => authorizeKnowledgeResourceAccess,
-  buildIdentityPackage: () => buildIdentityPackage,
-  constitutionSchema: () => constitutionSchema,
-  constitutionStatementSchema: () => constitutionStatementSchema,
-  contextPackOptionsSchema: () => contextPackOptionsSchema,
-  contextPackResponseSchema: () => contextPackResponseSchema,
-  contextPackSectionSchema: () => contextPackSectionSchema,
-  contextPackSectionTitlesSchema: () => contextPackSectionTitlesSchema,
-  createCodebaseMemoryAdapter: () => createCodebaseMemoryAdapter,
-  createHermesAdapter: () => createHermesAdapter,
-  createIdentitySystem: () => createIdentitySystem,
-  createLangGraphStoreAdapter: () => createLangGraphStoreAdapter,
-  createOpenClawAdapter: () => createOpenClawAdapter,
-  createVercelAIAdapter: () => createVercelAIAdapter,
-  defaultMemoryLinkTypes: () => defaultMemoryLinkTypes,
-  downloadPackage: () => downloadPackage,
-  dreamMemoryLayerSchema: () => dreamMemoryLayerSchema,
-  dreamOptionsSchema: () => dreamOptionsSchema,
-  dreamResponseSchema: () => dreamResponseSchema,
-  driftEventSchema: () => driftEventSchema,
-  driftResultSchema: () => driftResultSchema,
-  duplicate: () => duplicate,
-  duplicationConfigSchema: () => duplicationConfigSchema,
-  embeddingConfigSchema: () => embeddingConfigSchema,
-  eventTypeSchema: () => eventTypeSchema,
-  getSmartRecallProfile: () => getSmartRecallProfile,
-  getSmartRecallProfiles: () => getSmartRecallProfiles,
-  identityCategorySchema: () => identityCategorySchema,
-  identityConfigSchema: () => identityConfigSchema,
-  identityPackageSchema: () => identityPackageSchema,
-  infect: () => infect,
-  infectFromServer: () => infectFromServer,
-  infectionConfigSchema: () => infectionConfigSchema,
-  knowledgeArtifactRegistrationSchema: () => knowledgeArtifactRegistrationSchema,
-  knowledgeEdgeSchema: () => knowledgeEdgeSchema,
-  knowledgeGraphArtifactSchema: () => knowledgeGraphArtifactSchema,
-  knowledgeIngestOptionsSchema: () => knowledgeIngestOptionsSchema,
-  knowledgeIngestResultSchema: () => knowledgeIngestResultSchema,
-  knowledgeNodeSchema: () => knowledgeNodeSchema,
-  knowledgeResourceGrantSchema: () => knowledgeResourceGrantSchema,
-  knowledgeResourceScopeSchema: () => knowledgeResourceScopeSchema,
-  knowledgeResourceUriSchema: () => knowledgeResourceUriSchema,
-  layerConfigSchema: () => layerConfigSchema,
-  layeredMemoryEntrySchema: () => layeredMemoryEntrySchema,
-  linkedMemoryQueryOptionsSchema: () => linkedMemoryQueryOptionsSchema,
-  memoryEntrySchema: () => memoryEntrySchema,
-  memoryEventSchema: () => memoryEventSchema,
-  memoryHealthCheckSchema: () => memoryHealthCheckSchema,
-  memoryHealthOptionsSchema: () => memoryHealthOptionsSchema,
-  memoryHealthRecommendationSchema: () => memoryHealthRecommendationSchema,
-  memoryHealthResponseSchema: () => memoryHealthResponseSchema,
-  memoryLayerSchema: () => memoryLayerSchema,
-  memoryLinkInputSchema: () => memoryLinkInputSchema,
-  memoryLinkSchema: () => memoryLinkSchema,
-  metadataFilterOperatorSchema: () => metadataFilterOperatorSchema,
-  metadataFilterSchema: () => metadataFilterSchema,
-  metadataFilterValueSchema: () => metadataFilterValueSchema,
-  modelConfigSchema: () => modelConfigSchema,
-  namespaceInputSchema: () => namespaceInputSchema,
-  namespaceQueryScopeSchema: () => namespaceQueryScopeSchema,
-  neighborPathSchema: () => neighborPathSchema,
-  normalizeSmartRecallProfileInput: () => normalizeSmartRecallProfileInput,
-  postgresStorageConfigSchema: () => postgresStorageConfigSchema,
-  proceduralMatchSchema: () => proceduralMatchSchema,
-  proceduralTriggerSchema: () => proceduralTriggerSchema,
-  queryOptionsSchema: () => queryOptionsSchema,
-  queryResponseSchema: () => queryResponseSchema,
-  queryResultSchema: () => queryResultSchema,
-  queryWithNeighborsOptionsSchema: () => queryWithNeighborsOptionsSchema,
-  rememConfigSchema: () => rememConfigSchema,
-  rememberActionSchema: () => rememberActionSchema,
-  rememberBatchInputSchema: () => rememberBatchInputSchema,
-  rememberBatchItemResultSchema: () => rememberBatchItemResultSchema,
-  rememberBatchOptionsSchema: () => rememberBatchOptionsSchema,
-  rememberBatchResultSchema: () => rememberBatchResultSchema,
-  rememberInputSchema: () => rememberInputSchema,
-  rememberKindSchema: () => rememberKindSchema,
-  rememberResultSchema: () => rememberResultSchema,
-  resolveRecallProfile: () => resolveRecallProfile,
-  resolveSmartRecallProfile: () => resolveSmartRecallProfile,
-  smartRecallOptionsSchema: () => smartRecallOptionsSchema,
-  smartRecallProfileDefaultsSchema: () => smartRecallProfileDefaultsSchema,
-  smartRecallProfileDescriptorSchema: () => smartRecallProfileDescriptorSchema,
-  smartRecallProfileSchema: () => smartRecallProfileSchema,
-  smartRecallResponseSchema: () => smartRecallResponseSchema,
-  smartRecallResultSchema: () => smartRecallResultSchema,
-  storageScopeConfigSchema: () => storageScopeConfigSchema,
-  storeMemoryInputSchema: () => storeMemoryInputSchema,
-  uploadPackage: () => uploadPackage
+// src/cli.ts
+var cli_exports = {};
+__export(cli_exports, {
+  runCli: () => runCli
 });
-module.exports = __toCommonJS(index_exports);
+module.exports = __toCommonJS(cli_exports);
+var import_promises2 = __toESM(require("fs/promises"));
+var import_node_path = __toESM(require("path"));
+var import_node_zlib = require("zlib");
+var import_node_util = require("util");
 
 // src/store.ts
 var import_sql = __toESM(require("sql.js"));
@@ -251,16 +154,6 @@ var queryResponseSchema = import_zod.z.object({
   query: import_zod.z.string(),
   tookMs: import_zod.z.number()
 });
-var defaultMemoryLinkTypes = [
-  "about",
-  "caused_by",
-  "contradicts",
-  "supports",
-  "follows",
-  "same_session",
-  "same_project",
-  "same_person"
-];
 var memoryLinkSchema = import_zod.z.object({
   id: import_zod.z.string().uuid(),
   fromId: import_zod.z.string().uuid(),
@@ -1058,14 +951,14 @@ var MemoryStore = class {
   ensureInitialized() {
     if (!this.db) throw new Error("MemoryStore not initialized. Call await memoryStore.init() first.");
   }
-  async store(input, opts) {
+  async store(input2, opts) {
     this.ensureInitialized();
     const now = Date.now();
     const entry = {
       id: (0, import_crypto2.randomUUID)(),
-      content: input.content,
-      topics: input.topics ?? [],
-      metadata: input.metadata ?? {},
+      content: input2.content,
+      topics: input2.topics ?? [],
+      metadata: input2.metadata ?? {},
       createdAt: now,
       accessedAt: now,
       accessCount: 0
@@ -1305,9 +1198,9 @@ var MemoryStore = class {
     }
     return false;
   }
-  async createLink(input, opts) {
+  async createLink(input2, opts) {
     this.ensureInitialized();
-    const validated = memoryLinkInputSchema.parse(input);
+    const validated = memoryLinkInputSchema.parse(input2);
     const link = memoryLinkSchema.parse({
       id: (0, import_crypto2.randomUUID)(),
       fromId: validated.fromId,
@@ -2346,13 +2239,13 @@ var PostgresMemoryStore = class {
     `);
     await this.pgQuery(`CREATE INDEX IF NOT EXISTS "${this.tablePrefix}idx_events_timestamp" ON ${this.table("events")} (timestamp DESC)`);
   }
-  async store(input, opts) {
+  async store(input2, opts) {
     const now = Date.now();
     const validated = memoryEntrySchema.parse({
       id: (0, import_crypto3.randomUUID)(),
-      content: input.content,
-      topics: input.topics ?? [],
-      metadata: input.metadata ?? {},
+      content: input2.content,
+      topics: input2.topics ?? [],
+      metadata: input2.metadata ?? {},
       createdAt: now,
       accessedAt: now,
       accessCount: 0
@@ -2478,8 +2371,8 @@ var PostgresMemoryStore = class {
     if (forgotten) await this.logEvent("memory.forgotten", { id });
     return forgotten;
   }
-  async createLink(input, opts) {
-    const validated = memoryLinkInputSchema.parse(input);
+  async createLink(input2, opts) {
+    const validated = memoryLinkInputSchema.parse(input2);
     const link = memoryLinkSchema.parse({
       id: (0, import_crypto3.randomUUID)(),
       fromId: validated.fromId,
@@ -3459,8 +3352,8 @@ Respond with a JSON array of scores (0-1) matching the order above. Example: [0.
   /**
    * Store a new memory entry.
    */
-  async store(input) {
-    await this._store.store(input);
+  async store(input2) {
+    await this._store.store(input2);
   }
   /**
    * Get recent memory entries.
@@ -3960,13 +3853,13 @@ var LayerManager = class {
    * If layer is not specified, auto-assigns based on topics and content.
    * For semantic layer with selfEdit=true, detects contradictions and auto-supersedes.
    */
-  store(input, layer) {
-    const assignedLayer = layer ?? this.autoAssignLayer(input);
+  store(input2, layer) {
+    const assignedLayer = layer ?? this.autoAssignLayer(input2);
     const now = Date.now();
     const layerCfg = this.config[assignedLayer];
     let supersedesId;
     if (assignedLayer === "semantic" && layerCfg.selfEdit) {
-      const result = this.checkSupersession(input, assignedLayer);
+      const result = this.checkSupersession(input2, assignedLayer);
       if (result.superseded && result.supersededEntryId) {
         const old = this.entries.get(result.supersededEntryId);
         if (old) {
@@ -3978,15 +3871,15 @@ var LayerManager = class {
     }
     const entry = {
       id: (0, import_crypto5.randomUUID)(),
-      content: input.content,
-      topics: input.topics ?? [],
-      metadata: input.metadata ?? {},
+      content: input2.content,
+      topics: input2.topics ?? [],
+      metadata: input2.metadata ?? {},
       createdAt: now,
       accessedAt: now,
       accessCount: 0,
       layer: assignedLayer,
       expiresAt: now + layerCfg.ttlMs,
-      importance: input.metadata?.importance ?? 0.5,
+      importance: input2.metadata?.importance ?? 0.5,
       // Temporal validity (semantic layer)
       validFrom: assignedLayer === "semantic" && layerCfg.temporalValidity ? now : void 0,
       validUntil: void 0,
@@ -4003,8 +3896,8 @@ var LayerManager = class {
    * Check if new input should supersede an existing semantic entry.
    * Detects contradictions by keyword negation patterns.
    */
-  checkSupersession(input, layer) {
-    const text = `${input.content} ${(input.topics ?? []).join(" ")}`.toLowerCase();
+  checkSupersession(input2, layer) {
+    const text = `${input2.content} ${(input2.topics ?? []).join(" ")}`.toLowerCase();
     for (const entry of this.entries.values()) {
       if (entry.layer !== layer) continue;
       if (entry.supersededBy) continue;
@@ -4019,8 +3912,8 @@ var LayerManager = class {
       const hasNegation = negationPatterns.some((p) => p.test(text));
       if (!hasNegation) continue;
       const existingTopics = entry.topics.join(" ").toLowerCase();
-      const inputTopics = (input.topics ?? []).join(" ").toLowerCase();
-      const contentOverlap = this.simpleRelevance(entry.content, input.content) > 0.5;
+      const inputTopics = (input2.topics ?? []).join(" ").toLowerCase();
+      const contentOverlap = this.simpleRelevance(entry.content, input2.content) > 0.5;
       const topicOverlap = existingTopics && inputTopics && (existingTopics.split(" ").some((w) => inputTopics.includes(w)) || inputTopics.split(" ").some((w) => existingTopics.includes(w)));
       if (contentOverlap || topicOverlap) {
         return {
@@ -4038,10 +3931,10 @@ var LayerManager = class {
    * condition: when this text appears in context
    * action: what to do when triggered
    */
-  storeProcedural(input, trigger) {
+  storeProcedural(input2, trigger) {
     const normalizedTrigger = typeof trigger === "string" ? proceduralTriggerSchema.parse({ terms: [trigger], phrases: [trigger], match: "any" }) : proceduralTriggerSchema.parse(trigger);
-    const meta = { ...input.metadata, trigger: normalizedTrigger };
-    return this.store({ ...input, metadata: meta }, "procedural");
+    const meta = { ...input2.metadata, trigger: normalizedTrigger };
+    return this.store({ ...input2, metadata: meta }, "procedural");
   }
   /**
    * Fire procedural rules matching the given context text.
@@ -4402,12 +4295,12 @@ Respond with ONLY a JSON object:
   /**
    * Auto-assign layer based on content analysis.
    */
-  autoAssignLayer(input) {
-    const metadataLayerHint = typeof input.metadata?.intakeLayerHint === "string" ? input.metadata.intakeLayerHint : void 0;
+  autoAssignLayer(input2) {
+    const metadataLayerHint = typeof input2.metadata?.intakeLayerHint === "string" ? input2.metadata.intakeLayerHint : void 0;
     if (metadataLayerHint === "episodic" || metadataLayerHint === "semantic" || metadataLayerHint === "identity" || metadataLayerHint === "procedural") {
       return metadataLayerHint;
     }
-    const text = `${input.content} ${(input.topics ?? []).join(" ")}`.toLowerCase();
+    const text = `${input2.content} ${(input2.topics ?? []).join(" ")}`.toLowerCase();
     const identityKeywords = ["i am", "i prefer", "my values", "my goals", "my boundaries", "i always", "i never"];
     if (identityKeywords.some((k) => text.includes(k))) return "identity";
     const proceduralKeywords = ["when", "if", "always do", "rule:", "trigger:", "procedure:", "always use", "never use", "do this when"];
@@ -5011,15 +4904,15 @@ var MemoryConsolidator = class {
     this.embeddingService = embeddingService ?? remem.getEmbeddingService?.() ?? null;
     this.options = { ...DEFAULT_OPTIONS, ...options };
   }
-  async storeLayerEntry(input, layer) {
+  async storeLayerEntry(input2, layer) {
     if (this.remem.storeInLayer) {
-      const storedResult = await this.remem.storeInLayer(input, layer);
+      const storedResult = await this.remem.storeInLayer(input2, layer);
       if (storedResult?.id) {
         return this.remem.getLayerManager?.()?.get(storedResult.id) ?? null;
       }
       return null;
     }
-    const directResult = await this.remem.store(input, layer);
+    const directResult = await this.remem.store(input2, layer);
     if (directResult && typeof directResult === "object" && "id" in directResult) {
       return directResult;
     }
@@ -5574,37 +5467,6 @@ function resolveSmartRecallProfile(profile) {
 }
 
 // src/adapters.ts
-function withDefaultTopic(input, defaultTopic) {
-  const normalized = storeMemoryInputSchema.parse(input);
-  if (!defaultTopic) return normalized;
-  const topics = Array.from(/* @__PURE__ */ new Set([...normalized.topics, defaultTopic]));
-  return { ...normalized, topics };
-}
-function contentFromMessages(messages) {
-  if (!Array.isArray(messages)) return String(messages ?? "");
-  return messages.map((message) => {
-    if (typeof message === "string") return message;
-    if (!message || typeof message !== "object") return String(message ?? "");
-    const record = message;
-    const role = typeof record.role === "string" ? `${record.role}: ` : "";
-    const content = record.content;
-    if (typeof content === "string") return `${role}${content}`;
-    if (Array.isArray(content)) {
-      const text = content.map((part) => {
-        if (typeof part === "string") return part;
-        if (part && typeof part === "object" && typeof part.text === "string") {
-          return part.text;
-        }
-        return "";
-      }).filter(Boolean).join("\n");
-      return `${role}${text}`;
-    }
-    return `${role}${JSON.stringify(content ?? "")}`;
-  }).filter(Boolean).join("\n");
-}
-function normalizeNamespace(namespace) {
-  return Array.isArray(namespace) ? namespace.join("/") : namespace;
-}
 function getStringMetadata(entry, key) {
   const value = entry.metadata?.[key];
   return typeof value === "string" ? value : void 0;
@@ -5655,10 +5517,10 @@ function connectionTypeMatches(type, allowed) {
 }
 function topLevelOwner(entry) {
   const label = getStringMetadata(entry, "label")?.toLowerCase();
-  const path = getStringMetadata(entry, "path") ?? getStringMetadata(entry, "name") ?? "";
-  if (label === "package") return { owner: path || "external", type: "package" };
+  const path2 = getStringMetadata(entry, "path") ?? getStringMetadata(entry, "name") ?? "";
+  if (label === "package") return { owner: path2 || "external", type: "package" };
   if (label === "project") return { owner: getStringMetadata(entry, "name") ?? "project", type: "project" };
-  const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "");
+  const normalized = path2.replace(/\\/g, "/").replace(/^\.\//, "");
   const first = normalized.split("/").filter(Boolean)[0];
   return { owner: first || ".", type: "directory" };
 }
@@ -5680,9 +5542,9 @@ function formatCodebaseContext(results, maxChars = 6e3) {
   for (const result of results) {
     const label = getStringMetadata(result, "label") ?? "Node";
     const name = getStringMetadata(result, "name") ?? getStringMetadata(result, "externalId") ?? result.id;
-    const path = getStringMetadata(result, "path");
+    const path2 = getStringMetadata(result, "path");
     const project = getStringMetadata(result, "project");
-    const header = `${label}: ${name}${path ? ` (${path})` : ""}${project ? ` [${project}]` : ""}`;
+    const header = `${label}: ${name}${path2 ? ` (${path2})` : ""}${project ? ` [${project}]` : ""}`;
     lines.push(`- ${header}`);
     const summary = result.content.split("\n").filter((line) => !line.startsWith(`${label}:`)).join(" ").trim();
     if (summary) lines.push(`  ${summary}`);
@@ -5691,259 +5553,6 @@ function formatCodebaseContext(results, maxChars = 6e3) {
   const content = lines.join("\n");
   return content.length > maxChars ? `${content.slice(0, Math.max(0, maxChars - 14)).trimEnd()}
 ...truncated` : content;
-}
-function createVercelAIAdapter(memory, options = {}) {
-  return {
-    name: "vercel-ai",
-    async remember(input) {
-      const normalized = storeMemoryInputSchema.parse(typeof input === "string" ? { content: input } : input);
-      await memory.store(withDefaultTopic(normalized, options.defaultTopic ?? "vercel-ai"));
-    },
-    async saveMessages(messages, metadata = {}) {
-      const content = contentFromMessages(messages).trim();
-      if (!content) return;
-      const entry = storeMemoryInputSchema.parse({
-        content,
-        metadata: { ...metadata, source: "vercel-ai.messages" }
-      });
-      await memory.store(withDefaultTopic(entry, options.defaultTopic ?? "conversation"));
-    },
-    async recall(query, queryOptions = { limit: options.defaultLimit ?? 5 }) {
-      return memory.query(query, queryOptions);
-    },
-    async context(query, queryOptions = { limit: options.defaultLimit ?? 5 }) {
-      const response = await memory.query(query, queryOptions);
-      return response.results.map((result) => {
-        const source = typeof result.metadata?.source === "string" ? ` (${result.metadata.source})` : "";
-        return `- ${result.content}${source}`;
-      }).join("\n");
-    }
-  };
-}
-function createLangGraphStoreAdapter(memory, options = {}) {
-  return {
-    name: "langgraph-store",
-    async put(namespace, key, value, putOptions) {
-      const ns = normalizeNamespace(namespace);
-      const content = typeof value === "string" ? value : JSON.stringify(value);
-      const base = withDefaultTopic({
-        content,
-        topics: [ns],
-        metadata: { key, namespace: ns, source: "langgraph.store" }
-      }, options.defaultTopic);
-      await memory.storeShared({
-        ...base,
-        namespace: ns,
-        visibility: putOptions?.visibility ?? "shared"
-      });
-    },
-    async search(namespace, query, queryOptions = { limit: options.defaultLimit ?? 10 }, scopeOptions) {
-      const ns = normalizeNamespace(namespace);
-      const scope = namespaceQueryScopeSchema.parse(scopeOptions ?? {});
-      const response = await memory.queryNamespace(ns, query, queryOptions, scope);
-      return response.results.map((result) => ({
-        namespace: [ns],
-        key: result.id,
-        value: result.content,
-        createdAt: result.createdAt,
-        updatedAt: result.accessedAt,
-        score: result.relevanceScore
-      }));
-    },
-    async get(namespace, key, scopeOptions) {
-      const ns = normalizeNamespace(namespace);
-      const scope = namespaceQueryScopeSchema.parse(scopeOptions ?? {});
-      const response = await memory.queryNamespace(ns, key, { limit: 20 }, scope);
-      const found = response.results.find((result) => result.id === key || result.content.includes(key));
-      return found ? {
-        namespace: [ns],
-        key: found.id,
-        value: found.content,
-        createdAt: found.createdAt,
-        updatedAt: found.accessedAt
-      } : null;
-    },
-    async listNamespaces(scopeOptions) {
-      const scope = namespaceQueryScopeSchema.parse(scopeOptions ?? {});
-      const recent = await memory.getRecent(100);
-      const namespaces = /* @__PURE__ */ new Set();
-      for (const entry of recent) {
-        const visibility = typeof entry.metadata?.visibility === "string" ? entry.metadata.visibility : "private";
-        if (scope.visibility !== "all" && visibility !== scope.visibility) continue;
-        const namespace = typeof entry.metadata?.namespace === "string" ? entry.metadata.namespace : null;
-        if (namespace) namespaces.add(namespace);
-      }
-      return [...namespaces].map((ns) => [ns]);
-    }
-  };
-}
-function createOpenClawAdapter(memory, options = {}) {
-  return {
-    name: "openclaw",
-    async rememberTurn(turn) {
-      await memory.store(withDefaultTopic({
-        content: `${turn.role}: ${turn.content}`,
-        topics: [turn.sessionId ? `session:${turn.sessionId}` : "session"],
-        metadata: {
-          ...turn.metadata,
-          role: turn.role,
-          sessionId: turn.sessionId,
-          messageId: turn.messageId,
-          source: "openclaw.turn"
-        }
-      }, options.defaultTopic ?? "openclaw"));
-    },
-    async rememberDecision(decision) {
-      const topics = [
-        ...decision.topics ?? [],
-        ...decision.sessionId ? [`session:${decision.sessionId}`] : [],
-        "decision"
-      ];
-      const metadata = {
-        ...decision.metadata ?? {},
-        source: "openclaw.decision"
-      };
-      await memory.store({
-        content: decision.content,
-        topics,
-        metadata
-      });
-      await memory.storeInLayer({
-        content: decision.content,
-        topics,
-        metadata
-      }, "semantic");
-    },
-    async rememberProcedure(rule) {
-      await memory.storeProcedural({
-        content: rule.content,
-        topics: [...rule.topics ?? [], "procedure"],
-        metadata: {
-          ...rule.metadata ?? {},
-          source: "openclaw.procedure"
-        }
-      }, rule.trigger);
-    },
-    async recallContext(query, queryOptions = { limit: options.defaultLimit ?? 8 }) {
-      const response = await memory.query(query, queryOptions);
-      return response.results.map((result) => {
-        const source = typeof result.metadata?.source === "string" ? ` [${result.metadata.source}]` : "";
-        return `- ${result.content}${source}`;
-      }).join("\n");
-    },
-    async recallProjectContext(query, optionsWithNeighbors = { limit: options.defaultLimit ?? 8 }) {
-      const response = await memory.queryWithNeighbors(query, {
-        limit: optionsWithNeighbors.limit ?? (options.defaultLimit ?? 8),
-        topics: optionsWithNeighbors.topics,
-        minAccessCount: optionsWithNeighbors.minAccessCount,
-        since: optionsWithNeighbors.since,
-        until: optionsWithNeighbors.until,
-        hops: optionsWithNeighbors.hops ?? 1,
-        includeBaseResults: true,
-        neighborLimit: options.defaultLimit ?? 8,
-        minNeighborScore: 0.2,
-        includePathDetails: false
-      });
-      return response.results.map((result) => `- ${result.content}`).join("\n");
-    },
-    async query(query, queryOptions) {
-      return memory.query(query, queryOptions);
-    }
-  };
-}
-function createHermesAdapter(memory, options = {}) {
-  return {
-    name: "hermes",
-    async rememberTurn(turn) {
-      await memory.store(withDefaultTopic({
-        content: `${turn.role}: ${turn.content}`,
-        topics: [
-          turn.threadId ? `thread:${turn.threadId}` : "thread",
-          ...turn.runId ? [`run:${turn.runId}`] : []
-        ],
-        metadata: {
-          ...turn.metadata,
-          role: turn.role,
-          threadId: turn.threadId,
-          runId: turn.runId,
-          messageId: turn.messageId,
-          source: "hermes.turn"
-        }
-      }, options.defaultTopic ?? "hermes"));
-    },
-    async rememberArtifact(artifact) {
-      const topics = [
-        ...artifact.topics ?? [],
-        `artifact:${artifact.kind}`,
-        ...artifact.threadId ? [`thread:${artifact.threadId}`] : []
-      ];
-      await memory.store({
-        content: artifact.content,
-        topics,
-        metadata: {
-          ...artifact.metadata ?? {},
-          kind: artifact.kind,
-          threadId: artifact.threadId,
-          runId: artifact.runId,
-          source: "hermes.artifact"
-        }
-      });
-    },
-    async rememberDecision(decision) {
-      const topics = [
-        ...decision.topics ?? [],
-        ...decision.threadId ? [`thread:${decision.threadId}`] : [],
-        "decision"
-      ];
-      const metadata = {
-        ...decision.metadata ?? {},
-        runId: decision.runId,
-        source: "hermes.decision"
-      };
-      await memory.store({ content: decision.content, topics, metadata });
-      await memory.storeInLayer({ content: decision.content, topics, metadata }, "semantic");
-    },
-    async rememberProcedure(rule) {
-      await memory.storeProcedural({
-        content: rule.content,
-        topics: [...rule.topics ?? [], "procedure"],
-        metadata: {
-          ...rule.metadata ?? {},
-          source: "hermes.procedure"
-        }
-      }, rule.trigger);
-    },
-    async rememberShared(input) {
-      await memory.storeShared({
-        content: input.content,
-        namespace: input.namespace,
-        visibility: input.visibility ?? "shared",
-        topics: input.topics ?? [],
-        metadata: {
-          ...input.metadata ?? {},
-          source: "hermes.shared"
-        }
-      });
-    },
-    async recallContext(query, queryOptions = { limit: options.defaultLimit ?? 8 }) {
-      const response = await memory.query(query, queryOptions);
-      return response.results.map((result) => {
-        const source = typeof result.metadata?.source === "string" ? ` [${result.metadata.source}]` : "";
-        return `- ${result.content}${source}`;
-      }).join("\n");
-    },
-    async recallShared(namespace, query, queryOptions = { limit: options.defaultLimit ?? 8 }, scopeOptions) {
-      const scope = namespaceQueryScopeSchema.parse(scopeOptions ?? { visibility: "shared" });
-      const response = await memory.queryNamespace(namespace, query, queryOptions, scope);
-      return response.results.map((result) => {
-        const visibility = typeof result.metadata?.visibility === "string" ? ` (${result.metadata.visibility})` : "";
-        return `- ${result.content}${visibility}`;
-      }).join("\n");
-    },
-    async query(query, queryOptions) {
-      return memory.query(query, queryOptions);
-    }
-  };
 }
 function createCodebaseMemoryAdapter(memory, options = {}) {
   const defaultLimit = options.defaultLimit ?? 10;
@@ -6146,14 +5755,14 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
       const key = `${type}:${owner}`;
       const summary = owners.get(key) ?? { owner, type, nodes: 0, files: 0, symbols: 0, packages: 0, averageWeight: 0, paths: [] };
       const label = (getStringMetadata(node, "label") ?? "").toLowerCase();
-      const path = getStringMetadata(node, "path");
+      const path2 = getStringMetadata(node, "path");
       const previousTotal = summary.averageWeight * summary.nodes;
       summary.nodes += 1;
       summary.averageWeight = (previousTotal + codebaseNodeWeight(node)) / summary.nodes;
       if (label === "file") summary.files += 1;
       if (["function", "class", "constant", "symbol"].includes(label)) summary.symbols += 1;
       if (label === "package") summary.packages += 1;
-      if (path && !summary.paths.includes(path)) summary.paths.push(path);
+      if (path2 && !summary.paths.includes(path2)) summary.paths.push(path2);
       owners.set(key, summary);
     }
     return Array.from(owners.values()).sort((a, b) => b.nodes * b.averageWeight - a.nodes * a.averageWeight || a.owner.localeCompare(b.owner)).slice(0, limit).map((owner) => ({ ...owner, averageWeight: Number(owner.averageWeight.toFixed(3)), paths: owner.paths.slice(0, 10) }));
@@ -6162,9 +5771,9 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
     const candidates = [];
     for (const node of nodes) {
       const label = (getStringMetadata(node, "label") ?? "").toLowerCase();
-      const path = getStringMetadata(node, "path") ?? "";
+      const path2 = getStringMetadata(node, "path") ?? "";
       const name = getStringMetadata(node, "name") ?? "";
-      const looksLikeEntrypoint = ["project", "route", "command", "entrypoint", "api"].includes(label) || label === "file" && /\b(cli|server|index|main|app|route|command)s?\b/i.test(`${path} ${name}`);
+      const looksLikeEntrypoint = ["project", "route", "command", "entrypoint", "api"].includes(label) || label === "file" && /\b(cli|server|index|main|app|route|command)s?\b/i.test(`${path2} ${name}`);
       if (!looksLikeEntrypoint) continue;
       candidates.push(healthFromLinks(node, graph.adjacency.get(node.id)?.map((entry) => entry.link) ?? []));
     }
@@ -6231,8 +5840,8 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
   return {
     name: "Codebase Graph as memory",
     key: "codebase-memory",
-    async registerArtifact(input) {
-      const artifact = knowledgeArtifactRegistrationSchema.parse(input);
+    async registerArtifact(input2) {
+      const artifact = knowledgeArtifactRegistrationSchema.parse(input2);
       return memory.registerKnowledgeArtifact(artifact);
     },
     async ingestGraph(graph, ingestOptions) {
@@ -6303,7 +5912,7 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
       const results = response.results.filter((entry) => hasKnowledgeResourceAccess(entry, queryOptions.resourceGrant));
       const filteredResults = results.filter((entry) => matchesCodebaseFilters(entry, queryOptions));
       const allowedIds = new Set(filteredResults.map((entry) => entry.id));
-      const paths = (response.paths ?? []).filter((path) => connectionTypeMatches(path.type, selectedConnectionTypes)).filter((path) => allowedIds.has(path.fromId) && allowedIds.has(path.toId) && allowedIds.has(path.throughId)).filter((path) => (queryOptions.minConnectionWeight ?? 0) <= path.score);
+      const paths = (response.paths ?? []).filter((path2) => connectionTypeMatches(path2.type, selectedConnectionTypes)).filter((path2) => allowedIds.has(path2.fromId) && allowedIds.has(path2.toId) && allowedIds.has(path2.throughId)).filter((path2) => (queryOptions.minConnectionWeight ?? 0) <= path2.score);
       return {
         query,
         project: queryOptions.project,
@@ -6368,7 +5977,7 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
       const focus = graph.results[0];
       const label = focus ? getStringMetadata(focus, "label") ?? "Node" : "Node";
       const name = focus ? getStringMetadata(focus, "name") ?? getStringMetadata(focus, "externalId") ?? focus.id : query;
-      const relationTypes = Array.from(new Set(graph.paths.map((path) => path.type))).sort();
+      const relationTypes = Array.from(new Set(graph.paths.map((path2) => path2.type))).sort();
       const summary = graph.results.length === 0 ? `No codebase graph nodes matched ${query}.` : `${label} ${name} connects to ${Math.max(0, graph.results.length - 1)} graph nodes through ${graph.linksTraversed} traversed links${relationTypes.length ? ` (${relationTypes.join(", ")})` : ""}.`;
       return {
         ...graph,
@@ -6451,811 +6060,6 @@ function createCodebaseMemoryAdapter(memory, options = {}) {
     }
   };
 }
-
-// src/http.ts
-var HttpAdapter = class {
-  server;
-  engine;
-  store;
-  model;
-  memory;
-  port;
-  host;
-  trustScopeHeaders;
-  runtimeResolver;
-  authToken;
-  corsOrigin;
-  maxBodyBytes;
-  constructor(config) {
-    this.store = config.store;
-    this.model = config.model;
-    this.memory = config.memory;
-    this.engine = new QueryEngine({ store: this.store, model: this.model });
-    this.port = config.port ?? 8787;
-    this.host = config.host ?? "127.0.0.1";
-    this.trustScopeHeaders = config.trustScopeHeaders ?? false;
-    this.runtimeResolver = config.runtimeResolver;
-    this.authToken = config.authToken;
-    this.corsOrigin = config.corsOrigin ?? "http://localhost";
-    this.maxBodyBytes = config.maxBodyBytes ?? 1024 * 1024;
-  }
-  async start() {
-    const http = await import("http");
-    this.server = http.createServer(async (req, res) => {
-      const url = new URL(req.url ?? "/", `http://localhost:${this.port}`);
-      const method = req.method ?? "GET";
-      res.setHeader("Access-Control-Allow-Origin", this.corsOrigin);
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-      res.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type, Authorization, X-ReMEM-Workspace-Id, X-ReMEM-Agent-Id, X-ReMEM-User-Id, X-ReMEM-Session-Id, X-ReMEM-Subject"
-      );
-      if (method === "OPTIONS") {
-        res.writeHead(204);
-        res.end();
-        return;
-      }
-      if (!this.isAuthorized(req)) {
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Unauthorized" }));
-        return;
-      }
-      try {
-        const result = await this.handleRequest(method, url, req);
-        res.writeHead(result.status, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(result.body));
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: message }));
-      }
-    });
-    return new Promise((resolve) => {
-      this.server.listen(this.port, this.host, () => {
-        resolve();
-      });
-    });
-  }
-  async stop() {
-    return new Promise((resolve) => {
-      this.server?.close(() => resolve());
-    });
-  }
-  async handleRequest(method, url, req) {
-    const path = url.pathname;
-    const runtime = await this.resolveRuntime(method, path, req);
-    const engine = runtime.engine;
-    const store = runtime.store;
-    const memory = runtime.memory;
-    const model = runtime.model;
-    if (method === "POST" && path === "/memory") {
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      if (!body) return { status: 400, body: { error: "Empty request body" } };
-      const input = storeMemoryInputSchema.parse(JSON.parse(body));
-      if (memory?.store) await memory.store(input);
-      else await engine.store(input);
-      return { status: 201, body: { ok: true, message: "Memory stored" } };
-    }
-    if (method === "POST" && path === "/memory/remember") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      if (!body) return { status: 400, body: { error: "Empty request body" } };
-      const input = rememberInputSchema.parse(JSON.parse(body));
-      const result = await memory.remember(input);
-      return { status: result.action === "stored" ? 201 : 200, body: result };
-    }
-    if (method === "POST" && path === "/memory/shared") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      if (!body) return { status: 400, body: { error: "Empty request body" } };
-      const parsed = JSON.parse(body);
-      const input = storeMemoryInputSchema.parse(parsed);
-      const namespace = namespaceInputSchema.parse(parsed.namespace);
-      const visibility = parsed.visibility === "private" ? "private" : "shared";
-      await memory.storeShared({ ...input, namespace, visibility });
-      return { status: 201, body: { ok: true, message: "Shared memory stored", namespace, visibility } };
-    }
-    if (method === "GET" && path === "/memory") {
-      const query = url.searchParams.get("q") ?? "";
-      const limit = parseInt(url.searchParams.get("limit") ?? "10", 10);
-      const topics = url.searchParams.get("topics")?.split(",").filter(Boolean);
-      const minAccessCount = url.searchParams.get("minAccessCount");
-      const metadata = url.searchParams.get("metadata");
-      const options = { limit };
-      if (topics) options.topics = topics;
-      if (minAccessCount) options.minAccessCount = parseInt(minAccessCount, 10);
-      if (metadata) options.metadata = JSON.parse(metadata);
-      const result = memory?.query ? await memory.query(query, options) : await engine.query(query, options);
-      return { status: 200, body: result };
-    }
-    if (method === "POST" && path === "/memory/namespace/query") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
-        return { status: 400, body: { error: "query string required" } };
-      }
-      const namespace = namespaceInputSchema.parse(parsed.namespace);
-      const scope = namespaceQueryScopeSchema.parse(parsed.scope ?? {});
-      const options = parsed.options ? JSON.parse(JSON.stringify(parsed.options)) : void 0;
-      const result = await memory.queryNamespace(namespace, parsed.query, options, scope);
-      return { status: 200, body: result };
-    }
-    if (method === "GET" && path === "/memory/recent") {
-      const n = parseInt(url.searchParams.get("n") ?? "10", 10);
-      const results = memory?.getRecent ? await memory.getRecent(n) : await engine.getRecent(n);
-      return { status: 200, body: { results } };
-    }
-    if (method === "POST" && path === "/memory/namespace/recent") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      const namespace = namespaceInputSchema.parse(parsed.namespace);
-      const scope = namespaceQueryScopeSchema.parse(parsed.scope ?? {});
-      const n = typeof parsed.n === "number" ? parsed.n : 10;
-      const results = await memory.getRecentInNamespace(namespace, n, scope);
-      return { status: 200, body: { results } };
-    }
-    if (method === "POST" && path === "/memory/query-with-neighbors") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
-        return { status: 400, body: { error: "query string required" } };
-      }
-      const options = queryWithNeighborsOptionsSchema.parse(parsed.options ?? {});
-      const result = await memory.queryWithNeighbors(parsed.query, options);
-      return { status: 200, body: result };
-    }
-    if (method === "GET" && path === "/memory/recall-profiles") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      return { status: 200, body: { profiles: memory.getRecallProfiles() } };
-    }
-    if (method === "GET" && path.startsWith("/memory/recall-profiles/")) {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      const profile = decodeURIComponent(path.split("/")[3] ?? "").trim();
-      const resolvedProfile = resolveSmartRecallProfile(profile);
-      const matched = resolvedProfile ? memory.getRecallProfiles().find((item) => item.profile === resolvedProfile) : void 0;
-      if (!matched) {
-        return { status: 404, body: { error: `Unknown recall profile: ${profile}` } };
-      }
-      return { status: 200, body: matched };
-    }
-    if (method === "POST" && path === "/memory/smart-recall") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
-        return { status: 400, body: { error: "query string required" } };
-      }
-      const optionPayload = parsed.options && typeof parsed.options === "object" ? {
-        ...parsed.options,
-        ...typeof parsed.options.profile === "string" ? { profile: resolveSmartRecallProfile(parsed.options.profile) ?? parsed.options.profile } : {}
-      } : parsed.options ?? {};
-      const options = smartRecallOptionsSchema.parse(optionPayload);
-      const result = await memory.smartRecall(parsed.query, options);
-      return { status: 200, body: result };
-    }
-    if (method === "POST" && path === "/memory/context-pack") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
-        return { status: 400, body: { error: "query string required" } };
-      }
-      const optionPayload = parsed.options && typeof parsed.options === "object" ? {
-        ...parsed.options,
-        ...typeof parsed.options.profile === "string" ? { profile: resolveSmartRecallProfile(parsed.options.profile) ?? parsed.options.profile } : {}
-      } : parsed.options ?? {};
-      const options = contextPackOptionsSchema.parse(optionPayload);
-      const result = await memory.contextPack(parsed.query, options);
-      return { status: 200, body: result };
-    }
-    if ((method === "GET" || method === "POST") && path === "/memory/health") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      let options;
-      if (method === "POST") {
-        if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-        const body = await this.readBody(req);
-        const parsed = body ? JSON.parse(body) : {};
-        options = parsed.options;
-      }
-      const result = await memory.health(options);
-      return { status: 200, body: result };
-    }
-    if (method === "POST" && path === "/storage/maintenance") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      const result = await memory.storageMaintenance(parsed.options);
-      return { status: 200, body: result };
-    }
-    if (method === "POST" && path === "/knowledge/artifact") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const artifact = knowledgeArtifactRegistrationSchema.parse(body ? JSON.parse(body) : {});
-      const result = await memory.registerKnowledgeArtifact(artifact);
-      return { status: 201, body: result };
-    }
-    if (method === "POST" && path === "/knowledge/ingest") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      const graph = knowledgeGraphArtifactSchema.parse(parsed.graph ?? parsed);
-      const options = parsed.options ? knowledgeIngestOptionsSchema.parse(parsed.options) : void 0;
-      const result = await memory.ingestKnowledgeGraph(graph, options);
-      return { status: 201, body: result };
-    }
-    if (method === "POST" && path === "/knowledge/overview") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      const result = await memory.knowledgeOverview({
-        project: typeof parsed.project === "string" && parsed.project.trim() ? parsed.project : void 0,
-        limit: typeof parsed.limit === "number" ? parsed.limit : void 0,
-        resourceGrant: parsed.resourceGrant
-      });
-      return { status: 200, body: result };
-    }
-    if (method === "POST" && path === "/knowledge/subgraph") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
-        return { status: 400, body: { error: "query string required" } };
-      }
-      const result = await memory.knowledgeSubgraph(parsed.query, parsed.options);
-      return { status: 200, body: result };
-    }
-    if (method === "POST" && path === "/knowledge/explain") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
-        return { status: 400, body: { error: "query string required" } };
-      }
-      const result = await memory.knowledgeExplain(parsed.query, parsed.options);
-      return { status: 200, body: result };
-    }
-    if (method === "POST" && path === "/knowledge/entrypoints") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      const result = await memory.knowledgeEntrypoints({
-        project: typeof parsed.project === "string" && parsed.project.trim() ? parsed.project : void 0,
-        limit: typeof parsed.limit === "number" ? parsed.limit : void 0,
-        nodeLabels: Array.isArray(parsed.nodeLabels) ? parsed.nodeLabels.filter((item) => typeof item === "string" && item.trim().length > 0) : void 0,
-        owners: Array.isArray(parsed.owners) ? parsed.owners.filter((item) => typeof item === "string" && item.trim().length > 0) : void 0,
-        resourceGrant: parsed.resourceGrant
-      });
-      return { status: 200, body: { entrypoints: result } };
-    }
-    if (method === "POST" && path === "/knowledge/owners") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      const result = await memory.knowledgeOwners({
-        project: typeof parsed.project === "string" && parsed.project.trim() ? parsed.project : void 0,
-        limit: typeof parsed.limit === "number" ? parsed.limit : void 0,
-        nodeLabels: Array.isArray(parsed.nodeLabels) ? parsed.nodeLabels.filter((item) => typeof item === "string" && item.trim().length > 0) : void 0,
-        owners: Array.isArray(parsed.owners) ? parsed.owners.filter((item) => typeof item === "string" && item.trim().length > 0) : void 0,
-        resourceGrant: parsed.resourceGrant
-      });
-      return { status: 200, body: { owners: result } };
-    }
-    if (method === "POST" && path === "/knowledge/hotspots") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      const result = await memory.knowledgeHotspots({
-        project: typeof parsed.project === "string" && parsed.project.trim() ? parsed.project : void 0,
-        limit: typeof parsed.limit === "number" ? parsed.limit : void 0,
-        nodeLabels: Array.isArray(parsed.nodeLabels) ? parsed.nodeLabels.filter((item) => typeof item === "string" && item.trim().length > 0) : void 0,
-        owners: Array.isArray(parsed.owners) ? parsed.owners.filter((item) => typeof item === "string" && item.trim().length > 0) : void 0,
-        resourceGrant: parsed.resourceGrant
-      });
-      return { status: 200, body: { hotspots: result } };
-    }
-    if (method === "POST" && path === "/knowledge/deadzones") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      const result = await memory.knowledgeDeadzones({
-        project: typeof parsed.project === "string" && parsed.project.trim() ? parsed.project : void 0,
-        limit: typeof parsed.limit === "number" ? parsed.limit : void 0,
-        nodeLabels: Array.isArray(parsed.nodeLabels) ? parsed.nodeLabels.filter((item) => typeof item === "string" && item.trim().length > 0) : void 0,
-        owners: Array.isArray(parsed.owners) ? parsed.owners.filter((item) => typeof item === "string" && item.trim().length > 0) : void 0,
-        resourceGrant: parsed.resourceGrant
-      });
-      return { status: 200, body: { deadzones: result } };
-    }
-    if (method === "POST" && path === "/memory/procedural/match") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.context !== "string" || !parsed.context.trim()) {
-        return { status: 400, body: { error: "context string required" } };
-      }
-      const matches = memory.matchProcedural(parsed.context);
-      return { status: 200, body: { matches } };
-    }
-    if (method === "POST" && path === "/identity/audit") {
-      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      if (typeof parsed.sessionText !== "string" || !parsed.sessionText.trim()) {
-        return { status: 400, body: { error: "sessionText string required" } };
-      }
-      const audit = await memory.auditIdentityAlignment(parsed.sessionText);
-      return { status: 200, body: audit };
-    }
-    if (method === "GET" && path.startsWith("/memory/topics/")) {
-      const topic = decodeURIComponent(path.split("/")[3]);
-      const limit = parseInt(url.searchParams.get("limit") ?? "20", 10);
-      const results = memory?.getByTopic ? await memory.getByTopic(topic, limit) : await engine.getByTopic(topic, limit);
-      return { status: 200, body: { results } };
-    }
-    if (method === "GET" && path.startsWith("/memory/")) {
-      const id = path.split("/")[2];
-      if (id === "recent" || id === "topics") {
-        return { status: 404, body: { error: "Not found" } };
-      }
-      const entry = await store.get(id);
-      return entry ? { status: 200, body: { entry } } : { status: 404, body: { error: "Memory not found" } };
-    }
-    if (method === "DELETE" && path.startsWith("/memory/")) {
-      const id = path.split("/")[2];
-      const forgotten = await store.forget(id);
-      return {
-        status: forgotten ? 200 : 404,
-        body: { ok: forgotten, message: forgotten ? "Memory forgotten" : "Memory not found" }
-      };
-    }
-    if (method === "GET" && path === "/snapshots") {
-      const snapshots = memory?.listSnapshots ? await memory.listSnapshots() : await store.listSnapshots();
-      return { status: 200, body: { snapshots } };
-    }
-    if (method === "POST" && path === "/snapshots") {
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = body ? JSON.parse(body) : {};
-      const label = typeof parsed.label === "string" && parsed.label.trim() ? parsed.label : "snapshot";
-      const snapshot = memory?.createSnapshot ? await memory.createSnapshot(label) : await store.createSnapshot(label);
-      return { status: 201, body: { snapshot } };
-    }
-    if (method === "GET" && path.startsWith("/snapshots/") && path.endsWith("/export")) {
-      const id = path.split("/")[2];
-      const snapshot = memory?.exportSnapshot ? await memory.exportSnapshot(id) : await store.exportSnapshot(id);
-      return { status: 200, body: { snapshot } };
-    }
-    if (method === "POST" && path === "/snapshots/import") {
-      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
-      const body = await this.readBody(req);
-      const parsed = JSON.parse(body);
-      if (!parsed.snapshot || typeof parsed.snapshot !== "object") {
-        return { status: 400, body: { error: "snapshot object required" } };
-      }
-      const snapshot = memory?.importSnapshot ? await memory.importSnapshot(parsed.snapshot, { overwrite: parsed.overwrite === true }) : await store.importSnapshot(
-        parsed.snapshot,
-        { overwrite: parsed.overwrite === true }
-      );
-      return { status: 201, body: { snapshot } };
-    }
-    if (method === "POST" && path.startsWith("/snapshots/") && path.endsWith("/restore")) {
-      const id = path.split("/")[2];
-      const restored = memory?.restoreSnapshot ? await memory.restoreSnapshot(id) : await store.restoreSnapshot(id);
-      return { status: 200, body: { ok: true, restored } };
-    }
-    if (method === "DELETE" && path.startsWith("/snapshots/")) {
-      const id = path.split("/")[2];
-      const deleted = memory?.deleteSnapshot ? await memory.deleteSnapshot(id) : await store.deleteSnapshot(id);
-      return {
-        status: deleted ? 200 : 404,
-        body: { ok: deleted, message: deleted ? "Snapshot deleted" : "Snapshot not found" }
-      };
-    }
-    if (method === "GET" && path === "/events") {
-      const limit = parseInt(url.searchParams.get("limit") ?? "100", 10);
-      const events = store.getEventLog(limit);
-      return { status: 200, body: { events } };
-    }
-    if (method === "GET" && path === "/health") {
-      return {
-        status: 200,
-        body: {
-          ok: true,
-          model: model?.name() ?? "none",
-          advancedRoutes: Boolean(memory),
-          nativeVectorSearch: memory?.usesNativeVectorSearch?.() ?? store.supportsNativeVectorSearch?.() ?? false
-        }
-      };
-    }
-    return { status: 404, body: { error: "Not found", path, method } };
-  }
-  isAuthorized(req) {
-    if (!this.authToken) return true;
-    return req.headers.authorization === `Bearer ${this.authToken}`;
-  }
-  async resolveRuntime(method, path, req) {
-    if (!req || !this.runtimeResolver) {
-      return {
-        store: this.store,
-        model: this.model,
-        memory: this.memory,
-        engine: this.engine
-      };
-    }
-    const scope = this.buildRequestScope(method, path, req);
-    const resolved = await this.runtimeResolver(scope, req);
-    if (!resolved) {
-      return {
-        store: this.store,
-        model: this.model,
-        memory: this.memory,
-        engine: this.engine
-      };
-    }
-    return {
-      ...resolved,
-      engine: new QueryEngine({
-        store: resolved.store,
-        model: resolved.model
-      })
-    };
-  }
-  buildRequestScope(method, path, req) {
-    const headers = {};
-    for (const [key, value] of Object.entries(req.headers)) {
-      if (typeof value === "string") headers[key] = value;
-      else if (Array.isArray(value)) headers[key] = value.join(", ");
-    }
-    const scope = {
-      method,
-      path,
-      headers,
-      authToken: headers.authorization?.startsWith("Bearer ") ? headers.authorization.slice(7) : void 0
-    };
-    if (!this.trustScopeHeaders) return scope;
-    const getHeader = (name) => {
-      const value = headers[name];
-      return value && value.trim() ? value.trim() : void 0;
-    };
-    scope.workspaceId = getHeader("x-remem-workspace-id");
-    scope.agentId = getHeader("x-remem-agent-id");
-    scope.userId = getHeader("x-remem-user-id");
-    scope.sessionId = getHeader("x-remem-session-id");
-    scope.subject = getHeader("x-remem-subject");
-    return scope;
-  }
-  async readBody(req) {
-    return new Promise((resolve, reject) => {
-      const chunks = [];
-      let total = 0;
-      req.on("data", (chunk) => {
-        total += chunk.length;
-        if (total > this.maxBodyBytes) {
-          reject(new Error("Request body too large"));
-          req.destroy();
-          return;
-        }
-        chunks.push(chunk);
-      });
-      req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-      req.on("error", reject);
-    });
-  }
-};
-
-// src/episodic-capture.ts
-var import_crypto6 = require("crypto");
-var HIGH_IMPORTANCE_PATTERNS = [
-  "decision",
-  "agreed",
-  "decided",
-  "commit",
-  "ship",
-  "deploy",
-  "publish",
-  "fix",
-  "bug",
-  "broken",
-  "hack",
-  "workaround",
-  "important",
-  "critical",
-  "priority",
-  "blocker",
-  "ship it",
-  "go",
-  "no-go",
-  "approved",
-  "rejected",
-  "refactor",
-  "architecture",
-  "design",
-  "strategy",
-  "plan"
-];
-var LOW_IMPORTANCE_PATTERNS = [
-  "ping",
-  "pong",
-  "heartbeat",
-  "typing",
-  "read",
-  "check",
-  "ACK",
-  "ok",
-  "yes",
-  "noop",
-  "noop",
-  "null",
-  "skip",
-  "ignore",
-  "watermark"
-];
-var TYPE_IMPORTANCE = {
-  "decision": 0.9,
-  "goal.achieved": 0.95,
-  "identity.drift": 0.8,
-  "identity.correction": 0.8,
-  "agent.error": 0.7,
-  "learning": 0.75,
-  "user.feedback": 0.65,
-  "user.question": 0.55,
-  "goal.set": 0.7,
-  "memory.store": 0.5,
-  "memory.query": 0.3,
-  "memory.recall": 0.4,
-  "session.start": 0.2,
-  "session.end": 0.3,
-  "session.compaction": 0.1,
-  "agent.turn": 0.4,
-  "agent.response": 0.4,
-  "agent.tool_call": 0.5,
-  "agent.tool_result": 0.45,
-  "user.message": 0.5
-};
-function scoreImportance(event) {
-  if (event.importanceOverride !== void 0) {
-    return Math.max(0, Math.min(1, event.importanceOverride));
-  }
-  let score = TYPE_IMPORTANCE[event.type] ?? 0.5;
-  const lower = event.content.toLowerCase();
-  for (const pattern of HIGH_IMPORTANCE_PATTERNS) {
-    if (lower.includes(pattern)) {
-      score = Math.min(1, score + 0.15);
-      break;
-    }
-  }
-  for (const pattern of LOW_IMPORTANCE_PATTERNS) {
-    if (lower.includes(pattern)) {
-      score = Math.max(0.1, score - 0.2);
-      break;
-    }
-  }
-  if (event.content.length < 20) {
-    score = Math.max(0.1, score - 0.1);
-  }
-  if (event.content.length > 500) {
-    score = Math.min(1, score + 0.1);
-  }
-  return Math.max(0, Math.min(1, score));
-}
-function hashString(s) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    h = (h << 5) - h + c;
-    h = h & h;
-  }
-  return h;
-}
-function makeDedupKey(event) {
-  const normalized = event.content.toLowerCase().replace(/\s+/g, " ").trim();
-  return {
-    type: event.type,
-    contentHash: hashString(normalized)
-  };
-}
-var EpisodicCapturePipeline = class {
-  remem;
-  eventBuffer = [];
-  dedupSet = /* @__PURE__ */ new Map();
-  flushIntervalMs;
-  maxBatchSize;
-  dedupWindowMs;
-  layer;
-  intervalHandle = null;
-  started = false;
-  eventCount = 0;
-  droppedCount = 0;
-  constructor(remem, options = {}) {
-    this.remem = remem;
-    this.flushIntervalMs = options.flushIntervalMs ?? 1e3;
-    this.maxBatchSize = options.maxBatchSize ?? 50;
-    this.dedupWindowMs = options.dedupWindowMs ?? 2e3;
-    this.layer = options.layer ?? "episodic";
-  }
-  /**
-   * Capture a single event into the episodic layer.
-   * Events are buffered and flushed in batches.
-   */
-  capture(event) {
-    const now = Date.now();
-    this.eventCount++;
-    const enriched = {
-      ...event,
-      id: event.id ?? (0, import_crypto6.randomUUID)(),
-      timestamp: event.timestamp ?? now
-    };
-    if (!enriched.noDedup) {
-      const key = makeDedupKey(enriched);
-      const keyStr = `${key.type}::${key.contentHash}`;
-      const existing = this.dedupSet.get(keyStr);
-      if (existing && now < existing.expiresAt) {
-        this.droppedCount++;
-        return;
-      }
-      this.dedupSet.set(keyStr, { key, expiresAt: now + this.dedupWindowMs });
-    }
-    this.eventBuffer.push(enriched);
-    if (this.eventBuffer.length >= this.maxBatchSize) {
-      this.flush().catch((err) => console.error("[EpisodicCapture] flush error:", err));
-    }
-  }
-  /**
-   * Capture multiple events at once.
-   */
-  captureBatch(events) {
-    for (const event of events) {
-      this.capture(event);
-    }
-  }
-  /**
-   * Start the periodic flush interval.
-   * Call once after registering event sources.
-   */
-  start() {
-    if (this.started) return;
-    this.started = true;
-    this.intervalHandle = setInterval(() => {
-      if (this.eventBuffer.length > 0) {
-        this.flush().catch((err) => console.error("[EpisodicCapture] flush error:", err));
-      }
-      const now = Date.now();
-      for (const [key, val] of this.dedupSet.entries()) {
-        if (now >= val.expiresAt) this.dedupSet.delete(key);
-      }
-    }, this.flushIntervalMs);
-  }
-  /**
-   * Stop the flush interval and flush remaining events.
-   */
-  stop() {
-    if (this.intervalHandle) {
-      clearInterval(this.intervalHandle);
-      this.intervalHandle = null;
-    }
-    if (this.eventBuffer.length > 0) {
-      this.flush().catch((err) => console.error("[EpisodicCapture] final flush error:", err));
-    }
-    this.started = false;
-  }
-  /**
-   * Flush the event buffer to MemoryStore.
-   */
-  async flush() {
-    if (this.eventBuffer.length === 0) return;
-    const batch = this.eventBuffer.splice(0, this.eventBuffer.length);
-    for (const event of batch) {
-      const importance = scoreImportance(event);
-      const topics = this.extractTopics(event);
-      const content = this.formatEvent(event);
-      const entry = this.remem.store(
-        {
-          content,
-          topics,
-          metadata: {
-            ...event.metadata,
-            captureEventId: event.id,
-            captureEventType: event.type,
-            importance,
-            capturedAt: event.timestamp
-          }
-        },
-        this.layer
-      );
-      if (this.remem.getLayerManager && typeof entry.id === "string") {
-        void this.generateEmbedding(entry.id, content).catch(() => {
-        });
-      }
-    }
-  }
-  /**
-   * Extract topics from event type and content.
-   */
-  extractTopics(event) {
-    const topics = [event.type.split(".")[0]];
-    switch (event.type) {
-      case "decision":
-        topics.push("decision");
-        break;
-      case "learning":
-        topics.push("learning");
-        break;
-      case "goal.set":
-      case "goal.achieved":
-        topics.push("goal");
-        break;
-      case "identity.drift":
-      case "identity.correction":
-        topics.push("identity", "drift");
-        break;
-      case "agent.error":
-        topics.push("error");
-        break;
-      case "user.message":
-        topics.push("user-interaction");
-        if (event.metadata?.channel?.includes("discord")) topics.push("discord");
-        break;
-      case "session.compaction":
-        topics.push("session", "maintenance");
-        break;
-    }
-    const hashtags = event.content.match(/#[a-zA-Z][\w-]*/g);
-    if (hashtags) {
-      topics.push(...hashtags.map((t) => t.slice(1).toLowerCase()));
-    }
-    return [...new Set(topics)];
-  }
-  /**
-   * Format an event into a human-readable episodic memory string.
-   */
-  formatEvent(event) {
-    const ts = event.timestamp ? new Date(event.timestamp).toISOString().slice(0, 19).replace("T", " ") : "";
-    const metaStr = event.metadata ? Object.entries(event.metadata).filter(([k]) => !["importance", "capturedAt"].includes(k)).slice(0, 5).map(([k, v]) => `${k}=${String(v).slice(0, 50)}`).join(" ") : "";
-    const importance = scoreImportance(event);
-    const importanceLabel = importance >= 0.8 ? "\u{1F534}" : importance >= 0.6 ? "\u{1F7E1}" : importance >= 0.4 ? "\u{1F7E2}" : "\u26AA";
-    return `[${event.type}] ${event.content}${metaStr ? ` (${metaStr})` : ""} ${importanceLabel} ${ts}`.trim();
-  }
-  /**
-   * Generate embedding for a stored entry (async, non-blocking).
-   * Returns early if no embedding service available.
-   */
-  async generateEmbedding(_entryId, _content) {
-  }
-  /**
-   * Get capture statistics.
-   */
-  getStats() {
-    return {
-      eventCount: this.eventCount,
-      droppedCount: this.droppedCount,
-      bufferSize: this.eventBuffer.length,
-      started: this.started
-    };
-  }
-};
 
 // src/index.ts
 var SMART_RECALL_PROFILE_CATALOG = {
@@ -7432,9 +6236,6 @@ function getSmartRecallProfile(profile) {
     contextPackTitles: { ...descriptor.contextPackTitles }
   };
 }
-function resolveRecallProfile(profile) {
-  return resolveSmartRecallProfile(profile);
-}
 var ReMEM = class {
   _store;
   model;
@@ -7487,10 +6288,10 @@ var ReMEM = class {
       this.normalizeRememberContent(content).split(/[^a-z0-9_:/.-]+/i).filter((token) => token.length >= 3)
     );
   }
-  inferRememberKind(input) {
-    if (input.kind) return input.kind;
-    const text = `${input.content} ${(input.topics ?? []).join(" ")}`.toLowerCase();
-    const metadata = input.metadata ?? {};
+  inferRememberKind(input2) {
+    if (input2.kind) return input2.kind;
+    const text = `${input2.content} ${(input2.topics ?? []).join(" ")}`.toLowerCase();
+    const metadata = input2.metadata ?? {};
     if (["artifactPath", "resourceUri", "url", "filePath", "checksum"].some((key) => typeof metadata[key] === "string")) {
       return "artifact-note";
     }
@@ -7578,16 +6379,16 @@ var ReMEM = class {
       return union.size > 0 && intersection / union.size >= 0.35;
     }).map((entry) => entry.id).slice(0, 5);
   }
-  buildProcedureTrigger(input) {
-    const existing = input.metadata.trigger;
+  buildProcedureTrigger(input2) {
+    const existing = input2.metadata.trigger;
     if (existing && typeof existing === "object") return existing;
     const stopwords = /* @__PURE__ */ new Set(["the", "and", "that", "with", "from", "this", "when", "then", "before", "after", "always", "never", "should", "must"]);
-    const terms = Array.from(this.rememberTokenSet(input.content)).filter((token) => !stopwords.has(token)).slice(0, 6);
-    const phrase = input.content.trim().split(/\s+/).slice(0, 6).join(" ");
+    const terms = Array.from(this.rememberTokenSet(input2.content)).filter((token) => !stopwords.has(token)).slice(0, 6);
+    const phrase = input2.content.trim().split(/\s+/).slice(0, 6).join(" ");
     return {
       terms,
       phrases: phrase ? [phrase] : [],
-      topics: input.topics.slice(0, 6),
+      topics: input2.topics.slice(0, 6),
       match: "any",
       minScore: 0.2,
       priority: 0.7
@@ -7655,8 +6456,8 @@ var ReMEM = class {
    * If layers are enabled, also persists to the appropriate layer in SQLite.
    * If embeddings are enabled, generates a vector embedding in the background.
    */
-  async store(input) {
-    const normalized = storeMemoryInputSchema.parse(input);
+  async store(input2) {
+    const normalized = storeMemoryInputSchema.parse(input2);
     const stored = await this._store.store(normalized, this.getStoreScope());
     if (this._layersEnabled && this.layers) {
       const result = this.layers.store(normalized);
@@ -7679,8 +6480,8 @@ var ReMEM = class {
     }
     return stored;
   }
-  async remember(input) {
-    const normalized = rememberInputSchema.parse(input);
+  async remember(input2) {
+    const normalized = rememberInputSchema.parse(input2);
     const kind = this.inferRememberKind(normalized);
     const layer = this.rememberLayerForKind(kind);
     const topics = Array.from(/* @__PURE__ */ new Set([...normalized.topics ?? [], kind, layer]));
@@ -7772,9 +6573,9 @@ var ReMEM = class {
     let skippedDuplicate = 0;
     let skippedLowSignal = 0;
     let failed = 0;
-    for (const [index, input] of normalizedInputs.entries()) {
+    for (const [index, input2] of normalizedInputs.entries()) {
       try {
-        const result = await this.remember(input);
+        const result = await this.remember(input2);
         results.push({ index, ok: true, result });
         if (result.action === "stored") stored += 1;
         else if (result.action === "preview") previews += 1;
@@ -8668,8 +7469,8 @@ profile: ${profile}
    * Use this for compressed or tool-owned graph files, for example a
    * `.codebase-memory/graph.db.zst` produced by a codebase-memory MCP.
    */
-  async registerKnowledgeArtifact(input) {
-    const artifact = knowledgeArtifactRegistrationSchema.parse(input);
+  async registerKnowledgeArtifact(input2) {
+    const artifact = knowledgeArtifactRegistrationSchema.parse(input2);
     const source = artifact.source;
     const namespace = this.normalizeNamespace(["knowledge", source, artifact.project ?? "default"]);
     const content = [
@@ -9087,8 +7888,8 @@ profile: ${profile}
   async getByTopic(topic, limit = 20) {
     return this._store.getByTopic(topic, limit, this.getStoreScope());
   }
-  async storeShared(input) {
-    const { namespace: rawNamespace, visibility: rawVisibility, ...rest } = input;
+  async storeShared(input2) {
+    const { namespace: rawNamespace, visibility: rawVisibility, ...rest } = input2;
     const namespace = this.normalizeNamespace(rawNamespace);
     const visibility = rawVisibility ?? "shared";
     const topics = Array.from(/* @__PURE__ */ new Set([...rest.topics ?? [], ...this.namespaceTopicTrail(namespace)]));
@@ -9291,8 +8092,8 @@ profile: ${profile}
   /**
    * Store in a specific layer.
    */
-  async storeInLayer(input, layer) {
-    const normalized = storeMemoryInputSchema.parse(input);
+  async storeInLayer(input2, layer) {
+    const normalized = storeMemoryInputSchema.parse(input2);
     if (!this.layers) {
       await this.enableLayers();
     }
@@ -9386,11 +8187,11 @@ profile: ${profile}
    * Store a procedural memory — a behavior/rule triggered by a keyword.
    * Use when you learn a rule like "when X happens, always do Y".
    */
-  async storeProcedural(input, trigger) {
+  async storeProcedural(input2, trigger) {
     if (!this.layers) {
       await this.enableLayers();
     }
-    const entry = this.layers.storeProcedural(input, trigger);
+    const entry = this.layers.storeProcedural(input2, trigger);
     await this._store.persistLayerEntry(entry, {
       agentId: this._agentId,
       userId: this._userId
@@ -9647,109 +8448,1799 @@ profile: ${profile}
     this._store.close();
   }
 };
+
+// src/smoke.ts
+async function fetchJson(url, init) {
+  const response = await fetch(url, init);
+  if (!response.ok) {
+    throw new Error(`http_${response.status}`);
+  }
+  return response.json();
+}
+async function runEmbeddingProbe(memory, config) {
+  const results = [];
+  if (!config.embeddings?.enabled) {
+    results.push({
+      name: "embeddings",
+      status: "skip",
+      detail: "Embeddings are not enabled."
+    });
+    return results;
+  }
+  results.push({
+    name: "embeddings-runtime",
+    status: memory.isEmbeddingEnabled() ? "pass" : "fail",
+    detail: memory.isEmbeddingEnabled() ? "Embedding runtime is enabled." : "Embeddings were configured but runtime is not active."
+  });
+  const service = memory.getEmbeddingService();
+  if (!service) {
+    results.push({
+      name: "embeddings-service",
+      status: "fail",
+      detail: "Embedding service instance is unavailable."
+    });
+    return results;
+  }
+  try {
+    const baseUrl = service.baseUrl.replace(/\/$/, "");
+    await fetchJson(`${baseUrl}/api/tags`);
+    results.push({
+      name: "embeddings-endpoint",
+      status: "pass",
+      detail: `Reached Ollama endpoint at ${baseUrl}.`
+    });
+  } catch (error) {
+    results.push({
+      name: "embeddings-endpoint",
+      status: "fail",
+      detail: `Embedding endpoint probe failed: ${error instanceof Error ? error.message : String(error)}`
+    });
+  }
+  return results;
+}
+async function runLlmProbe(config) {
+  const llm = config.llm;
+  if (!llm) {
+    return [{
+      name: "llm",
+      status: "skip",
+      detail: "No LLM configured."
+    }];
+  }
+  if (llm.type === "ollama") {
+    try {
+      const baseUrl = llm.baseUrl.replace(/\/$/, "");
+      await fetchJson(`${baseUrl}/api/tags`);
+      return [{
+        name: "llm-endpoint",
+        status: "pass",
+        detail: `Reached Ollama chat endpoint at ${baseUrl}.`
+      }];
+    } catch (error) {
+      return [{
+        name: "llm-endpoint",
+        status: "fail",
+        detail: `LLM endpoint probe failed: ${error instanceof Error ? error.message : String(error)}`
+      }];
+    }
+  }
+  const authHeader = llm.type === "anthropic" ? { "x-api-key": llm.apiKey, "anthropic-version": "2023-06-01" } : { Authorization: `Bearer ${llm.apiKey}` };
+  const modelsUrl = llm.type === "openai" ? `${(llm.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "")}/models` : llm.type === "anthropic" ? `${(llm.baseUrl ?? "https://api.anthropic.com/v1").replace(/\/$/, "")}/models` : `${(llm.baseUrl ?? "https://api.bankr.ai").replace(/\/$/, "")}/v1/models`;
+  try {
+    await fetchJson(modelsUrl, { headers: authHeader });
+    return [{
+      name: "llm-endpoint",
+      status: "pass",
+      detail: `Reached ${llm.type} model endpoint.`
+    }];
+  } catch (error) {
+    return [{
+      name: "llm-endpoint",
+      status: "warn",
+      detail: `Configured ${llm.type}, but endpoint probe failed: ${error instanceof Error ? error.message : String(error)}`
+    }];
+  }
+}
+async function runSmokeChecks(memory, config) {
+  const checks = [];
+  checks.push({
+    name: "memory-init",
+    status: "pass",
+    detail: "Memory store initialized."
+  });
+  checks.push({
+    name: "layers",
+    status: memory.isLayersEnabled() ? "pass" : "warn",
+    detail: memory.isLayersEnabled() ? "Layer manager enabled." : "Layers are not enabled."
+  });
+  try {
+    const snapshot = await memory.createSnapshot(`smoke-check-${Date.now()}`);
+    const snapshots = await memory.listSnapshots();
+    const exists = snapshots.some((item) => item.id === snapshot.id);
+    await memory.deleteSnapshot(snapshot.id);
+    checks.push({
+      name: "snapshot-roundtrip",
+      status: exists ? "pass" : "fail",
+      detail: exists ? "Snapshot create/list/delete roundtrip succeeded." : "Snapshot was created but not visible in list output."
+    });
+  } catch (error) {
+    checks.push({
+      name: "snapshot-roundtrip",
+      status: "fail",
+      detail: `Snapshot roundtrip failed: ${error instanceof Error ? error.message : String(error)}`
+    });
+  }
+  checks.push(...await runEmbeddingProbe(memory, config));
+  checks.push(...await runLlmProbe(config));
+  return checks;
+}
+
+// src/setup.ts
+function formatMaybeJson(value) {
+  return JSON.stringify(value, null, 2).split("\n");
+}
+function storageSummary(context) {
+  return [
+    `storage: ${context.storageLabel}`,
+    `db: ${context.dbLabel}`,
+    `scope: ${context.scopeLabel}`,
+    `native vector search: ${context.memory.usesNativeVectorSearch() ? "yes" : "no"}`,
+    `snapshots: ${context.snapshots.length}`
+  ];
+}
+function embeddingSummary(config, memory) {
+  const enabled = Boolean(config.embeddings?.enabled);
+  return [
+    `enabled: ${enabled ? "yes" : "no"}`,
+    "provider: Ollama-compatible",
+    `base URL: ${config.embeddings?.baseUrl ?? "http://localhost:11434"}`,
+    `model: ${config.embeddings?.model ?? "nomic-embed-text"}`,
+    `runtime active: ${memory.isEmbeddingEnabled() ? "yes" : "no"}`
+  ];
+}
+function llmSummary(config) {
+  const llm = config.llm;
+  const configuredModel = llm?.type === "bankr" ? "provider default" : llm?.model ?? "none";
+  return [
+    `configured: ${llm ? "yes" : "no"}`,
+    `provider: ${llm?.type ?? "none"}`,
+    `model: ${configuredModel}`,
+    `base URL: ${"baseUrl" in (llm ?? {}) ? llm.baseUrl ?? "default" : "default"}`
+  ];
+}
+function openClawChecklist() {
+  return [
+    "Use when you want memory behind session turns, decisions, and reusable procedures.",
+    "",
+    "Recommended onboarding:",
+    "1. Create a local SQLite or Postgres-backed ReMEM instance.",
+    "2. Enable embeddings if conversational recall quality matters.",
+    "3. Wrap the instance with createOpenClawAdapter(memory).",
+    "4. Write turns + decisions into memory from your runtime hooks.",
+    "5. Pull concise context blocks with recallContext() or recallProjectContext().",
+    "",
+    "Best fit:",
+    "- persistent session memory",
+    "- release rules / decisions / user preferences",
+    "- shared project memory without bloating prompt context"
+  ];
+}
+function hermesChecklist() {
+  return [
+    "Use when you want harness-oriented memory around threads, runs, artifacts, and shared lanes.",
+    "",
+    "Recommended onboarding:",
+    "1. Stand up the base ReMEM store.",
+    "2. Wrap it with createHermesAdapter(memory).",
+    "3. Persist turns, artifacts, decisions, and shared namespace notes.",
+    "4. Use recallShared() for reusable team/project lanes.",
+    "",
+    "Best fit:",
+    "- thread/run scoped recall",
+    "- artifacts and rollout lanes",
+    "- shared namespace memory across harness workflows"
+  ];
+}
+function setupPlan(runtimeFocus) {
+  const runtimeStep = runtimeFocus === "OpenClaw" ? "Wire createOpenClawAdapter(memory) into turn + decision hooks." : runtimeFocus === "Hermes" ? "Wire createHermesAdapter(memory) into thread/run/artifact hooks." : "Choose the adapter surface your runtime actually needs.";
+  return [
+    "1. Pick storage lane (sqlite first, postgres when shared infra is real)",
+    "2. Turn on embeddings if semantic recall matters",
+    "3. Add an LLM only if you need recursive/synthesis workflows",
+    `4. ${runtimeStep}`,
+    "5. Generate starter config + smoke test init/status before shipping"
+  ];
+}
+function smokeCheckSummary() {
+  return [
+    "Running real smoke checks against the configured runtime...",
+    "Includes snapshot roundtrip plus optional embedding / model endpoint probes."
+  ];
+}
+function generateExampleConfig(context) {
+  const config = context.config;
+  const example = {
+    storage: config.storage ?? "sqlite",
+    dbPath: config.dbPath ?? "./remem.db",
+    storageConfig: config.storageConfig ?? {},
+    ...config.postgres ? { postgres: config.postgres } : {},
+    ...config.embeddings ? { embeddings: config.embeddings } : {},
+    ...config.llm ? { llm: { ...config.llm, ...config.llm.type !== "ollama" ? { apiKey: "ENV_OR_SECRET_HERE" } : {} } } : {}
+  };
+  return formatMaybeJson(example);
+}
+function generateAdapterSnippet(runtimeFocus) {
+  if (runtimeFocus === "OpenClaw") {
+    return [
+      "import { ReMEM, createOpenClawAdapter } from '@darksol/remem';",
+      "",
+      "const memory = new ReMEM({ dbPath: './remem.db' });",
+      "await memory.init();",
+      "await memory.enableLayers();",
+      "",
+      "const openclaw = createOpenClawAdapter(memory);",
+      "await openclaw.rememberTurn({",
+      "  role: 'user',",
+      "  content: 'Ship after tests pass',",
+      "  sessionId: 'general',",
+      "});",
+      "",
+      "const context = await openclaw.recallContext('release rules');"
+    ];
+  }
+  if (runtimeFocus === "Hermes") {
+    return [
+      "import { ReMEM, createHermesAdapter } from '@darksol/remem';",
+      "",
+      "const memory = new ReMEM({ dbPath: './remem.db' });",
+      "await memory.init();",
+      "await memory.enableLayers();",
+      "",
+      "const hermes = createHermesAdapter(memory);",
+      "await hermes.rememberTurn({",
+      "  role: 'user',",
+      "  content: 'Ship Hermes support after tests pass',",
+      "  threadId: 'general',",
+      "  runId: 'run-42',",
+      "});",
+      "",
+      "const shared = await hermes.recallShared(['team', 'hermes'], 'rollout lane');"
+    ];
+  }
+  return [
+    "import { ReMEM } from '@darksol/remem';",
+    "",
+    "const memory = new ReMEM({ dbPath: './remem.db' });",
+    "await memory.init();",
+    "await memory.enableLayers();",
+    "",
+    "// Pick the adapter your runtime actually needs:",
+    "// createOpenClawAdapter(memory)",
+    "// createHermesAdapter(memory)",
+    "// createLangGraphStoreAdapter(memory)",
+    "// createVercelAIAdapter(memory)"
+  ];
+}
+function executionModelNotes() {
+  return [
+    "What belongs in the UI:",
+    "- config review",
+    "- onboarding guidance",
+    "- adapter choice",
+    "- starter snippets",
+    "- smoke checks",
+    "",
+    "What should stay out of the UI:",
+    "- routine agent memory writes",
+    "- full manual recall browsing as a primary workflow",
+    "- procedural / layered ops that agents can already script directly"
+  ];
+}
+function generateInitArtifacts(context) {
+  const configJson = `${generateExampleConfig({ config: context.config }).join("\n")}
+`;
+  const snippetTs = `${generateAdapterSnippet(context.runtimeFocus).join("\n")}
+`;
+  const envExampleLines = [
+    "# ReMEM starter environment",
+    context.config.storage === "postgres" ? "REMEM_POSTGRES_URL=postgres://user:pass@localhost:5432/remem" : "# REMEM_POSTGRES_URL=",
+    context.config.embeddings?.enabled ? `REMEM_EMBEDDINGS_URL=${context.config.embeddings.baseUrl}` : "# REMEM_EMBEDDINGS_URL=http://localhost:11434",
+    context.config.embeddings?.enabled ? `REMEM_EMBEDDINGS_MODEL=${context.config.embeddings.model}` : "# REMEM_EMBEDDINGS_MODEL=nomic-embed-text",
+    context.config.llm?.type && context.config.llm.type !== "ollama" ? `REMEM_${context.config.llm.type.toUpperCase()}_API_KEY=your-key-here` : "# REMEM_LLM_API_KEY="
+  ];
+  return {
+    configJson,
+    snippetTs,
+    envExample: `${envExampleLines.join("\n")}
+`
+  };
+}
+
+// src/ui.ts
+var import_promises = __toESM(require("readline/promises"));
+var import_node_process = require("process");
+function clearScreen() {
+  import_node_process.stdout.write("\x1Bc");
+}
+function divider(width = 92) {
+  return "\u2500".repeat(width);
+}
+function truncate(value, width) {
+  if (value.length <= width) return value;
+  return `${value.slice(0, Math.max(0, width - 1))}\u2026`;
+}
+function panel(title, lines = []) {
+  const width = 92;
+  const top = `\u250C${divider(width - 2)}\u2510`;
+  const mid = `\u251C${divider(width - 2)}\u2524`;
+  const bottom = `\u2514${divider(width - 2)}\u2518`;
+  const titleLine = `\u2502 ${truncate(title, width - 4)}`.padEnd(width - 1, " ") + "\u2502";
+  const body = (lines.length ? lines : [""]).map((line) => `\u2502 ${truncate(String(line), width - 4)}`.padEnd(width - 1, " ") + "\u2502");
+  return [top, titleLine, mid, ...body, bottom].join("\n");
+}
+function hero(selectedRuntime) {
+  return [
+    "\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2588\u2557   \u2588\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2588\u2557   \u2588\u2588\u2588\u2557",
+    "\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255D\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255D\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2551",
+    "\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255D\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2554\u2588\u2588\u2588\u2588\u2554\u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2554\u2588\u2588\u2588\u2588\u2554\u2588\u2588\u2551",
+    "\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u255D  \u2588\u2588\u2551\u255A\u2588\u2588\u2554\u255D\u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u255D  \u2588\u2588\u2551\u255A\u2588\u2588\u2554\u255D\u2588\u2588\u2551",
+    "\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2551 \u255A\u2550\u255D \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2551 \u255A\u2550\u255D \u2588\u2588\u2551",
+    "\u255A\u2550\u255D  \u255A\u2550\u255D\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u255D\u255A\u2550\u255D     \u255A\u2550\u255D\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u255D\u255A\u2550\u255D     \u255A\u2550\u255D",
+    "",
+    `setup + integration console  |  focus: ${selectedRuntime}`
+  ].join("\n");
+}
+async function pause(rl, message = "Press Enter to continue...") {
+  await rl.question(`
+${message}`);
+}
+async function overviewFlow(context) {
+  console.log(panel("ReMEM setup overview", [
+    ...storageSummary(context),
+    "",
+    `runtime focus: ${context.runtimeFocus}`,
+    "This console is for human setup and adapter onboarding.",
+    "The agent-facing memory ops stay in CLI/API land."
+  ]));
+}
+async function runtimeFocusFlow(rl, context) {
+  const answer = (await rl.question("Pick runtime focus [1] OpenClaw [2] Hermes [3] Generic: ")).trim();
+  if (answer === "1") context.runtimeFocus = "OpenClaw";
+  else if (answer === "2") context.runtimeFocus = "Hermes";
+  else if (answer === "3") context.runtimeFocus = "Generic";
+  console.log(panel("Runtime focus updated", [
+    `selected: ${context.runtimeFocus}`,
+    context.runtimeFocus === "OpenClaw" ? "Next screens will bias toward session-turn memory onboarding." : context.runtimeFocus === "Hermes" ? "Next screens will bias toward thread/run/artifact onboarding." : "Next screens will stay framework-neutral."
+  ]));
+}
+async function storageFlow(context) {
+  console.log(panel("Storage configuration", [
+    ...storageSummary(context),
+    "",
+    context.storageLabel === "postgres" ? "Use this when shared/server deployments need scoped persistence." : context.storageLabel === "memory" ? "Ephemeral lane for tests, demos, and smoke checks." : "SQLite is the sane default for local durable memory and first integration passes."
+  ]));
+}
+async function embeddingsFlow(context) {
+  console.log(panel("Embeddings configuration", [
+    ...embeddingSummary(context.config, context.memory),
+    "",
+    "Turn this on when you want semantic recall instead of pure keyword matching."
+  ]));
+}
+async function llmFlow(context) {
+  console.log(panel("LLM configuration", [
+    ...llmSummary(context.config),
+    "",
+    "Only needed for recursive/synthesis workflows. Core memory store/query does not require it."
+  ]));
+}
+async function adapterFlow(context) {
+  const lines = context.runtimeFocus === "OpenClaw" ? openClawChecklist() : context.runtimeFocus === "Hermes" ? hermesChecklist() : [
+    "Pick the thinnest adapter surface that matches your runtime.",
+    "",
+    "- OpenClaw: session turns, decisions, procedures, project context",
+    "- Hermes: threads, runs, artifacts, shared namespaces",
+    "- LangGraph: BaseStore-ish search/put/get namespace lane",
+    "- Vercel AI: helper surface for saved messages + context recall"
+  ];
+  console.log(panel(`${context.runtimeFocus} adapter onboarding`, lines));
+}
+async function snippetFlow(context) {
+  console.log(panel(`${context.runtimeFocus} starter snippet`, generateAdapterSnippet(context.runtimeFocus)));
+}
+async function generatedConfigFlow(context) {
+  console.log(panel("Starter config", generateExampleConfig(context)));
+}
+async function smokeChecksFlow(context) {
+  console.log(panel("Smoke checks", smokeCheckSummary()));
+  console.log();
+  const checks = await runSmokeChecks(context.memory, context.config);
+  console.log(panel("Smoke check results", checks.map((check) => `${check.status.toUpperCase()}  ${check.name}  ${check.detail}`)));
+}
+async function executionPlanFlow(context) {
+  console.log(panel("Execution plan", setupPlan(context.runtimeFocus)));
+  console.log();
+  console.log(panel("Scope sanity check", executionModelNotes()));
+}
+async function launchTerminalUi(memory, context) {
+  if (!import_node_process.stdin.isTTY || !import_node_process.stdout.isTTY) {
+    throw new Error("terminal_ui_requires_tty");
+  }
+  const rl = import_promises.default.createInterface({ input: import_node_process.stdin, output: import_node_process.stdout });
+  const setupContext = {
+    memory,
+    storageLabel: context.storageLabel,
+    dbLabel: context.dbLabel,
+    scopeLabel: context.scopeLabel,
+    config: context.config,
+    snapshots: await memory.listSnapshots(),
+    runtimeFocus: "OpenClaw"
+  };
+  try {
+    for (; ; ) {
+      clearScreen();
+      console.log(hero(setupContext.runtimeFocus));
+      console.log();
+      console.log(panel("ReMEM setup console", [
+        "1. Overview",
+        "2. Choose runtime focus",
+        "3. Storage configuration",
+        "4. Embeddings configuration",
+        "5. LLM configuration",
+        "6. Adapter onboarding",
+        "7. Starter snippet",
+        "8. Generate starter config",
+        "9. Smoke checks",
+        "10. Recommended execution plan",
+        "0. Exit"
+      ]));
+      const choice = (await rl.question("\nSelect action: ")).trim();
+      clearScreen();
+      try {
+        if (choice === "0") break;
+        if (choice === "1") await overviewFlow(setupContext);
+        else if (choice === "2") await runtimeFocusFlow(rl, setupContext);
+        else if (choice === "3") await storageFlow(setupContext);
+        else if (choice === "4") await embeddingsFlow(setupContext);
+        else if (choice === "5") await llmFlow(setupContext);
+        else if (choice === "6") await adapterFlow(setupContext);
+        else if (choice === "7") await snippetFlow(setupContext);
+        else if (choice === "8") await generatedConfigFlow(setupContext);
+        else if (choice === "9") await smokeChecksFlow(setupContext);
+        else if (choice === "10") await executionPlanFlow(setupContext);
+        else console.log(panel("Unknown action", ["Pick one of the listed numbers."]));
+      } catch (error) {
+        console.log(panel("Action failed", [error instanceof Error ? error.message : String(error)]));
+      }
+      await pause(rl);
+    }
+  } finally {
+    rl.close();
+    clearScreen();
+  }
+}
+
+// src/cli.ts
+var gunzipAsync = (0, import_node_util.promisify)(import_node_zlib.gunzip);
+function parseArgs(argv) {
+  const args = argv.slice(2);
+  const command = args[0] || "help";
+  const rest = [];
+  const options = {};
+  for (let i = 1; i < args.length; i += 1) {
+    const token = args[i];
+    if (!token.startsWith("--")) {
+      rest.push(token);
+      continue;
+    }
+    const key = token.slice(2);
+    const next = args[i + 1];
+    if (!next || next.startsWith("--")) {
+      options[key] = true;
+      continue;
+    }
+    options[key] = next;
+    i += 1;
+  }
+  return { command, rest, options };
+}
+function asString(value, fallback = "") {
+  if (typeof value === "string") return value;
+  return fallback;
+}
+function asNumber(value, fallback) {
+  const parsed = Number(asString(value, String(fallback)));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+function asCsv(value) {
+  if (typeof value !== "string") return [];
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+function asNamespace(value) {
+  if (typeof value !== "string") return [];
+  return value.replace(/\//g, ",").split(",").map((item) => item.trim()).filter(Boolean);
+}
+function parseMaybeJson(value) {
+  if (typeof value !== "string" || !value.trim()) return {};
+  return JSON.parse(value);
+}
+function resolveProfileOption(value, fallback) {
+  return resolveSmartRecallProfile(asString(value)) ?? fallback;
+}
+function buildConfig(options) {
+  const storage = asString(options.storage, "sqlite");
+  const dbPath = asString(options.db, storage === "memory" ? ":memory:" : "./remem.db");
+  const workspaceId = asString(options["workspace-id"]) || void 0;
+  const agentId = asString(options["agent-id"]) || void 0;
+  const userId = asString(options["user-id"]) || void 0;
+  const config = {
+    storage,
+    dbPath,
+    storageConfig: {
+      workspaceId,
+      agentId,
+      userId
+    }
+  };
+  const postgresUrl = asString(options["postgres-url"]);
+  if (storage === "postgres" && postgresUrl) {
+    config.postgres = { connectionString: postgresUrl };
+  }
+  if (options.embeddings) {
+    config.embeddings = {
+      enabled: true,
+      baseUrl: asString(options["embeddings-url"], "http://localhost:11434"),
+      model: asString(options["embeddings-model"], "nomic-embed-text"),
+      asyncEmbed: true
+    };
+  }
+  const llmType = asString(options["llm-type"]);
+  if (llmType) {
+    const apiKey = asString(options["llm-api-key"]);
+    const model = asString(options["llm-model"]);
+    const baseUrl = asString(options["llm-base-url"]);
+    if (llmType === "ollama") {
+      config.llm = {
+        type: "ollama",
+        baseUrl: baseUrl || "http://localhost:11434",
+        model: model || "llama3"
+      };
+    } else if (llmType === "openai" && apiKey) {
+      config.llm = { type: "openai", apiKey, model: model || "gpt-4o", ...baseUrl ? { baseUrl } : {} };
+    } else if (llmType === "anthropic" && apiKey) {
+      config.llm = { type: "anthropic", apiKey, model: model || "claude-sonnet-4-6", ...baseUrl ? { baseUrl } : {} };
+    } else if (llmType === "bankr" && apiKey) {
+      config.llm = { type: "bankr", apiKey, ...baseUrl ? { baseUrl } : {} };
+    }
+  }
+  return {
+    config,
+    storageLabel: storage,
+    dbLabel: storage === "postgres" ? postgresUrl || "postgres" : dbPath,
+    scopeLabel: [workspaceId ? `workspace:${workspaceId}` : null, agentId ? `agent:${agentId}` : null, userId ? `user:${userId}` : null].filter(Boolean).join(" | ") || "global"
+  };
+}
+function helpText() {
+  return `ReMEM CLI
+
+Usage:
+  remem ui [--db <path>] [--storage sqlite|memory|postgres] [--workspace-id <id>] [--agent-id <id>] [--user-id <id>]
+  remem init [same flags as ui] [--runtime openclaw|hermes|generic] [--out-dir <path>] [--json]
+  remem status [--db <path>]
+  remem stats [--db <path>] [--json]
+  remem graph [--query <text>] [--limit 100] [--dot] [--json]
+  remem health [--db <path>] [--json]
+  remem storage-maintenance [--dry-run] [--compact] [--json]
+  remem knowledge-artifact --path <file> [--source codebase-memory-mcp] [--project <name>] [--resource-uri <uri>] [--required-scopes a,b] [--format sqlite] [--compression zstd] [--json]
+  remem knowledge-ingest --artifact <graph.json|graph.json.gz> [--source <name>] [--project <name>] [--namespace team/code] [--visibility shared|private] [--json]
+  remem knowledge-overview [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
+  remem knowledge-explain --query <text> [--project <name>] [--limit 8] [--neighbor-limit 8] [--connections calls,imports] [--labels Function,Route] [--owners src,packages] [--max-context-chars 6000] [--json]
+  remem knowledge-subgraph --query <text> [--project <name>] [--limit 8] [--neighbor-limit 8] [--connections calls,imports] [--labels Function,Route] [--owners src,packages] [--max-context-chars 6000] [--json]
+  remem knowledge-entrypoints [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
+  remem knowledge-owners [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
+  remem knowledge-hotspots [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
+  remem knowledge-deadzones [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
+  remem store --content <text> [--topics a,b] [--metadata '{"kind":"note"}']
+  remem remember --content <text> [--kind fact|preference|decision|procedure|recent-event|artifact-note] [--topics a,b] [--source <name>] [--dry-run]
+  remem remember-batch --file <items.json> [--stop-on-error] [--json]
+  remem query --query <text> [--limit 8]
+  remem recent [--limit 10]
+  remem topic --topic <name> [--limit 10]
+  remem layer-store --layer semantic --content <text> [--topics a,b]
+  remem procedural-store --content <text> --trigger <phrase> [--topics a,b]
+  remem procedural-match --context <text>
+  remem shared-store --namespace team/ops --content <text> [--visibility shared|private]
+  remem namespace-query --namespace team/ops --query <text> [--visibility all|shared|private]
+  remem namespace-recent --namespace team/ops [--limit 10] [--visibility all|shared|private]
+  remem recall-profiles [--profile <name>] [--json]
+  remem smart-recall --query <text> [--profile fast|deep|agent-safe|ops-debug|coding-agent|ops-handoff|research-brief] [--limit 8]
+  remem context-pack --query <text> [--profile fast|deep|agent-safe|ops-debug|coding-agent|ops-handoff|research-brief] [--max-chars 6000] [--dream]
+  remem dream [--query <text>] [--layers identity,semantic,procedural] [--limit 12]
+  remem snapshots --action list|create|restore|delete [--label <name>] [--snapshot-id <id>]
+  remem consolidate [--summaries] [--procedural]
+  remem smoke-check [--db <path>] [--json]
+  remem doctor [--config <path>] [--json]
+  remem validate-config --config <path> [--json]
+
+Human-facing setup:
+  remem ui / remem init      Setup console for runtime focus selection, storage,
+                             embeddings, model config, adapter onboarding,
+                             starter snippets/config, and smoke checks.
+
+Agent-facing ops:
+  Use the direct CLI commands above for memory writes, recall, snapshots, and consolidation.
+
+Common config flags:
+  --db <path>                SQLite path (default ./remem.db)
+  --storage <mode>           sqlite | memory | postgres
+  --postgres-url <url>       Postgres connection string
+  --workspace-id <id>        Workspace scope
+  --agent-id <id>            Agent scope
+  --user-id <id>             User scope
+  --embeddings               Enable embedding search
+  --embeddings-url <url>     Ollama embeddings URL
+  --embeddings-model <name>  Embedding model (default nomic-embed-text)
+  --llm-type <provider>      bankr | openai | anthropic | ollama
+  --llm-api-key <key>        API key for bankr/openai/anthropic
+  --llm-model <name>         Model override
+  --llm-base-url <url>       Custom provider base URL
+  --runtime <name>           openclaw | hermes | generic (for init artifacts)
+  --out-dir <path>           Output directory for generated init artifacts
+  --json                     Emit machine-readable JSON output
+`;
+}
+function isJsonMode(options) {
+  return Boolean(options.json);
+}
+function emitError(runtime, jsonMode, message) {
+  if (jsonMode) {
+    writeStderr(runtime, `${JSON.stringify({ ok: false, error: message })}
+`);
+  } else {
+    writeStderr(runtime, `Error: ${message}
+`);
+  }
+}
+function requireOption(value, name, jsonMode, runtime) {
+  const str = asString(value);
+  if (!str) {
+    emitError(runtime, jsonMode, `Missing required option: --${name}`);
+    return null;
+  }
+  return str;
+}
+function writeStdout(runtime, chunk) {
+  (runtime.writeStdout ?? ((value) => process.stdout.write(value)))(chunk);
+}
+function writeStderr(runtime, chunk) {
+  (runtime.writeStderr ?? ((value) => process.stderr.write(value)))(chunk);
+}
+function emitJson(runtime, value) {
+  writeStdout(runtime, `${JSON.stringify(value)}
+`);
+}
+function emitText(runtime, value = "") {
+  writeStdout(runtime, value);
+}
+function formatQueryResults(results) {
+  if (!results.length) return "No results.";
+  return results.map((result, index) => `${index + 1}. ${result.content}${typeof result.relevanceScore === "number" ? ` (score ${result.relevanceScore.toFixed(3)})` : ""}`).join("\n");
+}
+function formatChecks(checks) {
+  return checks.map((check) => `- [${check.status}] ${check.name}: ${check.detail}`).join("\n");
+}
+function formatRecommendations(recommendations) {
+  if (!recommendations.length) return "No recommendations.";
+  return recommendations.map((item) => {
+    const command = item.command ? `
+  command: ${item.command}` : "";
+    return `- [${item.priority}] ${item.action}: ${item.reason}${command}`;
+  }).join("\n");
+}
+function hasFailingChecks(checks) {
+  return checks.some((check) => check.status === "fail");
+}
+function parseRuntimeFocus(value) {
+  const normalized = asString(value, "openclaw").toLowerCase();
+  if (normalized === "hermes") return "Hermes";
+  if (normalized === "generic") return "Generic";
+  return "OpenClaw";
+}
+async function writeInitArtifacts(outDir, artifacts) {
+  await import_promises2.default.mkdir(outDir, { recursive: true });
+  const files = [
+    { path: import_node_path.default.join(outDir, "remem.config.json"), content: artifacts.configJson },
+    { path: import_node_path.default.join(outDir, "remem-snippet.ts"), content: artifacts.snippetTs },
+    { path: import_node_path.default.join(outDir, ".env.example"), content: artifacts.envExample }
+  ];
+  await Promise.all(files.map((file) => import_promises2.default.writeFile(file.path, file.content, "utf8")));
+  return files.map((file) => file.path);
+}
+async function readJsonFile(filePath) {
+  const raw = await import_promises2.default.readFile(filePath, "utf8");
+  return JSON.parse(raw);
+}
+async function readRememberBatchFile(filePath) {
+  const parsed = await readJsonFile(import_node_path.default.resolve(filePath));
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && typeof parsed === "object" && Array.isArray(parsed.items)) {
+    return parsed.items;
+  }
+  throw new Error("Batch file must be a JSON array or an object with an items array.");
+}
+async function readKnowledgeGraphFile(filePath) {
+  const resolved = import_node_path.default.resolve(filePath);
+  const data = await import_promises2.default.readFile(resolved);
+  const raw = resolved.endsWith(".gz") ? (await gunzipAsync(data)).toString("utf8") : data.toString("utf8");
+  return knowledgeGraphArtifactSchema.parse(JSON.parse(raw));
+}
+async function validateConfigFile(filePath) {
+  const resolved = import_node_path.default.resolve(filePath);
+  const checks = [];
+  let config = null;
+  try {
+    const parsed = await readJsonFile(resolved);
+    checks.push({
+      name: "config-json",
+      status: "pass",
+      detail: `Read valid JSON from ${resolved}.`
+    });
+    const knownConfigKeys = ["storage", "storageConfig", "postgres", "llm", "adapter", "dbPath", "embeddings"];
+    const hasKnownConfigKey = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) && knownConfigKeys.some((key) => Object.prototype.hasOwnProperty.call(parsed, key));
+    const validation = hasKnownConfigKey ? rememConfigSchema.safeParse(parsed) : {
+      success: false,
+      error: {
+        issues: [{ path: [], message: "No ReMEM config fields found." }]
+      }
+    };
+    if (validation.success) {
+      config = validation.data;
+      checks.push({
+        name: "config-schema",
+        status: "pass",
+        detail: "Configuration matches ReMEM schema."
+      });
+    } else {
+      checks.push({
+        name: "config-schema",
+        status: "fail",
+        detail: validation.error.issues.map((issue) => `${issue.path.join(".") || "root"}: ${issue.message}`).join("; ")
+      });
+    }
+  } catch (error) {
+    checks.push({
+      name: "config-json",
+      status: "fail",
+      detail: `Could not read/parse config: ${error instanceof Error ? error.message : String(error)}`
+    });
+  }
+  if (config) {
+    if (config.storage === "postgres" && !config.postgres?.connectionString) {
+      checks.push({
+        name: "postgres-url",
+        status: "warn",
+        detail: "Postgres storage is selected but no connectionString is set."
+      });
+    }
+    if ((config.storage ?? "sqlite") === "sqlite" && !config.dbPath) {
+      checks.push({
+        name: "sqlite-db-path",
+        status: "warn",
+        detail: "SQLite storage will use the default ./remem.db path."
+      });
+    }
+  }
+  return {
+    ok: !hasFailingChecks(checks),
+    configPath: resolved,
+    config,
+    checks
+  };
+}
+function publicConfigValidation(validation) {
+  return {
+    ok: validation.ok,
+    configPath: validation.configPath,
+    checks: validation.checks
+  };
+}
+async function packageVersion() {
+  const binaryDir = process.argv[1] ? import_node_path.default.dirname(process.argv[1]) : process.cwd();
+  const candidates = [
+    import_node_path.default.resolve(process.cwd(), "package.json"),
+    import_node_path.default.resolve(binaryDir, "..", "package.json")
+  ];
+  for (const candidate of candidates) {
+    try {
+      const parsed = await readJsonFile(candidate);
+      if (parsed.name === "@darksol/remem" && parsed.version) return parsed.version;
+    } catch {
+    }
+  }
+  return "unknown";
+}
+async function runDoctor(memory, context, options) {
+  const checks = [];
+  const version = await packageVersion();
+  checks.push({
+    name: "package-version",
+    status: version === "unknown" ? "warn" : "pass",
+    detail: `@darksol/remem ${version}`
+  });
+  checks.push({
+    name: "node-version",
+    status: "pass",
+    detail: process.version
+  });
+  checks.push({
+    name: "binary-path",
+    status: "pass",
+    detail: process.argv[1] ?? "unknown"
+  });
+  const configPath = asString(options.config);
+  let configValidation = null;
+  if (configPath) {
+    configValidation = await validateConfigFile(configPath);
+    checks.push(...configValidation.checks);
+  } else {
+    checks.push({
+      name: "config-file",
+      status: "skip",
+      detail: "No --config path provided."
+    });
+  }
+  checks.push({
+    name: "storage",
+    status: "pass",
+    detail: `${context.storageLabel} (${context.dbLabel})`
+  });
+  checks.push({
+    name: "scope",
+    status: "pass",
+    detail: context.scopeLabel
+  });
+  checks.push({
+    name: "native-vector-search",
+    status: memory.usesNativeVectorSearch() ? "pass" : "skip",
+    detail: memory.usesNativeVectorSearch() ? "Native vector search is active." : "Native vector search is not active for this storage/config."
+  });
+  checks.push(...await runSmokeChecks(memory, configValidation?.config ?? context.config));
+  return {
+    ok: !hasFailingChecks(checks),
+    command: "doctor",
+    version,
+    storage: context.storageLabel,
+    db: context.dbLabel,
+    scope: context.scopeLabel,
+    configPath: configValidation?.configPath ?? null,
+    checks
+  };
+}
+async function withMemory(options, fn) {
+  const context = buildConfig(options);
+  const memory = new ReMEM(context.config);
+  await memory.init();
+  await memory.enableLayers();
+  try {
+    return await fn(memory, context);
+  } finally {
+    memory.close();
+  }
+}
+async function runCli(argv = process.argv, runtime = {}) {
+  const { command, options } = parseArgs(argv);
+  const jsonMode = isJsonMode(options);
+  const uiLauncher = runtime.launchUi ?? launchTerminalUi;
+  if (command === "help" || command === "--help" || command === "-h") {
+    emitText(runtime, helpText());
+    return 0;
+  }
+  if (command === "ui" || command === "console") {
+    await withMemory(options, async (memory, context) => {
+      await uiLauncher(memory, {
+        storageLabel: context.storageLabel,
+        dbLabel: context.dbLabel,
+        scopeLabel: context.scopeLabel,
+        config: context.config
+      });
+    });
+    return 0;
+  }
+  if (command === "init") {
+    await withMemory(options, async (memory, context) => {
+      const runtimeFocus = parseRuntimeFocus(options.runtime);
+      const artifacts = generateInitArtifacts({ config: context.config, runtimeFocus });
+      const outDir = import_node_path.default.resolve(asString(options["out-dir"], import_node_path.default.join(process.cwd(), ".remem")));
+      const written = await writeInitArtifacts(outDir, artifacts);
+      const configValidation = await validateConfigFile(import_node_path.default.join(outDir, "remem.config.json"));
+      const smokeChecks = await runSmokeChecks(memory, context.config);
+      const doctorChecks = options.check || options.doctor ? (await runDoctor(memory, context, { ...options, config: import_node_path.default.join(outDir, "remem.config.json") })).checks : void 0;
+      const payload = {
+        ok: configValidation.ok && !hasFailingChecks(smokeChecks) && (!doctorChecks || !hasFailingChecks(doctorChecks)),
+        command,
+        runtimeFocus,
+        outDir,
+        files: written,
+        configValidation: publicConfigValidation(configValidation),
+        smokeChecks,
+        ...doctorChecks ? { doctorChecks } : {}
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        const checkOutput = options.check || options.doctor ? `
+Doctor checks:
+${formatChecks(doctorChecks ?? [])}
+` : "";
+        emitText(runtime, `Generated init artifacts in ${outDir}
+${written.map((file) => `- ${file}`).join("\n")}
+${checkOutput}`);
+      }
+    });
+    return 0;
+  }
+  if (command === "status") {
+    await withMemory(options, async (memory, context) => {
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        layersEnabled: memory.isLayersEnabled(),
+        nativeVectorSearch: memory.usesNativeVectorSearch(),
+        layerStats: memory.getLayerStats(),
+        snapshots: await memory.listSnapshots()
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `status: ok
+storage: ${payload.storage}
+db: ${payload.db}
+scope: ${payload.scope}
+layers: ${payload.layersEnabled ? "enabled" : "disabled"}
+snapshots: ${payload.snapshots.length}
+`);
+    });
+    return 0;
+  }
+  if (command === "stats") {
+    await withMemory(options, async (memory, context) => {
+      const stats = await memory.stats();
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...stats
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        const topTopics = stats.topics.slice(0, 8).map((item) => `${item.topic}:${item.count}`).join(", ") || "none";
+        emitText(
+          runtime,
+          [
+            `core memories: ${stats.coreCount}`,
+            `layer memories: ${stats.layerCount}`,
+            `snapshots: ${stats.snapshotCount}`,
+            `events: ${stats.eventCount}`,
+            `top topics: ${topTopics}`,
+            ""
+          ].join("\n")
+        );
+      }
+    });
+    return 0;
+  }
+  if (command === "graph") {
+    await withMemory(options, async (memory, context) => {
+      const metadata = parseMaybeJson(options.metadata);
+      const graph = await memory.graph({
+        query: asString(options.query) || void 0,
+        limit: asNumber(options.limit, 100),
+        topics: asCsv(options.topics),
+        metadata,
+        includeIsolated: !options["hide-isolated"],
+        maxLinks: asNumber(options["max-links"], 250)
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...graph
+      };
+      if (options.dot) emitText(runtime, `${graph.dot}
+`);
+      else if (jsonMode) emitJson(runtime, payload);
+      else {
+        const topTopics = graph.topics.slice(0, 8).map((item) => `${item.topic}:${item.count}`).join(", ") || "none";
+        emitText(
+          runtime,
+          [
+            `memory graph: ${graph.nodes.length} nodes, ${graph.links.length} links`,
+            `top topics: ${topTopics}`,
+            `dot: remem graph --dot${graph.query ? ` --query "${graph.query}"` : ""}`,
+            ""
+          ].join("\n")
+        );
+      }
+    });
+    return 0;
+  }
+  if (command === "health") {
+    await withMemory(options, async (memory, context) => {
+      const healthOptions = {
+        staleAgeMs: asNumber(options["stale-age-ms"], 7 * 24 * 60 * 60 * 1e3),
+        maxSnapshotAgeMs: asNumber(options["max-snapshot-age-ms"], 24 * 60 * 60 * 1e3),
+        minSnapshotMemories: asNumber(options["min-snapshot-memories"], 10),
+        maxUntaggedRatio: asNumber(options["max-untagged-ratio"], 0.25),
+        duplicateSampleLimit: asNumber(options["duplicate-sample-limit"], 10)
+      };
+      const health = await memory.health(healthOptions);
+      const payload = {
+        ok: health.status !== "attention",
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...health
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        emitText(
+          runtime,
+          [
+            `health: ${health.status} (${health.score}/100)`,
+            "checks:",
+            formatChecks(health.checks),
+            "recommendations:",
+            formatRecommendations(health.recommendations),
+            ""
+          ].join("\n")
+        );
+      }
+    });
+    return 0;
+  }
+  if (command === "storage-maintenance") {
+    await withMemory(options, async (memory, context) => {
+      const maintenanceOptions = {
+        dryRun: Boolean(options["dry-run"]),
+        compact: Boolean(options.compact),
+        pruneExpired: !options["skip-expired"],
+        pruneOrphanLinks: !options["skip-orphan-links"],
+        pruneOrphanEmbeddings: !options["skip-orphan-embeddings"],
+        now: options.now ? asNumber(options.now, Date.now()) : void 0
+      };
+      const result = await memory.storageMaintenance(maintenanceOptions);
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...result
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        emitText(
+          runtime,
+          [
+            `storage maintenance: ${result.dryRun ? "dry-run" : "applied"}`,
+            `expired layer entries: ${result.expiredLayerEntries}`,
+            `orphan links: ${result.orphanLinks}`,
+            `orphan embeddings: ${result.orphanEmbeddings}`,
+            `compacted: ${result.compacted ? "yes" : "no"}`,
+            ""
+          ].join("\n")
+        );
+      }
+    });
+    return 0;
+  }
+  if (command === "knowledge-artifact") {
+    await withMemory(options, async (memory, context) => {
+      const artifactPath = requireOption(options.path, "path", jsonMode, runtime);
+      if (artifactPath === null) return;
+      const registration = knowledgeArtifactRegistrationSchema.parse({
+        source: asString(options.source, "codebase-memory-mcp"),
+        project: asString(options.project) || void 0,
+        artifactPath,
+        resourceUri: asString(options["resource-uri"]) || void 0,
+        requiredScopes: asCsv(options["required-scopes"]),
+        format: asString(options.format, artifactPath.endsWith(".zst") ? "sqlite" : "json"),
+        compression: asString(options.compression, artifactPath.endsWith(".zst") ? "zstd" : "") || void 0,
+        checksum: asString(options.checksum) || void 0,
+        generatedAt: options["generated-at"] ? asNumber(options["generated-at"], Date.now()) : void 0,
+        metadata: parseMaybeJson(options.metadata)
+      });
+      const result = await memory.registerKnowledgeArtifact(registration);
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...result
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `Registered knowledge artifact ${result.artifactPath} (${result.id}).
+`);
+    });
+    return 0;
+  }
+  if (command === "knowledge-ingest") {
+    await withMemory(options, async (memory, context) => {
+      const artifactPath = requireOption(options.artifact, "artifact", jsonMode, runtime);
+      if (artifactPath === null) return;
+      const resolved = import_node_path.default.resolve(artifactPath);
+      try {
+        const stat = await import_promises2.default.stat(resolved);
+        if (!stat.isFile()) {
+          emitError(runtime, jsonMode, `Path is not a file: ${resolved}`);
+          return;
+        }
+      } catch {
+        emitError(runtime, jsonMode, `File not found: ${resolved}`);
+        return;
+      }
+      const graph = await readKnowledgeGraphFile(artifactPath);
+      const visibility = asString(options.visibility, "shared") === "private" ? "private" : "shared";
+      const result = await memory.ingestKnowledgeGraph(graph, {
+        source: asString(options.source) || graph.source,
+        project: asString(options.project) || graph.project,
+        namespace: asNamespace(options.namespace).length ? asNamespace(options.namespace) : void 0,
+        visibility,
+        topic: asString(options.topic, "knowledge-graph"),
+        linkTypePrefix: asString(options["link-prefix"], "knowledge")
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        artifact: import_node_path.default.resolve(artifactPath),
+        ...result
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `Ingested ${result.nodesStored} knowledge nodes and ${result.edgesLinked} links (${result.skippedEdges} skipped).
+`);
+    });
+    return 0;
+  }
+  if (command === "knowledge-overview") {
+    await withMemory(options, async (memory, context) => {
+      const result = await memory.knowledgeOverview({
+        project: asString(options.project) || void 0,
+        limit: asNumber(options.limit, 10),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners)
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...result
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        emitText(
+          runtime,
+          [
+            `knowledge overview${result.project ? ` (${result.project})` : ""}`,
+            `nodes: ${result.nodes}`,
+            `labels: ${Object.entries(result.labels).map(([label, count]) => `${label}:${count}`).join(", ") || "none"}`,
+            `owners: ${result.owners.length}`,
+            `entrypoints: ${result.entrypoints.length}`,
+            `hotspots: ${result.hotspots.length}`,
+            `deadzones: ${result.deadzones.length}`,
+            ""
+          ].join("\n")
+        );
+      }
+    });
+    return 0;
+  }
+  if (command === "knowledge-subgraph") {
+    await withMemory(options, async (memory, context) => {
+      const query = requireOption(options.query, "query", jsonMode, runtime);
+      if (query === null) return;
+      const result = await memory.knowledgeSubgraph(query, {
+        project: asString(options.project) || void 0,
+        limit: asNumber(options.limit, 8),
+        neighborLimit: asNumber(options["neighbor-limit"], asNumber(options.limit, 8)),
+        maxContextChars: asNumber(options["max-context-chars"], 6e3),
+        connectionTypes: asCsv(options.connections),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners),
+        minConnectionWeight: options["min-connection-weight"] ? asNumber(options["min-connection-weight"], 0) : void 0
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...result
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        emitText(
+          runtime,
+          [
+            `knowledge subgraph for "${query}"`,
+            `nodes: ${result.results.length}`,
+            `paths: ${result.paths.length}`,
+            `links traversed: ${result.linksTraversed}`,
+            "",
+            result.context,
+            ""
+          ].join("\n")
+        );
+      }
+    });
+    return 0;
+  }
+  if (command === "knowledge-explain") {
+    await withMemory(options, async (memory, context) => {
+      const query = requireOption(options.query, "query", jsonMode, runtime);
+      if (query === null) return;
+      const result = await memory.knowledgeExplain(query, {
+        project: asString(options.project) || void 0,
+        limit: asNumber(options.limit, 8),
+        neighborLimit: asNumber(options["neighbor-limit"], asNumber(options.limit, 8)),
+        maxContextChars: asNumber(options["max-context-chars"], 6e3),
+        connectionTypes: asCsv(options.connections),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners),
+        minConnectionWeight: options["min-connection-weight"] ? asNumber(options["min-connection-weight"], 0) : void 0
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...result
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        emitText(
+          runtime,
+          [
+            payload.summary,
+            "",
+            payload.context,
+            ""
+          ].join("\n")
+        );
+      }
+    });
+    return 0;
+  }
+  if (command === "knowledge-entrypoints") {
+    await withMemory(options, async (memory, context) => {
+      const entrypoints = await memory.knowledgeEntrypoints({
+        project: asString(options.project) || void 0,
+        limit: asNumber(options.limit, 10),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners)
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        entrypoints
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, entrypoints.length ? `${entrypoints.map((item) => `- ${item.node.content.split("\n")[0]}`).join("\n")}
+` : "No entrypoints.\n");
+    });
+    return 0;
+  }
+  if (command === "knowledge-owners") {
+    await withMemory(options, async (memory, context) => {
+      const owners = await memory.knowledgeOwners({
+        project: asString(options.project) || void 0,
+        limit: asNumber(options.limit, 10),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners)
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        owners
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, owners.length ? `${owners.map((item) => `- ${item.owner} (${item.type}) nodes:${item.nodes}`).join("\n")}
+` : "No owners.\n");
+    });
+    return 0;
+  }
+  if (command === "knowledge-hotspots") {
+    await withMemory(options, async (memory, context) => {
+      const hotspots = await memory.knowledgeHotspots({
+        project: asString(options.project) || void 0,
+        limit: asNumber(options.limit, 10),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners)
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        hotspots
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, hotspots.length ? `${hotspots.map((item) => `- ${item.node.content.split("\n")[0]} in:${item.incoming} out:${item.outgoing}`).join("\n")}
+` : "No hotspots.\n");
+    });
+    return 0;
+  }
+  if (command === "knowledge-deadzones") {
+    await withMemory(options, async (memory, context) => {
+      const deadzones = await memory.knowledgeDeadzones({
+        project: asString(options.project) || void 0,
+        limit: asNumber(options.limit, 10),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners)
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        deadzones
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, deadzones.length ? `${deadzones.map((item) => `- ${item.node.content.split("\n")[0]} in:${item.incoming} out:${item.outgoing}`).join("\n")}
+` : "No deadzones.\n");
+    });
+    return 0;
+  }
+  if (command === "store") {
+    await withMemory(options, async (memory) => {
+      const content = requireOption(options.content, "content", jsonMode, runtime);
+      if (content === null) return;
+      await memory.store({
+        content,
+        topics: asCsv(options.topics),
+        metadata: parseMaybeJson(options.metadata)
+      });
+      if (jsonMode) emitJson(runtime, { ok: true, command, stored: true });
+      else emitText(runtime, "Stored memory entry.\n");
+    });
+    return 0;
+  }
+  if (command === "remember") {
+    await withMemory(options, async (memory) => {
+      const content = requireOption(options.content, "content", jsonMode, runtime);
+      if (content === null) return;
+      const result = await memory.remember({
+        content,
+        topics: asCsv(options.topics),
+        metadata: parseMaybeJson(options.metadata),
+        kind: asString(options.kind) || void 0,
+        source: asString(options.source) || void 0,
+        dryRun: Boolean(options["dry-run"]),
+        forceStore: Boolean(options["force-store"])
+      });
+      const payload = { ok: result.action === "stored" || result.action === "preview", command, ...result };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${result.action}: ${result.reason}
+kind: ${result.kind}
+layer: ${result.layer}
+score: ${result.score}
+`);
+    });
+    return 0;
+  }
+  if (command === "remember-batch") {
+    await withMemory(options, async (memory) => {
+      const file = requireOption(options.file, "file", jsonMode, runtime);
+      if (file === null) return;
+      const result = await memory.rememberMany(await readRememberBatchFile(file), {
+        stopOnError: Boolean(options["stop-on-error"])
+      });
+      const payload = { ok: result.failed === 0, command, ...result };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        emitText(
+          runtime,
+          [
+            `remember-batch processed ${result.total} items`,
+            `stored: ${result.stored}`,
+            `preview: ${result.previews}`,
+            `duplicates: ${result.skippedDuplicate}`,
+            `low-signal: ${result.skippedLowSignal}`,
+            `failed: ${result.failed}`,
+            ""
+          ].join("\n")
+        );
+      }
+    });
+    return 0;
+  }
+  if (command === "query") {
+    await withMemory(options, async (memory) => {
+      const payload = { ok: true, command, ...await memory.query(asString(options.query), { limit: Number(asString(options.limit, "8")) || 8 }) };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatQueryResults(payload.results)}
+`);
+    });
+    return 0;
+  }
+  if (command === "recent") {
+    await withMemory(options, async (memory) => {
+      const payload = { ok: true, command, results: await memory.getRecent(Number(asString(options.limit, "10")) || 10) };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatQueryResults(payload.results)}
+`);
+    });
+    return 0;
+  }
+  if (command === "topic") {
+    await withMemory(options, async (memory) => {
+      const payload = { ok: true, command, results: await memory.getByTopic(asString(options.topic), Number(asString(options.limit, "10")) || 10) };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatQueryResults(payload.results)}
+`);
+    });
+    return 0;
+  }
+  if (command === "layer-store") {
+    await withMemory(options, async (memory) => {
+      const layer = requireOption(options.layer, "layer", jsonMode, runtime);
+      if (layer === null) return;
+      const payload = {
+        ok: true,
+        command,
+        layer,
+        result: await memory.storeInLayer({
+          content: asString(options.content),
+          topics: asCsv(options.topics),
+          metadata: parseMaybeJson(options.metadata)
+        }, layer)
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `Stored layered memory in ${layer}.
+`);
+    });
+    return 0;
+  }
+  if (command === "procedural-store") {
+    await withMemory(options, async (memory) => {
+      const trigger = requireOption(options.trigger, "trigger", jsonMode, runtime);
+      if (trigger === null) return;
+      const payload = {
+        ok: true,
+        command,
+        result: await memory.storeProcedural({
+          content: asString(options.content),
+          topics: asCsv(options.topics),
+          metadata: parseMaybeJson(options.metadata)
+        }, trigger)
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, "Stored procedural memory.\n");
+    });
+    return 0;
+  }
+  if (command === "procedural-match") {
+    await withMemory(options, async (memory) => {
+      const payload = { ok: true, command, matches: memory.matchProcedural(asString(options.context)) };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${payload.matches.length} procedural matches found.
+`);
+    });
+    return 0;
+  }
+  if (command === "shared-store") {
+    await withMemory(options, async (memory) => {
+      const ns = asNamespace(options.namespace);
+      if (!ns.length) {
+        emitError(runtime, jsonMode, "Missing required option: --namespace");
+        return;
+      }
+      await memory.storeShared({
+        namespace: ns,
+        visibility: asString(options.visibility, "shared") === "private" ? "private" : "shared",
+        content: asString(options.content),
+        topics: asCsv(options.topics),
+        metadata: parseMaybeJson(options.metadata)
+      });
+      if (jsonMode) emitJson(runtime, { ok: true, command, stored: true });
+      else emitText(runtime, "Stored shared memory entry.\n");
+    });
+    return 0;
+  }
+  if (command === "namespace-query") {
+    await withMemory(options, async (memory) => {
+      const ns = asNamespace(options.namespace);
+      if (!ns.length) {
+        emitError(runtime, jsonMode, "Missing required option: --namespace");
+        return;
+      }
+      const visibility = asString(options.visibility, "all");
+      const payload = {
+        ok: true,
+        command,
+        ...await memory.queryNamespace(
+          ns,
+          asString(options.query),
+          { limit: Number(asString(options.limit, "8")) || 8 },
+          {
+            visibility: visibility === "shared" ? "shared" : visibility === "private" ? "private" : "all",
+            includeDescendants: Boolean(options.descendants)
+          }
+        )
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatQueryResults(payload.results)}
+`);
+    });
+    return 0;
+  }
+  if (command === "namespace-recent") {
+    await withMemory(options, async (memory) => {
+      const ns = asNamespace(options.namespace);
+      if (!ns.length) {
+        emitError(runtime, jsonMode, "Missing required option: --namespace");
+        return;
+      }
+      const visibility = asString(options.visibility, "all");
+      const payload = {
+        ok: true,
+        command,
+        results: await memory.getRecentInNamespace(
+          ns,
+          Number(asString(options.limit, "10")) || 10,
+          {
+            visibility: visibility === "shared" ? "shared" : visibility === "private" ? "private" : "all",
+            includeDescendants: Boolean(options.descendants)
+          }
+        )
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatQueryResults(payload.results)}
+`);
+    });
+    return 0;
+  }
+  if (command === "recall-profiles") {
+    const profiles = getSmartRecallProfiles();
+    const requested = asString(options.profile).trim();
+    const resolvedProfile = resolveSmartRecallProfile(requested);
+    const payload = requested ? profiles.find((profile) => profile.profile === resolvedProfile) : { profiles };
+    if (!payload) {
+      emitError(runtime, jsonMode, `Unknown recall profile: ${requested}`);
+      return 1;
+    }
+    if (jsonMode) {
+      emitJson(runtime, { ok: true, command, ..."profile" in payload ? { profile: payload } : payload });
+    } else if ("profile" in payload) {
+      emitText(
+        runtime,
+        [
+          `${payload.profile} (${payload.label})`,
+          payload.overview,
+          `recommended for: ${payload.recommendedFor.join("; ")}`,
+          `defaults: ${JSON.stringify(payload.defaultOptions)}`,
+          ""
+        ].join("\n")
+      );
+    } else {
+      emitText(
+        runtime,
+        `${payload.profiles.map((profile) => `${profile.profile} - ${profile.overview}`).join("\n")}
+`
+      );
+    }
+    return 0;
+  }
+  if (command === "smart-recall") {
+    await withMemory(options, async (memory) => {
+      const metadataFilters = parseMaybeJson(options.metadata);
+      const smartRecallOptions = smartRecallOptionsSchema.parse({
+        profile: resolveProfileOption(options.profile, "fast"),
+        limit: Number(asString(options.limit, "8")) || 8,
+        includeRecent: Boolean(options.recent),
+        recentLimit: Number(asString(options["recent-limit"], "5")) || 5,
+        includeProcedural: options.procedural === false ? false : true,
+        proceduralLimit: Number(asString(options["procedural-limit"], "5")) || 5,
+        hops: Number(asString(options.hops, "1")) === 2 ? 2 : 1,
+        minNeighborScore: Number(asString(options["min-neighbor-score"], "0.2")) || 0.2,
+        neighborLimit: Number(asString(options["neighbor-limit"], "25")) || 25,
+        includeBaseResults: true,
+        includePathDetails: false,
+        topics: asCsv(options.topics).length ? asCsv(options.topics) : void 0,
+        minAccessCount: options["min-access-count"] ? Number(asString(options["min-access-count"])) : void 0,
+        metadata: metadataFilters && Object.keys(metadataFilters).length ? metadataFilters : void 0
+      });
+      const payload = {
+        ok: true,
+        command,
+        ...await memory.smartRecall(asString(options.query), smartRecallOptions)
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatQueryResults(payload.results)}
+`);
+    });
+    return 0;
+  }
+  if (command === "context-pack") {
+    await withMemory(options, async (memory) => {
+      const metadataFilters = parseMaybeJson(options.metadata);
+      const contextPackOptions = contextPackOptionsSchema.parse({
+        profile: resolveProfileOption(options.profile, "agent-safe"),
+        limit: Number(asString(options.limit, "8")) || 8,
+        maxChars: Number(asString(options["max-chars"], "6000")) || 6e3,
+        includeDream: Boolean(options.dream),
+        includeRecent: options.recent === false ? false : true,
+        includeMetadata: Boolean(options["include-metadata"]),
+        recentLimit: Number(asString(options["recent-limit"], "5")) || 5,
+        includeProcedural: options.procedural === false ? false : true,
+        proceduralLimit: Number(asString(options["procedural-limit"], "5")) || 5,
+        hops: Number(asString(options.hops, "1")) === 2 ? 2 : 1,
+        minNeighborScore: Number(asString(options["min-neighbor-score"], "0.2")) || 0.2,
+        neighborLimit: Number(asString(options["neighbor-limit"], "25")) || 25,
+        includeBaseResults: true,
+        includePathDetails: false,
+        topics: asCsv(options.topics).length ? asCsv(options.topics) : void 0,
+        minAccessCount: options["min-access-count"] ? Number(asString(options["min-access-count"])) : void 0,
+        metadata: metadataFilters && Object.keys(metadataFilters).length ? metadataFilters : void 0
+      });
+      const payload = {
+        ok: true,
+        command,
+        ...await memory.contextPack(asString(options.query), contextPackOptions)
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${payload.content}
+`);
+    });
+    return 0;
+  }
+  if (command === "dream") {
+    await withMemory(options, async (memory) => {
+      const metadataFilters = parseMaybeJson(options.metadata);
+      const parsedLayers = asCsv(options.layers).filter(Boolean);
+      const payload = {
+        ok: true,
+        command,
+        ...await memory.dream({
+          query: asString(options.query, "What long-memory patterns matter most right now?"),
+          layers: parsedLayers.length ? parsedLayers : ["identity", "semantic", "procedural"],
+          limit: Number(asString(options.limit, "12")) || 12,
+          metadata: metadataFilters && Object.keys(metadataFilters).length ? metadataFilters : void 0,
+          topicAllowlist: asCsv(options.topics).length ? asCsv(options.topics) : void 0
+        })
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${payload.title}
+${payload.content}
+`);
+    });
+    return 0;
+  }
+  if (command === "snapshots") {
+    await withMemory(options, async (memory) => {
+      const action = asString(options.action, "list");
+      if (action === "create") {
+        const payload2 = { ok: true, command, action, snapshot: await memory.createSnapshot(asString(options.label, `snapshot-${Date.now()}`)) };
+        if (jsonMode) emitJson(runtime, payload2);
+        else emitText(runtime, `Created snapshot ${payload2.snapshot.id}.
+`);
+        return;
+      }
+      if (action === "restore") {
+        const payload2 = { ok: true, command, action, restored: await memory.restoreSnapshot(asString(options["snapshot-id"])) };
+        if (jsonMode) emitJson(runtime, payload2);
+        else emitText(runtime, `Restored ${payload2.restored} entries from snapshot.
+`);
+        return;
+      }
+      if (action === "delete") {
+        const payload2 = { ok: true, command, action, deleted: await memory.deleteSnapshot(asString(options["snapshot-id"])) };
+        if (jsonMode) emitJson(runtime, payload2);
+        else emitText(runtime, payload2.deleted ? "Deleted snapshot.\n" : "Snapshot not found.\n");
+        return;
+      }
+      const payload = { ok: true, command, action: "list", snapshots: await memory.listSnapshots() };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, payload.snapshots.length ? `${payload.snapshots.map((snapshot) => `- ${snapshot.id} ${snapshot.label}`).join("\n")}
+` : "No snapshots.\n");
+    });
+    return 0;
+  }
+  if (command === "consolidate") {
+    await withMemory(options, async (memory) => {
+      const payload = {
+        ok: true,
+        command,
+        result: await memory.runConsolidation({
+          summary: {
+            enabled: Boolean(options.summaries)
+          },
+          proceduralPromotion: {
+            enabled: Boolean(options.procedural)
+          }
+        })
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, "Consolidation run completed.\n");
+    });
+    return 0;
+  }
+  if (command === "smoke-check") {
+    await withMemory(options, async (memory, context) => {
+      const checks = await runSmokeChecks(memory, context.config);
+      const payload = {
+        ok: !hasFailingChecks(checks),
+        command,
+        checks
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatChecks(checks)}
+`);
+    });
+    return 0;
+  }
+  if (command === "doctor") {
+    await withMemory(options, async (memory, context) => {
+      const payload = await runDoctor(memory, context, options);
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `${formatChecks(payload.checks)}
+`);
+    });
+    return 0;
+  }
+  if (command === "validate-config") {
+    const configPath = asString(options.config);
+    const payload = configPath ? { command, ...publicConfigValidation(await validateConfigFile(configPath)) } : {
+      ok: false,
+      command,
+      configPath: null,
+      checks: [{ name: "config-path", status: "fail", detail: "Pass --config <path>." }]
+    };
+    if (jsonMode) emitJson(runtime, payload);
+    else emitText(runtime, `${formatChecks(payload.checks)}
+`);
+    return payload.ok ? 0 : 1;
+  }
+  emitText(runtime, helpText());
+  return 1;
+}
+async function main() {
+  try {
+    process.exitCode = await runCli(process.argv);
+  } catch (error) {
+    const jsonMode = process.argv.includes("--json");
+    const message = error instanceof Error ? error.message : String(error);
+    if (jsonMode) {
+      writeStderr({}, `${JSON.stringify({ ok: false, error: message })}
+`);
+    } else {
+      writeStderr({}, `Error: ${message}
+`);
+    }
+    process.exitCode = 1;
+  }
+}
+void main();
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
-  ConstitutionInjector,
-  ConstitutionManager,
-  DEFAULT_LAYER_CONFIG,
-  DriftDetector,
-  EpisodicCapturePipeline,
-  HttpAdapter,
-  LayerManager,
-  MemoryConsolidator,
-  MemoryREPL,
-  MemoryStore,
-  ModelAbstraction,
-  PostgresMemoryStore,
-  QueryEngine,
-  ReMEM,
-  authorizeKnowledgeResourceAccess,
-  buildIdentityPackage,
-  constitutionSchema,
-  constitutionStatementSchema,
-  contextPackOptionsSchema,
-  contextPackResponseSchema,
-  contextPackSectionSchema,
-  contextPackSectionTitlesSchema,
-  createCodebaseMemoryAdapter,
-  createHermesAdapter,
-  createIdentitySystem,
-  createLangGraphStoreAdapter,
-  createOpenClawAdapter,
-  createVercelAIAdapter,
-  defaultMemoryLinkTypes,
-  downloadPackage,
-  dreamMemoryLayerSchema,
-  dreamOptionsSchema,
-  dreamResponseSchema,
-  driftEventSchema,
-  driftResultSchema,
-  duplicate,
-  duplicationConfigSchema,
-  embeddingConfigSchema,
-  eventTypeSchema,
-  getSmartRecallProfile,
-  getSmartRecallProfiles,
-  identityCategorySchema,
-  identityConfigSchema,
-  identityPackageSchema,
-  infect,
-  infectFromServer,
-  infectionConfigSchema,
-  knowledgeArtifactRegistrationSchema,
-  knowledgeEdgeSchema,
-  knowledgeGraphArtifactSchema,
-  knowledgeIngestOptionsSchema,
-  knowledgeIngestResultSchema,
-  knowledgeNodeSchema,
-  knowledgeResourceGrantSchema,
-  knowledgeResourceScopeSchema,
-  knowledgeResourceUriSchema,
-  layerConfigSchema,
-  layeredMemoryEntrySchema,
-  linkedMemoryQueryOptionsSchema,
-  memoryEntrySchema,
-  memoryEventSchema,
-  memoryHealthCheckSchema,
-  memoryHealthOptionsSchema,
-  memoryHealthRecommendationSchema,
-  memoryHealthResponseSchema,
-  memoryLayerSchema,
-  memoryLinkInputSchema,
-  memoryLinkSchema,
-  metadataFilterOperatorSchema,
-  metadataFilterSchema,
-  metadataFilterValueSchema,
-  modelConfigSchema,
-  namespaceInputSchema,
-  namespaceQueryScopeSchema,
-  neighborPathSchema,
-  normalizeSmartRecallProfileInput,
-  postgresStorageConfigSchema,
-  proceduralMatchSchema,
-  proceduralTriggerSchema,
-  queryOptionsSchema,
-  queryResponseSchema,
-  queryResultSchema,
-  queryWithNeighborsOptionsSchema,
-  rememConfigSchema,
-  rememberActionSchema,
-  rememberBatchInputSchema,
-  rememberBatchItemResultSchema,
-  rememberBatchOptionsSchema,
-  rememberBatchResultSchema,
-  rememberInputSchema,
-  rememberKindSchema,
-  rememberResultSchema,
-  resolveRecallProfile,
-  resolveSmartRecallProfile,
-  smartRecallOptionsSchema,
-  smartRecallProfileDefaultsSchema,
-  smartRecallProfileDescriptorSchema,
-  smartRecallProfileSchema,
-  smartRecallResponseSchema,
-  smartRecallResultSchema,
-  storageScopeConfigSchema,
-  storeMemoryInputSchema,
-  uploadPackage
+  runCli
 });

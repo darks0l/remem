@@ -4,6 +4,30 @@ All notable changes to ReMEM are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added
+
+- Added first-class imported-graph inspection helpers on the core runtime: `knowledgeExplain()`, `knowledgeEntrypoints()`, `knowledgeOwners()`, `knowledgeHotspots()`, and `knowledgeDeadzones()`.
+- Added matching CLI commands and HTTP routes so agents can inspect imported codebase graphs without instantiating custom adapter glue.
+- Added request-scoped HTTP runtime resolution so one adapter can route requests into isolated workspace/agent/user ReMEM runtimes for hosted multi-tenant service deployments.
+
+### Changed
+
+- Tightened scoped helper coverage so `getRecent()`, `getByTopic()`, and snapshot create/list/restore flows now carry `workspaceId` along with existing agent/user scope.
+
+## [0.27.0] - 2026-08-21
+
+### Added
+
+- Added first-class `workspaceId` storage scope support so ReMEM can separate durable memory by workspace in addition to existing agent/user lanes.
+- Added `--workspace-id` support to the CLI setup/status lane and regression coverage for workspace-scoped persistence.
+
+### Changed
+
+- Extended snapshot metadata/export contracts to carry workspace scope alongside agent/user scope.
+- Tightened the core runtime to route more store operations through one shared scope helper instead of repeating ad hoc agent/user-only scope objects.
+
 ## [0.26.0] - 2026-08-20
 
 ### Added

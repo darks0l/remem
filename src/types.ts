@@ -686,9 +686,17 @@ export const postgresStorageConfigSchema = z.object({
 
 export type PostgresStorageConfig = z.infer<typeof postgresStorageConfigSchema>;
 
+export const storageScopeConfigSchema = z.object({
+  workspaceId: z.string().min(1).optional(),
+  agentId: z.string().min(1).optional(),
+  userId: z.string().min(1).optional(),
+}).passthrough();
+
+export type StorageScopeConfig = z.infer<typeof storageScopeConfigSchema>;
+
 export const rememConfigSchema = z.object({
   storage: z.enum(['sqlite', 'postgres', 'memory']).default('sqlite'),
-  storageConfig: z.record(z.unknown()).optional(),
+  storageConfig: storageScopeConfigSchema.optional(),
   postgres: postgresStorageConfigSchema.optional(),
   llm: modelConfigSchema.optional(),
   adapter: z.string().optional(),

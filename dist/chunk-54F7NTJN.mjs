@@ -1,165 +1,27 @@
-"use strict";
-var __create = Object.create;
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
-};
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
-// src/index.ts
-var index_exports = {};
-__export(index_exports, {
-  ConstitutionInjector: () => ConstitutionInjector,
-  ConstitutionManager: () => ConstitutionManager,
-  DEFAULT_LAYER_CONFIG: () => DEFAULT_LAYER_CONFIG,
-  DriftDetector: () => DriftDetector,
-  EpisodicCapturePipeline: () => EpisodicCapturePipeline,
-  HttpAdapter: () => HttpAdapter,
-  LayerManager: () => LayerManager,
-  MemoryConsolidator: () => MemoryConsolidator,
-  MemoryREPL: () => MemoryREPL,
-  MemoryStore: () => MemoryStore,
-  ModelAbstraction: () => ModelAbstraction,
-  PostgresMemoryStore: () => PostgresMemoryStore,
-  QueryEngine: () => QueryEngine,
-  ReMEM: () => ReMEM,
-  authorizeKnowledgeResourceAccess: () => authorizeKnowledgeResourceAccess,
-  buildIdentityPackage: () => buildIdentityPackage,
-  constitutionSchema: () => constitutionSchema,
-  constitutionStatementSchema: () => constitutionStatementSchema,
-  contextPackOptionsSchema: () => contextPackOptionsSchema,
-  contextPackResponseSchema: () => contextPackResponseSchema,
-  contextPackSectionSchema: () => contextPackSectionSchema,
-  contextPackSectionTitlesSchema: () => contextPackSectionTitlesSchema,
-  createCodebaseMemoryAdapter: () => createCodebaseMemoryAdapter,
-  createHermesAdapter: () => createHermesAdapter,
-  createIdentitySystem: () => createIdentitySystem,
-  createLangGraphStoreAdapter: () => createLangGraphStoreAdapter,
-  createOpenClawAdapter: () => createOpenClawAdapter,
-  createVercelAIAdapter: () => createVercelAIAdapter,
-  defaultMemoryLinkTypes: () => defaultMemoryLinkTypes,
-  downloadPackage: () => downloadPackage,
-  dreamMemoryLayerSchema: () => dreamMemoryLayerSchema,
-  dreamOptionsSchema: () => dreamOptionsSchema,
-  dreamResponseSchema: () => dreamResponseSchema,
-  driftEventSchema: () => driftEventSchema,
-  driftResultSchema: () => driftResultSchema,
-  duplicate: () => duplicate,
-  duplicationConfigSchema: () => duplicationConfigSchema,
-  embeddingConfigSchema: () => embeddingConfigSchema,
-  eventTypeSchema: () => eventTypeSchema,
-  getSmartRecallProfile: () => getSmartRecallProfile,
-  getSmartRecallProfiles: () => getSmartRecallProfiles,
-  identityCategorySchema: () => identityCategorySchema,
-  identityConfigSchema: () => identityConfigSchema,
-  identityPackageSchema: () => identityPackageSchema,
-  infect: () => infect,
-  infectFromServer: () => infectFromServer,
-  infectionConfigSchema: () => infectionConfigSchema,
-  knowledgeArtifactRegistrationSchema: () => knowledgeArtifactRegistrationSchema,
-  knowledgeEdgeSchema: () => knowledgeEdgeSchema,
-  knowledgeGraphArtifactSchema: () => knowledgeGraphArtifactSchema,
-  knowledgeIngestOptionsSchema: () => knowledgeIngestOptionsSchema,
-  knowledgeIngestResultSchema: () => knowledgeIngestResultSchema,
-  knowledgeNodeSchema: () => knowledgeNodeSchema,
-  knowledgeResourceGrantSchema: () => knowledgeResourceGrantSchema,
-  knowledgeResourceScopeSchema: () => knowledgeResourceScopeSchema,
-  knowledgeResourceUriSchema: () => knowledgeResourceUriSchema,
-  layerConfigSchema: () => layerConfigSchema,
-  layeredMemoryEntrySchema: () => layeredMemoryEntrySchema,
-  linkedMemoryQueryOptionsSchema: () => linkedMemoryQueryOptionsSchema,
-  memoryEntrySchema: () => memoryEntrySchema,
-  memoryEventSchema: () => memoryEventSchema,
-  memoryHealthCheckSchema: () => memoryHealthCheckSchema,
-  memoryHealthOptionsSchema: () => memoryHealthOptionsSchema,
-  memoryHealthRecommendationSchema: () => memoryHealthRecommendationSchema,
-  memoryHealthResponseSchema: () => memoryHealthResponseSchema,
-  memoryLayerSchema: () => memoryLayerSchema,
-  memoryLinkInputSchema: () => memoryLinkInputSchema,
-  memoryLinkSchema: () => memoryLinkSchema,
-  metadataFilterOperatorSchema: () => metadataFilterOperatorSchema,
-  metadataFilterSchema: () => metadataFilterSchema,
-  metadataFilterValueSchema: () => metadataFilterValueSchema,
-  modelConfigSchema: () => modelConfigSchema,
-  namespaceInputSchema: () => namespaceInputSchema,
-  namespaceQueryScopeSchema: () => namespaceQueryScopeSchema,
-  neighborPathSchema: () => neighborPathSchema,
-  normalizeSmartRecallProfileInput: () => normalizeSmartRecallProfileInput,
-  postgresStorageConfigSchema: () => postgresStorageConfigSchema,
-  proceduralMatchSchema: () => proceduralMatchSchema,
-  proceduralTriggerSchema: () => proceduralTriggerSchema,
-  queryOptionsSchema: () => queryOptionsSchema,
-  queryResponseSchema: () => queryResponseSchema,
-  queryResultSchema: () => queryResultSchema,
-  queryWithNeighborsOptionsSchema: () => queryWithNeighborsOptionsSchema,
-  rememConfigSchema: () => rememConfigSchema,
-  rememberActionSchema: () => rememberActionSchema,
-  rememberBatchInputSchema: () => rememberBatchInputSchema,
-  rememberBatchItemResultSchema: () => rememberBatchItemResultSchema,
-  rememberBatchOptionsSchema: () => rememberBatchOptionsSchema,
-  rememberBatchResultSchema: () => rememberBatchResultSchema,
-  rememberInputSchema: () => rememberInputSchema,
-  rememberKindSchema: () => rememberKindSchema,
-  rememberResultSchema: () => rememberResultSchema,
-  resolveRecallProfile: () => resolveRecallProfile,
-  resolveSmartRecallProfile: () => resolveSmartRecallProfile,
-  smartRecallOptionsSchema: () => smartRecallOptionsSchema,
-  smartRecallProfileDefaultsSchema: () => smartRecallProfileDefaultsSchema,
-  smartRecallProfileDescriptorSchema: () => smartRecallProfileDescriptorSchema,
-  smartRecallProfileSchema: () => smartRecallProfileSchema,
-  smartRecallResponseSchema: () => smartRecallResponseSchema,
-  smartRecallResultSchema: () => smartRecallResultSchema,
-  storageScopeConfigSchema: () => storageScopeConfigSchema,
-  storeMemoryInputSchema: () => storeMemoryInputSchema,
-  uploadPackage: () => uploadPackage
-});
-module.exports = __toCommonJS(index_exports);
-
 // src/store.ts
-var import_sql = __toESM(require("sql.js"));
-var import_crypto2 = require("crypto");
-var import_node_fs = require("fs");
+import initSqlJs from "sql.js";
+import { createHash, randomUUID as randomUUID2 } from "crypto";
+import { writeFileSync, renameSync } from "fs";
 
 // src/types.ts
-var import_zod = require("zod");
-var memoryEntrySchema = import_zod.z.object({
-  id: import_zod.z.string().uuid(),
-  content: import_zod.z.string(),
-  topics: import_zod.z.array(import_zod.z.string()).default([]),
-  metadata: import_zod.z.record(import_zod.z.unknown()).default({}),
-  createdAt: import_zod.z.number(),
+import { z } from "zod";
+var memoryEntrySchema = z.object({
+  id: z.string().uuid(),
+  content: z.string(),
+  topics: z.array(z.string()).default([]),
+  metadata: z.record(z.unknown()).default({}),
+  createdAt: z.number(),
   // unix timestamp ms
-  accessedAt: import_zod.z.number(),
+  accessedAt: z.number(),
   // unix timestamp ms
-  accessCount: import_zod.z.number().default(0)
+  accessCount: z.number().default(0)
 });
-var storeMemoryInputSchema = import_zod.z.object({
-  content: import_zod.z.string().min(1),
-  topics: import_zod.z.array(import_zod.z.string()).optional().default([]),
-  metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
+var storeMemoryInputSchema = z.object({
+  content: z.string().min(1),
+  topics: z.array(z.string()).optional().default([]),
+  metadata: z.record(z.unknown()).optional().default({})
 });
-var rememberKindSchema = import_zod.z.enum([
+var rememberKindSchema = z.enum([
   "fact",
   "preference",
   "decision",
@@ -167,7 +29,7 @@ var rememberKindSchema = import_zod.z.enum([
   "recent-event",
   "artifact-note"
 ]);
-var rememberActionSchema = import_zod.z.enum([
+var rememberActionSchema = z.enum([
   "stored",
   "skipped_duplicate",
   "skipped_low_signal",
@@ -175,81 +37,81 @@ var rememberActionSchema = import_zod.z.enum([
 ]);
 var rememberInputSchema = storeMemoryInputSchema.extend({
   kind: rememberKindSchema.optional(),
-  source: import_zod.z.string().min(1).optional(),
-  dryRun: import_zod.z.boolean().default(false),
-  forceStore: import_zod.z.boolean().default(false)
+  source: z.string().min(1).optional(),
+  dryRun: z.boolean().default(false),
+  forceStore: z.boolean().default(false)
 });
-var rememberBatchInputSchema = import_zod.z.array(rememberInputSchema).min(1);
-var rememberResultSchema = import_zod.z.object({
+var rememberBatchInputSchema = z.array(rememberInputSchema).min(1);
+var rememberResultSchema = z.object({
   action: rememberActionSchema,
   kind: rememberKindSchema,
-  layer: import_zod.z.enum(["episodic", "semantic", "identity", "procedural"]),
-  score: import_zod.z.number().min(0).max(1),
-  threshold: import_zod.z.number().min(0).max(1),
-  reason: import_zod.z.string(),
-  duplicateOf: import_zod.z.string().optional(),
-  conflictIds: import_zod.z.array(import_zod.z.string()).default([]),
-  topics: import_zod.z.array(import_zod.z.string()),
-  metadata: import_zod.z.record(import_zod.z.unknown()).default({}),
+  layer: z.enum(["episodic", "semantic", "identity", "procedural"]),
+  score: z.number().min(0).max(1),
+  threshold: z.number().min(0).max(1),
+  reason: z.string(),
+  duplicateOf: z.string().optional(),
+  conflictIds: z.array(z.string()).default([]),
+  topics: z.array(z.string()),
+  metadata: z.record(z.unknown()).default({}),
   entry: memoryEntrySchema.optional(),
-  trigger: import_zod.z.unknown().optional()
+  trigger: z.unknown().optional()
 });
-var rememberBatchOptionsSchema = import_zod.z.object({
-  stopOnError: import_zod.z.boolean().default(false)
+var rememberBatchOptionsSchema = z.object({
+  stopOnError: z.boolean().default(false)
 });
-var rememberBatchItemResultSchema = import_zod.z.object({
-  index: import_zod.z.number().int().nonnegative(),
-  ok: import_zod.z.boolean(),
+var rememberBatchItemResultSchema = z.object({
+  index: z.number().int().nonnegative(),
+  ok: z.boolean(),
   result: rememberResultSchema.optional(),
-  error: import_zod.z.string().optional()
+  error: z.string().optional()
 });
-var rememberBatchResultSchema = import_zod.z.object({
-  total: import_zod.z.number().int().nonnegative(),
-  stored: import_zod.z.number().int().nonnegative(),
-  previews: import_zod.z.number().int().nonnegative(),
-  skippedDuplicate: import_zod.z.number().int().nonnegative(),
-  skippedLowSignal: import_zod.z.number().int().nonnegative(),
-  failed: import_zod.z.number().int().nonnegative(),
-  results: import_zod.z.array(rememberBatchItemResultSchema)
+var rememberBatchResultSchema = z.object({
+  total: z.number().int().nonnegative(),
+  stored: z.number().int().nonnegative(),
+  previews: z.number().int().nonnegative(),
+  skippedDuplicate: z.number().int().nonnegative(),
+  skippedLowSignal: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  results: z.array(rememberBatchItemResultSchema)
 });
-var metadataFilterValueSchema = import_zod.z.union([import_zod.z.string(), import_zod.z.number(), import_zod.z.boolean(), import_zod.z.null()]);
-var metadataFilterOperatorSchema = import_zod.z.object({
+var metadataFilterValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+var metadataFilterOperatorSchema = z.object({
   eq: metadataFilterValueSchema.optional(),
-  in: import_zod.z.array(metadataFilterValueSchema).min(1).optional(),
-  contains: import_zod.z.union([import_zod.z.string(), import_zod.z.number(), import_zod.z.boolean()]).optional(),
-  gt: import_zod.z.number().optional(),
-  gte: import_zod.z.number().optional(),
-  lt: import_zod.z.number().optional(),
-  lte: import_zod.z.number().optional(),
-  exists: import_zod.z.boolean().optional()
+  in: z.array(metadataFilterValueSchema).min(1).optional(),
+  contains: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  gt: z.number().optional(),
+  gte: z.number().optional(),
+  lt: z.number().optional(),
+  lte: z.number().optional(),
+  exists: z.boolean().optional()
 }).refine((value) => Object.keys(value).length > 0, {
   message: "Metadata operator filter must include at least one operator"
 });
-var metadataFilterSchema = import_zod.z.union([metadataFilterValueSchema, metadataFilterOperatorSchema]);
-var queryOptionsSchema = import_zod.z.object({
-  limit: import_zod.z.number().min(1).max(100).default(10),
-  topics: import_zod.z.array(import_zod.z.string()).optional(),
-  metadata: import_zod.z.record(metadataFilterSchema).optional(),
-  minAccessCount: import_zod.z.number().optional(),
-  since: import_zod.z.number().optional(),
+var metadataFilterSchema = z.union([metadataFilterValueSchema, metadataFilterOperatorSchema]);
+var queryOptionsSchema = z.object({
+  limit: z.number().min(1).max(100).default(10),
+  topics: z.array(z.string()).optional(),
+  metadata: z.record(metadataFilterSchema).optional(),
+  minAccessCount: z.number().optional(),
+  since: z.number().optional(),
   // unix timestamp ms
-  until: import_zod.z.number().optional()
+  until: z.number().optional()
 });
-var queryResultSchema = import_zod.z.object({
-  id: import_zod.z.string(),
-  content: import_zod.z.string(),
-  topics: import_zod.z.array(import_zod.z.string()),
-  metadata: import_zod.z.record(import_zod.z.unknown()).default({}),
-  relevanceScore: import_zod.z.number().optional(),
-  createdAt: import_zod.z.number(),
-  accessedAt: import_zod.z.number(),
-  accessCount: import_zod.z.number()
+var queryResultSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  topics: z.array(z.string()),
+  metadata: z.record(z.unknown()).default({}),
+  relevanceScore: z.number().optional(),
+  createdAt: z.number(),
+  accessedAt: z.number(),
+  accessCount: z.number()
 });
-var queryResponseSchema = import_zod.z.object({
-  results: import_zod.z.array(queryResultSchema),
-  totalAvailable: import_zod.z.number(),
-  query: import_zod.z.string(),
-  tookMs: import_zod.z.number()
+var queryResponseSchema = z.object({
+  results: z.array(queryResultSchema),
+  totalAvailable: z.number(),
+  query: z.string(),
+  tookMs: z.number()
 });
 var defaultMemoryLinkTypes = [
   "about",
@@ -261,44 +123,44 @@ var defaultMemoryLinkTypes = [
   "same_project",
   "same_person"
 ];
-var memoryLinkSchema = import_zod.z.object({
-  id: import_zod.z.string().uuid(),
-  fromId: import_zod.z.string().uuid(),
-  toId: import_zod.z.string().uuid(),
-  type: import_zod.z.string().min(1),
-  metadata: import_zod.z.record(import_zod.z.unknown()).default({}),
-  createdAt: import_zod.z.number()
+var memoryLinkSchema = z.object({
+  id: z.string().uuid(),
+  fromId: z.string().uuid(),
+  toId: z.string().uuid(),
+  type: z.string().min(1),
+  metadata: z.record(z.unknown()).default({}),
+  createdAt: z.number()
 });
-var memoryLinkInputSchema = import_zod.z.object({
-  fromId: import_zod.z.string().uuid(),
-  toId: import_zod.z.string().uuid(),
-  type: import_zod.z.string().min(1),
-  metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
+var memoryLinkInputSchema = z.object({
+  fromId: z.string().uuid(),
+  toId: z.string().uuid(),
+  type: z.string().min(1),
+  metadata: z.record(z.unknown()).optional().default({})
 });
-var linkedMemoryQueryOptionsSchema = import_zod.z.object({
-  direction: import_zod.z.enum(["outgoing", "incoming", "both"]).default("both"),
-  types: import_zod.z.array(import_zod.z.string()).optional(),
-  limit: import_zod.z.number().min(1).max(100).default(20),
-  offset: import_zod.z.number().int().min(0).default(0)
+var linkedMemoryQueryOptionsSchema = z.object({
+  direction: z.enum(["outgoing", "incoming", "both"]).default("both"),
+  types: z.array(z.string()).optional(),
+  limit: z.number().min(1).max(100).default(20),
+  offset: z.number().int().min(0).default(0)
 });
 var queryWithNeighborsOptionsSchema = queryOptionsSchema.extend({
-  hops: import_zod.z.union([import_zod.z.literal(1), import_zod.z.literal(2)]).default(1),
-  linkTypes: import_zod.z.array(import_zod.z.string()).optional(),
-  includeBaseResults: import_zod.z.boolean().default(true),
-  neighborLimit: import_zod.z.number().min(1).max(100).default(25),
-  minNeighborScore: import_zod.z.number().min(0).max(1).default(0.2),
-  linkTypeWeights: import_zod.z.record(import_zod.z.number().min(0).max(2)).optional(),
-  includePathDetails: import_zod.z.boolean().default(false)
+  hops: z.union([z.literal(1), z.literal(2)]).default(1),
+  linkTypes: z.array(z.string()).optional(),
+  includeBaseResults: z.boolean().default(true),
+  neighborLimit: z.number().min(1).max(100).default(25),
+  minNeighborScore: z.number().min(0).max(1).default(0.2),
+  linkTypeWeights: z.record(z.number().min(0).max(2)).optional(),
+  includePathDetails: z.boolean().default(false)
 });
-var neighborPathSchema = import_zod.z.object({
-  fromId: import_zod.z.string(),
-  toId: import_zod.z.string(),
-  throughId: import_zod.z.string(),
-  type: import_zod.z.string(),
-  hop: import_zod.z.number().min(1),
-  score: import_zod.z.number().min(0).max(2)
+var neighborPathSchema = z.object({
+  fromId: z.string(),
+  toId: z.string(),
+  throughId: z.string(),
+  type: z.string(),
+  hop: z.number().min(1),
+  score: z.number().min(0).max(2)
 });
-var smartRecallProfileSchema = import_zod.z.enum([
+var smartRecallProfileSchema = z.enum([
   "fast",
   "deep",
   "agent-safe",
@@ -309,144 +171,144 @@ var smartRecallProfileSchema = import_zod.z.enum([
 ]);
 var smartRecallOptionsSchema = queryWithNeighborsOptionsSchema.extend({
   profile: smartRecallProfileSchema.default("fast"),
-  includeProcedural: import_zod.z.boolean().default(true),
-  proceduralLimit: import_zod.z.number().min(1).max(50).default(5),
-  includeRecent: import_zod.z.boolean().default(false),
-  recentLimit: import_zod.z.number().min(1).max(50).default(5)
+  includeProcedural: z.boolean().default(true),
+  proceduralLimit: z.number().min(1).max(50).default(5),
+  includeRecent: z.boolean().default(false),
+  recentLimit: z.number().min(1).max(50).default(5)
 });
-var smartRecallProfileDefaultsSchema = import_zod.z.object({
+var smartRecallProfileDefaultsSchema = z.object({
   profile: smartRecallProfileSchema,
-  limit: import_zod.z.number().min(1).max(100),
-  hops: import_zod.z.union([import_zod.z.literal(1), import_zod.z.literal(2)]),
-  includeRecent: import_zod.z.boolean(),
-  includeProcedural: import_zod.z.boolean(),
-  recentLimit: import_zod.z.number().min(1).max(50).optional(),
-  proceduralLimit: import_zod.z.number().min(1).max(50).optional(),
-  minNeighborScore: import_zod.z.number().min(0).max(1).optional(),
-  neighborLimit: import_zod.z.number().min(1).max(100).optional()
+  limit: z.number().min(1).max(100),
+  hops: z.union([z.literal(1), z.literal(2)]),
+  includeRecent: z.boolean(),
+  includeProcedural: z.boolean(),
+  recentLimit: z.number().min(1).max(50).optional(),
+  proceduralLimit: z.number().min(1).max(50).optional(),
+  minNeighborScore: z.number().min(0).max(1).optional(),
+  neighborLimit: z.number().min(1).max(100).optional()
 });
-var contextPackSectionTitlesSchema = import_zod.z.object({
-  recall: import_zod.z.string(),
-  graph: import_zod.z.string(),
-  procedural: import_zod.z.string(),
-  recent: import_zod.z.string(),
-  actions: import_zod.z.string()
+var contextPackSectionTitlesSchema = z.object({
+  recall: z.string(),
+  graph: z.string(),
+  procedural: z.string(),
+  recent: z.string(),
+  actions: z.string()
 });
-var smartRecallProfileDescriptorSchema = import_zod.z.object({
+var smartRecallProfileDescriptorSchema = z.object({
   profile: smartRecallProfileSchema,
-  label: import_zod.z.string(),
-  overview: import_zod.z.string(),
-  recommendedFor: import_zod.z.array(import_zod.z.string()).min(1),
+  label: z.string(),
+  overview: z.string(),
+  recommendedFor: z.array(z.string()).min(1),
   defaultOptions: smartRecallProfileDefaultsSchema,
   contextPackTitles: contextPackSectionTitlesSchema
 });
 var smartRecallResultSchema = queryResultSchema.extend({
-  sourceLane: import_zod.z.enum(["semantic", "graph", "procedural", "recent"]),
-  reasons: import_zod.z.array(import_zod.z.string()).default([]),
-  combinedScore: import_zod.z.number()
+  sourceLane: z.enum(["semantic", "graph", "procedural", "recent"]),
+  reasons: z.array(z.string()).default([]),
+  combinedScore: z.number()
 });
-var smartRecallResponseSchema = import_zod.z.object({
-  results: import_zod.z.array(smartRecallResultSchema),
-  totalAvailable: import_zod.z.number(),
-  query: import_zod.z.string(),
-  tookMs: import_zod.z.number(),
+var smartRecallResponseSchema = z.object({
+  results: z.array(smartRecallResultSchema),
+  totalAvailable: z.number(),
+  query: z.string(),
+  tookMs: z.number(),
   profile: smartRecallProfileSchema,
-  lanes: import_zod.z.object({
-    semantic: import_zod.z.number(),
-    graph: import_zod.z.number(),
-    procedural: import_zod.z.number(),
-    recent: import_zod.z.number()
+  lanes: z.object({
+    semantic: z.number(),
+    graph: z.number(),
+    procedural: z.number(),
+    recent: z.number()
   })
 });
-var dreamMemoryLayerSchema = import_zod.z.enum(["identity", "semantic", "procedural"]);
-var dreamOptionsSchema = import_zod.z.object({
-  query: import_zod.z.string().default("What long-memory patterns matter most right now?"),
-  layers: import_zod.z.array(dreamMemoryLayerSchema).default(["identity", "semantic", "procedural"]),
-  limit: import_zod.z.number().min(1).max(50).default(12),
-  metadata: import_zod.z.record(metadataFilterSchema).optional(),
-  topicAllowlist: import_zod.z.array(import_zod.z.string()).optional()
+var dreamMemoryLayerSchema = z.enum(["identity", "semantic", "procedural"]);
+var dreamOptionsSchema = z.object({
+  query: z.string().default("What long-memory patterns matter most right now?"),
+  layers: z.array(dreamMemoryLayerSchema).default(["identity", "semantic", "procedural"]),
+  limit: z.number().min(1).max(50).default(12),
+  metadata: z.record(metadataFilterSchema).optional(),
+  topicAllowlist: z.array(z.string()).optional()
 });
-var dreamResponseSchema = import_zod.z.object({
-  query: import_zod.z.string(),
-  title: import_zod.z.string(),
-  content: import_zod.z.string(),
-  themes: import_zod.z.array(import_zod.z.string()),
-  actions: import_zod.z.array(import_zod.z.string()),
-  sourceIds: import_zod.z.array(import_zod.z.string()),
-  sourceLayers: import_zod.z.array(dreamMemoryLayerSchema),
-  sourceCount: import_zod.z.number(),
-  modelUsed: import_zod.z.string().optional(),
-  tookMs: import_zod.z.number()
+var dreamResponseSchema = z.object({
+  query: z.string(),
+  title: z.string(),
+  content: z.string(),
+  themes: z.array(z.string()),
+  actions: z.array(z.string()),
+  sourceIds: z.array(z.string()),
+  sourceLayers: z.array(dreamMemoryLayerSchema),
+  sourceCount: z.number(),
+  modelUsed: z.string().optional(),
+  tookMs: z.number()
 });
 var contextPackOptionsSchema = smartRecallOptionsSchema.extend({
-  maxChars: import_zod.z.number().min(500).max(5e4).default(6e3),
-  includeDream: import_zod.z.boolean().default(false),
-  includeRecent: import_zod.z.boolean().default(true),
-  includeMetadata: import_zod.z.boolean().default(false)
+  maxChars: z.number().min(500).max(5e4).default(6e3),
+  includeDream: z.boolean().default(false),
+  includeRecent: z.boolean().default(true),
+  includeMetadata: z.boolean().default(false)
 });
-var contextPackSectionSchema = import_zod.z.object({
-  kind: import_zod.z.enum(["overview", "recall", "graph", "procedural", "recent", "actions", "dream"]),
-  title: import_zod.z.string(),
-  content: import_zod.z.string(),
-  sourceIds: import_zod.z.array(import_zod.z.string()).default([])
+var contextPackSectionSchema = z.object({
+  kind: z.enum(["overview", "recall", "graph", "procedural", "recent", "actions", "dream"]),
+  title: z.string(),
+  content: z.string(),
+  sourceIds: z.array(z.string()).default([])
 });
-var contextPackResponseSchema = import_zod.z.object({
-  query: import_zod.z.string(),
+var contextPackResponseSchema = z.object({
+  query: z.string(),
   profile: smartRecallProfileSchema,
-  content: import_zod.z.string(),
-  sections: import_zod.z.array(contextPackSectionSchema),
-  sourceIds: import_zod.z.array(import_zod.z.string()),
-  maxChars: import_zod.z.number(),
-  usedChars: import_zod.z.number(),
-  truncated: import_zod.z.boolean(),
-  tookMs: import_zod.z.number()
+  content: z.string(),
+  sections: z.array(contextPackSectionSchema),
+  sourceIds: z.array(z.string()),
+  maxChars: z.number(),
+  usedChars: z.number(),
+  truncated: z.boolean(),
+  tookMs: z.number()
 });
-var memoryHealthOptionsSchema = import_zod.z.object({
-  staleAgeMs: import_zod.z.number().min(1).default(7 * 24 * 60 * 60 * 1e3),
-  maxSnapshotAgeMs: import_zod.z.number().min(1).default(24 * 60 * 60 * 1e3),
-  minSnapshotMemories: import_zod.z.number().min(1).default(10),
-  maxUntaggedRatio: import_zod.z.number().min(0).max(1).default(0.25),
-  duplicateSampleLimit: import_zod.z.number().min(1).max(50).default(10)
+var memoryHealthOptionsSchema = z.object({
+  staleAgeMs: z.number().min(1).default(7 * 24 * 60 * 60 * 1e3),
+  maxSnapshotAgeMs: z.number().min(1).default(24 * 60 * 60 * 1e3),
+  minSnapshotMemories: z.number().min(1).default(10),
+  maxUntaggedRatio: z.number().min(0).max(1).default(0.25),
+  duplicateSampleLimit: z.number().min(1).max(50).default(10)
 });
-var memoryHealthCheckSchema = import_zod.z.object({
-  name: import_zod.z.string(),
-  status: import_zod.z.enum(["pass", "warn", "fail"]),
-  detail: import_zod.z.string(),
-  value: import_zod.z.unknown().optional(),
-  action: import_zod.z.string().optional(),
-  command: import_zod.z.string().optional()
+var memoryHealthCheckSchema = z.object({
+  name: z.string(),
+  status: z.enum(["pass", "warn", "fail"]),
+  detail: z.string(),
+  value: z.unknown().optional(),
+  action: z.string().optional(),
+  command: z.string().optional()
 });
-var memoryHealthRecommendationSchema = import_zod.z.object({
-  priority: import_zod.z.enum(["low", "medium", "high"]),
-  action: import_zod.z.string(),
-  reason: import_zod.z.string(),
-  command: import_zod.z.string().optional()
+var memoryHealthRecommendationSchema = z.object({
+  priority: z.enum(["low", "medium", "high"]),
+  action: z.string(),
+  reason: z.string(),
+  command: z.string().optional()
 });
-var memoryHealthResponseSchema = import_zod.z.object({
-  score: import_zod.z.number().min(0).max(100),
-  status: import_zod.z.enum(["healthy", "watch", "attention"]),
-  checkedAt: import_zod.z.number(),
-  checks: import_zod.z.array(memoryHealthCheckSchema),
-  recommendations: import_zod.z.array(memoryHealthRecommendationSchema),
-  stats: import_zod.z.object({
-    coreCount: import_zod.z.number(),
-    layerCount: import_zod.z.number(),
-    snapshotCount: import_zod.z.number(),
-    eventCount: import_zod.z.number(),
-    duplicateGroups: import_zod.z.number(),
-    staleCount: import_zod.z.number(),
-    untaggedCount: import_zod.z.number()
+var memoryHealthResponseSchema = z.object({
+  score: z.number().min(0).max(100),
+  status: z.enum(["healthy", "watch", "attention"]),
+  checkedAt: z.number(),
+  checks: z.array(memoryHealthCheckSchema),
+  recommendations: z.array(memoryHealthRecommendationSchema),
+  stats: z.object({
+    coreCount: z.number(),
+    layerCount: z.number(),
+    snapshotCount: z.number(),
+    eventCount: z.number(),
+    duplicateGroups: z.number(),
+    staleCount: z.number(),
+    untaggedCount: z.number()
   })
 });
-var namespaceInputSchema = import_zod.z.union([
-  import_zod.z.string().min(1),
-  import_zod.z.array(import_zod.z.string().min(1)).min(1)
+var namespaceInputSchema = z.union([
+  z.string().min(1),
+  z.array(z.string().min(1)).min(1)
 ]);
-var namespaceQueryScopeSchema = import_zod.z.object({
-  visibility: import_zod.z.enum(["private", "shared", "all"]).default("all"),
-  includeDescendants: import_zod.z.boolean().default(false)
+var namespaceQueryScopeSchema = z.object({
+  visibility: z.enum(["private", "shared", "all"]).default("all"),
+  includeDescendants: z.boolean().default(false)
 });
-var knowledgeResourceUriSchema = import_zod.z.string().min(1).max(2048).refine((value) => !/[\u0000-\u001f\u007f]/.test(value), {
+var knowledgeResourceUriSchema = z.string().min(1).max(2048).refine((value) => !/[\u0000-\u001f\u007f]/.test(value), {
   message: "Knowledge resource URI cannot include control characters"
 }).refine((value) => {
   try {
@@ -459,19 +321,19 @@ var knowledgeResourceUriSchema = import_zod.z.string().min(1).max(2048).refine((
 }, {
   message: "Knowledge resource URI must be an absolute URI without embedded credentials"
 });
-var knowledgeResourceScopeSchema = import_zod.z.string().trim().min(1).max(120).regex(/^[a-zA-Z0-9][a-zA-Z0-9:._/-]*$/, "Knowledge resource scopes must be token-like strings");
-var knowledgeResourceGrantSchema = import_zod.z.object({
+var knowledgeResourceScopeSchema = z.string().trim().min(1).max(120).regex(/^[a-zA-Z0-9][a-zA-Z0-9:._/-]*$/, "Knowledge resource scopes must be token-like strings");
+var knowledgeResourceGrantSchema = z.object({
   resourceUri: knowledgeResourceUriSchema.optional(),
-  source: import_zod.z.string().min(1).optional(),
-  project: import_zod.z.string().min(1).optional(),
-  scopes: import_zod.z.array(knowledgeResourceScopeSchema).default([])
+  source: z.string().min(1).optional(),
+  project: z.string().min(1).optional(),
+  scopes: z.array(knowledgeResourceScopeSchema).default([])
 });
 function authorizeKnowledgeResourceAccess(resource, grant) {
   const parsedGrant = knowledgeResourceGrantSchema.parse(grant);
   const parsedResource = {
     ...resource,
     ...resource.resourceUri ? { resourceUri: knowledgeResourceUriSchema.parse(resource.resourceUri) } : {},
-    requiredScopes: import_zod.z.array(knowledgeResourceScopeSchema).default([]).parse(resource.requiredScopes ?? [])
+    requiredScopes: z.array(knowledgeResourceScopeSchema).default([]).parse(resource.requiredScopes ?? [])
   };
   if (parsedResource.resourceUri && parsedGrant.resourceUri && parsedResource.resourceUri !== parsedGrant.resourceUri) {
     return { allowed: false, missingScopes: [], reason: "resource-uri-mismatch" };
@@ -486,130 +348,130 @@ function authorizeKnowledgeResourceAccess(resource, grant) {
   const missingScopes = parsedResource.requiredScopes.filter((scope) => !grantedScopes.has(scope));
   return missingScopes.length ? { allowed: false, missingScopes, reason: "missing-scopes" } : { allowed: true, missingScopes: [] };
 }
-var knowledgeNodeSchema = import_zod.z.object({
-  id: import_zod.z.string().min(1),
-  label: import_zod.z.string().min(1).default("Node"),
-  name: import_zod.z.string().min(1).optional(),
-  kind: import_zod.z.string().min(1).optional(),
-  content: import_zod.z.string().optional(),
-  summary: import_zod.z.string().optional(),
-  path: import_zod.z.string().optional(),
-  language: import_zod.z.string().optional(),
-  weight: import_zod.z.number().min(0).max(2).optional(),
-  metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
+var knowledgeNodeSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1).default("Node"),
+  name: z.string().min(1).optional(),
+  kind: z.string().min(1).optional(),
+  content: z.string().optional(),
+  summary: z.string().optional(),
+  path: z.string().optional(),
+  language: z.string().optional(),
+  weight: z.number().min(0).max(2).optional(),
+  metadata: z.record(z.unknown()).optional().default({})
 });
-var knowledgeEdgeSchema = import_zod.z.object({
-  from: import_zod.z.string().min(1),
-  to: import_zod.z.string().min(1),
-  type: import_zod.z.string().min(1),
-  weight: import_zod.z.number().min(0).max(2).optional(),
-  metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
+var knowledgeEdgeSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+  type: z.string().min(1),
+  weight: z.number().min(0).max(2).optional(),
+  metadata: z.record(z.unknown()).optional().default({})
 });
-var knowledgeGraphArtifactSchema = import_zod.z.object({
-  source: import_zod.z.string().min(1).default("external-knowledge"),
-  project: import_zod.z.string().min(1).optional(),
-  version: import_zod.z.string().optional(),
-  generatedAt: import_zod.z.number().optional(),
-  artifactPath: import_zod.z.string().optional(),
+var knowledgeGraphArtifactSchema = z.object({
+  source: z.string().min(1).default("external-knowledge"),
+  project: z.string().min(1).optional(),
+  version: z.string().optional(),
+  generatedAt: z.number().optional(),
+  artifactPath: z.string().optional(),
   resourceUri: knowledgeResourceUriSchema.optional(),
-  requiredScopes: import_zod.z.array(knowledgeResourceScopeSchema).optional().default([]),
-  nodes: import_zod.z.array(knowledgeNodeSchema).default([]),
-  edges: import_zod.z.array(knowledgeEdgeSchema).default([]),
-  metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
+  requiredScopes: z.array(knowledgeResourceScopeSchema).optional().default([]),
+  nodes: z.array(knowledgeNodeSchema).default([]),
+  edges: z.array(knowledgeEdgeSchema).default([]),
+  metadata: z.record(z.unknown()).optional().default({})
 });
-var knowledgeIngestOptionsSchema = import_zod.z.object({
-  source: import_zod.z.string().min(1).optional(),
-  project: import_zod.z.string().min(1).optional(),
+var knowledgeIngestOptionsSchema = z.object({
+  source: z.string().min(1).optional(),
+  project: z.string().min(1).optional(),
   namespace: namespaceInputSchema.optional(),
-  visibility: import_zod.z.enum(["private", "shared"]).default("shared"),
-  topic: import_zod.z.string().min(1).default("knowledge-graph"),
-  linkTypePrefix: import_zod.z.string().default("knowledge")
+  visibility: z.enum(["private", "shared"]).default("shared"),
+  topic: z.string().min(1).default("knowledge-graph"),
+  linkTypePrefix: z.string().default("knowledge")
 });
-var knowledgeIngestResultSchema = import_zod.z.object({
-  source: import_zod.z.string(),
-  project: import_zod.z.string().optional(),
-  namespace: import_zod.z.string(),
-  nodesStored: import_zod.z.number(),
-  edgesLinked: import_zod.z.number(),
-  skippedEdges: import_zod.z.number(),
-  nodeMemoryIds: import_zod.z.record(import_zod.z.string())
+var knowledgeIngestResultSchema = z.object({
+  source: z.string(),
+  project: z.string().optional(),
+  namespace: z.string(),
+  nodesStored: z.number(),
+  edgesLinked: z.number(),
+  skippedEdges: z.number(),
+  nodeMemoryIds: z.record(z.string())
 });
-var knowledgeArtifactRegistrationSchema = import_zod.z.object({
-  source: import_zod.z.string().min(1).default("external-knowledge"),
-  project: import_zod.z.string().min(1).optional(),
-  artifactPath: import_zod.z.string().min(1),
+var knowledgeArtifactRegistrationSchema = z.object({
+  source: z.string().min(1).default("external-knowledge"),
+  project: z.string().min(1).optional(),
+  artifactPath: z.string().min(1),
   resourceUri: knowledgeResourceUriSchema.optional(),
-  requiredScopes: import_zod.z.array(knowledgeResourceScopeSchema).optional().default([]),
-  format: import_zod.z.string().min(1).default("json"),
-  compression: import_zod.z.string().min(1).optional(),
-  checksum: import_zod.z.string().optional(),
-  generatedAt: import_zod.z.number().optional(),
-  metadata: import_zod.z.record(import_zod.z.unknown()).optional().default({})
+  requiredScopes: z.array(knowledgeResourceScopeSchema).optional().default([]),
+  format: z.string().min(1).default("json"),
+  compression: z.string().min(1).optional(),
+  checksum: z.string().optional(),
+  generatedAt: z.number().optional(),
+  metadata: z.record(z.unknown()).optional().default({})
 });
-var modelConfigSchema = import_zod.z.discriminatedUnion("type", [
-  import_zod.z.object({
-    type: import_zod.z.literal("bankr"),
-    apiKey: import_zod.z.string().min(1),
-    baseUrl: import_zod.z.string().url().optional()
+var modelConfigSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("bankr"),
+    apiKey: z.string().min(1),
+    baseUrl: z.string().url().optional()
   }),
-  import_zod.z.object({
-    type: import_zod.z.literal("openai"),
-    apiKey: import_zod.z.string().min(1),
-    model: import_zod.z.string().optional().default("gpt-4o"),
-    baseUrl: import_zod.z.string().url().optional()
+  z.object({
+    type: z.literal("openai"),
+    apiKey: z.string().min(1),
+    model: z.string().optional().default("gpt-4o"),
+    baseUrl: z.string().url().optional()
   }),
-  import_zod.z.object({
-    type: import_zod.z.literal("anthropic"),
-    apiKey: import_zod.z.string().min(1),
-    model: import_zod.z.string().optional().default("claude-sonnet-4-6"),
-    baseUrl: import_zod.z.string().url().optional()
+  z.object({
+    type: z.literal("anthropic"),
+    apiKey: z.string().min(1),
+    model: z.string().optional().default("claude-sonnet-4-6"),
+    baseUrl: z.string().url().optional()
   }),
-  import_zod.z.object({
-    type: import_zod.z.literal("ollama"),
-    baseUrl: import_zod.z.string().url().default("http://localhost:11434"),
-    model: import_zod.z.string().default("llama3")
+  z.object({
+    type: z.literal("ollama"),
+    baseUrl: z.string().url().default("http://localhost:11434"),
+    model: z.string().default("llama3")
   })
 ]);
-var embeddingConfigSchema = import_zod.z.object({
+var embeddingConfigSchema = z.object({
   /** Enable vector embeddings for semantic search (default: false) */
-  enabled: import_zod.z.boolean().default(false),
+  enabled: z.boolean().default(false),
   /** Ollama base URL (e.g. http://192.168.68.73:11434) */
-  baseUrl: import_zod.z.string().default("http://localhost:11434"),
+  baseUrl: z.string().default("http://localhost:11434"),
   /** Embedding model to use (e.g. 'nomic-embed-text', 'mxbai-embed-large') */
-  model: import_zod.z.string().default("nomic-embed-text"),
+  model: z.string().default("nomic-embed-text"),
   /** Embedding dimension (auto-detected on first embed if not set) */
-  dimension: import_zod.z.number().optional(),
+  dimension: z.number().optional(),
   /** Whether to generate embeddings async in background (non-blocking store) */
-  asyncEmbed: import_zod.z.boolean().default(true)
+  asyncEmbed: z.boolean().default(true)
 });
-var postgresStorageConfigSchema = import_zod.z.object({
-  connectionString: import_zod.z.string().optional(),
-  schema: import_zod.z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
-  tablePrefix: import_zod.z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
-  ssl: import_zod.z.union([import_zod.z.boolean(), import_zod.z.record(import_zod.z.unknown())]).optional(),
-  pgvector: import_zod.z.object({
-    enabled: import_zod.z.boolean().default(false),
-    embeddingType: import_zod.z.enum(["memory", "layered", "both"]).default("memory"),
-    ivfflatLists: import_zod.z.number().min(1).max(5e3).default(100)
+var postgresStorageConfigSchema = z.object({
+  connectionString: z.string().optional(),
+  schema: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
+  tablePrefix: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
+  ssl: z.union([z.boolean(), z.record(z.unknown())]).optional(),
+  pgvector: z.object({
+    enabled: z.boolean().default(false),
+    embeddingType: z.enum(["memory", "layered", "both"]).default("memory"),
+    ivfflatLists: z.number().min(1).max(5e3).default(100)
   }).optional(),
-  pool: import_zod.z.unknown().optional()
+  pool: z.unknown().optional()
 });
-var storageScopeConfigSchema = import_zod.z.object({
-  workspaceId: import_zod.z.string().min(1).optional(),
-  agentId: import_zod.z.string().min(1).optional(),
-  userId: import_zod.z.string().min(1).optional()
+var storageScopeConfigSchema = z.object({
+  workspaceId: z.string().min(1).optional(),
+  agentId: z.string().min(1).optional(),
+  userId: z.string().min(1).optional()
 }).passthrough();
-var rememConfigSchema = import_zod.z.object({
-  storage: import_zod.z.enum(["sqlite", "postgres", "memory"]).default("sqlite"),
+var rememConfigSchema = z.object({
+  storage: z.enum(["sqlite", "postgres", "memory"]).default("sqlite"),
   storageConfig: storageScopeConfigSchema.optional(),
   postgres: postgresStorageConfigSchema.optional(),
   llm: modelConfigSchema.optional(),
-  adapter: import_zod.z.string().optional(),
-  dbPath: import_zod.z.string().optional(),
+  adapter: z.string().optional(),
+  dbPath: z.string().optional(),
   // for sqlite
   embeddings: embeddingConfigSchema.optional()
 });
-var eventTypeSchema = import_zod.z.enum([
+var eventTypeSchema = z.enum([
   "memory.stored",
   "memory.queried",
   "memory.accessed",
@@ -626,168 +488,168 @@ var eventTypeSchema = import_zod.z.enum([
   "identity.drift_detected",
   "identity.drift_correction_injected"
 ]);
-var memoryEventSchema = import_zod.z.object({
-  id: import_zod.z.string().uuid(),
+var memoryEventSchema = z.object({
+  id: z.string().uuid(),
   type: eventTypeSchema,
-  timestamp: import_zod.z.number(),
-  payload: import_zod.z.record(import_zod.z.unknown())
+  timestamp: z.number(),
+  payload: z.record(z.unknown())
 });
-var identityCategorySchema = import_zod.z.enum(["values", "boundaries", "preferences", "goals"]);
-var constitutionStatementSchema = import_zod.z.object({
-  id: import_zod.z.string().uuid(),
-  text: import_zod.z.string().min(1),
+var identityCategorySchema = z.enum(["values", "boundaries", "preferences", "goals"]);
+var constitutionStatementSchema = z.object({
+  id: z.string().uuid(),
+  text: z.string().min(1),
   category: identityCategorySchema,
-  weight: import_zod.z.number().min(0).max(1).default(0.5),
-  source: import_zod.z.string().optional(),
+  weight: z.number().min(0).max(1).default(0.5),
+  source: z.string().optional(),
   // e.g. 'SOUL.md', 'IDENTITY.md', 'manual'
-  createdAt: import_zod.z.number()
+  createdAt: z.number()
 });
-var constitutionSchema = import_zod.z.object({
-  statements: import_zod.z.array(constitutionStatementSchema),
-  version: import_zod.z.string().default("1.0"),
-  createdAt: import_zod.z.number(),
-  updatedAt: import_zod.z.number()
+var constitutionSchema = z.object({
+  statements: z.array(constitutionStatementSchema),
+  version: z.string().default("1.0"),
+  createdAt: z.number(),
+  updatedAt: z.number()
 });
-var driftResultSchema = import_zod.z.object({
-  score: import_zod.z.number().min(0).max(1),
-  level: import_zod.z.enum(["aligned", "minor", "moderate", "critical"]),
-  violatingStatements: import_zod.z.array(constitutionStatementSchema),
-  reasoning: import_zod.z.string(),
-  detectedAt: import_zod.z.number()
+var driftResultSchema = z.object({
+  score: z.number().min(0).max(1),
+  level: z.enum(["aligned", "minor", "moderate", "critical"]),
+  violatingStatements: z.array(constitutionStatementSchema),
+  reasoning: z.string(),
+  detectedAt: z.number()
 });
-var identityConfigSchema = import_zod.z.object({
+var identityConfigSchema = z.object({
   constitution: constitutionSchema.optional(),
-  driftThreshold: import_zod.z.number().min(0).max(1).default(0.3),
-  criticalThreshold: import_zod.z.number().min(0).max(1).default(0.7),
-  autoInject: import_zod.z.boolean().default(true),
+  driftThreshold: z.number().min(0).max(1).default(0.3),
+  criticalThreshold: z.number().min(0).max(1).default(0.7),
+  autoInject: z.boolean().default(true),
   evalModel: modelConfigSchema.optional()
   // separate eval model (local Ollama preferred for cost)
 });
-var memoryLayerSchema = import_zod.z.enum(["episodic", "semantic", "identity", "procedural"]);
-var layerConfigSchema = import_zod.z.object({
-  episodic: import_zod.z.object({
-    ttlMs: import_zod.z.number().default(36e5),
+var memoryLayerSchema = z.enum(["episodic", "semantic", "identity", "procedural"]);
+var layerConfigSchema = z.object({
+  episodic: z.object({
+    ttlMs: z.number().default(36e5),
     // 1 hour
-    maxEntries: import_zod.z.number().default(1e3),
-    weight: import_zod.z.number().default(0.2)
+    maxEntries: z.number().default(1e3),
+    weight: z.number().default(0.2)
   }),
-  semantic: import_zod.z.object({
-    ttlMs: import_zod.z.number().default(6048e5),
+  semantic: z.object({
+    ttlMs: z.number().default(6048e5),
     // 7 days
-    maxEntries: import_zod.z.number().default(5e3),
-    weight: import_zod.z.number().default(0.3),
+    maxEntries: z.number().default(5e3),
+    weight: z.number().default(0.3),
     // Temporal self-edit options
-    selfEdit: import_zod.z.boolean().default(false),
+    selfEdit: z.boolean().default(false),
     // auto-supersede conflicting entries
-    temporalValidity: import_zod.z.boolean().default(true)
+    temporalValidity: z.boolean().default(true)
     // track validFrom/validUntil
   }),
-  identity: import_zod.z.object({
-    ttlMs: import_zod.z.number().default(2592e6),
+  identity: z.object({
+    ttlMs: z.number().default(2592e6),
     // 30 days
-    maxEntries: import_zod.z.number().default(500),
-    weight: import_zod.z.number().default(0.5)
+    maxEntries: z.number().default(500),
+    weight: z.number().default(0.5)
   }),
-  procedural: import_zod.z.object({
-    ttlMs: import_zod.z.number().default(2592e6),
+  procedural: z.object({
+    ttlMs: z.number().default(2592e6),
     // 30 days (long-term rules)
-    maxEntries: import_zod.z.number().default(500),
-    weight: import_zod.z.number().default(0.4),
-    trigger: import_zod.z.string().optional()
+    maxEntries: z.number().default(500),
+    weight: z.number().default(0.4),
+    trigger: z.string().optional()
     // keyword that fires this rule
   })
 });
 var layeredMemoryEntrySchema = memoryEntrySchema.extend({
   layer: memoryLayerSchema.default("episodic"),
-  expiresAt: import_zod.z.number().optional(),
-  importance: import_zod.z.number().min(0).max(1).default(0.5),
+  expiresAt: z.number().optional(),
+  importance: z.number().min(0).max(1).default(0.5),
   // Temporal validity (semantic layer)
-  validFrom: import_zod.z.number().optional(),
+  validFrom: z.number().optional(),
   // when this fact became true
-  validUntil: import_zod.z.number().optional(),
+  validUntil: z.number().optional(),
   // when this fact stopped being true (null = still valid)
   // Self-edit supersession chain
-  supersedes: import_zod.z.string().nullish(),
+  supersedes: z.string().nullish(),
   // id of the entry this one supersedes (older version)
-  supersededBy: import_zod.z.string().nullish()
+  supersededBy: z.string().nullish()
   // id of the entry that supersedes this one
 });
-var proceduralTriggerSchema = import_zod.z.object({
-  terms: import_zod.z.array(import_zod.z.string()).optional().default([]),
-  phrases: import_zod.z.array(import_zod.z.string()).optional().default([]),
-  topics: import_zod.z.array(import_zod.z.string()).optional().default([]),
-  excludeTerms: import_zod.z.array(import_zod.z.string()).optional().default([]),
-  regex: import_zod.z.string().optional(),
-  match: import_zod.z.enum(["any", "all"]).default("any"),
-  minScore: import_zod.z.number().min(0).max(1).default(0.25),
-  priority: import_zod.z.number().min(0).max(1).default(0.5)
+var proceduralTriggerSchema = z.object({
+  terms: z.array(z.string()).optional().default([]),
+  phrases: z.array(z.string()).optional().default([]),
+  topics: z.array(z.string()).optional().default([]),
+  excludeTerms: z.array(z.string()).optional().default([]),
+  regex: z.string().optional(),
+  match: z.enum(["any", "all"]).default("any"),
+  minScore: z.number().min(0).max(1).default(0.25),
+  priority: z.number().min(0).max(1).default(0.5)
 });
-var proceduralMatchSchema = import_zod.z.object({
+var proceduralMatchSchema = z.object({
   entry: layeredMemoryEntrySchema,
-  score: import_zod.z.number().min(0).max(2),
-  reasons: import_zod.z.array(import_zod.z.string())
+  score: z.number().min(0).max(2),
+  reasons: z.array(z.string())
 });
-var driftEventSchema = import_zod.z.object({
+var driftEventSchema = z.object({
   driftResult: driftResultSchema,
-  correctionInjected: import_zod.z.boolean().default(false),
-  correctionText: import_zod.z.string().optional()
+  correctionInjected: z.boolean().default(false),
+  correctionText: z.string().optional()
 });
-var identityPackageSchema = import_zod.z.object({
-  version: import_zod.z.string().default("1.0"),
-  agentId: import_zod.z.string().optional(),
-  userId: import_zod.z.string().optional(),
-  exportedAt: import_zod.z.number(),
-  constitution: import_zod.z.object({
-    statements: import_zod.z.array(constitutionStatementSchema),
-    version: import_zod.z.string().default("1.0"),
-    createdAt: import_zod.z.number(),
-    updatedAt: import_zod.z.number()
+var identityPackageSchema = z.object({
+  version: z.string().default("1.0"),
+  agentId: z.string().optional(),
+  userId: z.string().optional(),
+  exportedAt: z.number(),
+  constitution: z.object({
+    statements: z.array(constitutionStatementSchema),
+    version: z.string().default("1.0"),
+    createdAt: z.number(),
+    updatedAt: z.number()
   }),
-  memories: import_zod.z.array(layeredMemoryEntrySchema),
-  soul: import_zod.z.object({
-    content: import_zod.z.string(),
-    source: import_zod.z.string().optional()
+  memories: z.array(layeredMemoryEntrySchema),
+  soul: z.object({
+    content: z.string(),
+    source: z.string().optional()
   }).optional(),
-  identity: import_zod.z.object({
-    content: import_zod.z.string(),
-    source: import_zod.z.string().optional()
+  identity: z.object({
+    content: z.string(),
+    source: z.string().optional()
   }).optional(),
-  metadata: import_zod.z.record(import_zod.z.unknown()).default({})
+  metadata: z.record(z.unknown()).default({})
 });
-var duplicationConfigSchema = import_zod.z.object({
+var duplicationConfigSchema = z.object({
   /** DARKSOL server URL (e.g. https://api.darksol.net) */
-  serverUrl: import_zod.z.string().url(),
+  serverUrl: z.string().url(),
   /** API key for the server */
-  apiKey: import_zod.z.string().min(1),
+  apiKey: z.string().min(1),
   /** Include SOUL.md content in export */
-  includeSoul: import_zod.z.boolean().default(true),
+  includeSoul: z.boolean().default(true),
   /** Include IDENTITY.md content in export */
-  includeIdentity: import_zod.z.boolean().default(true),
+  includeIdentity: z.boolean().default(true),
   /** Include all memory layers in export */
-  includeAllLayers: import_zod.z.boolean().default(true),
+  includeAllLayers: z.boolean().default(true),
   /** Only include specific layers */
-  layers: import_zod.z.array(memoryLayerSchema).optional(),
+  layers: z.array(memoryLayerSchema).optional(),
   /** Custom agent/user ID for scoping */
-  agentId: import_zod.z.string().optional(),
-  userId: import_zod.z.string().optional()
+  agentId: z.string().optional(),
+  userId: z.string().optional()
 });
-var infectionConfigSchema = import_zod.z.object({
+var infectionConfigSchema = z.object({
   /** DARKSOL server URL */
-  serverUrl: import_zod.z.string().url(),
+  serverUrl: z.string().url(),
   /** API key for the server */
-  apiKey: import_zod.z.string().min(1),
+  apiKey: z.string().min(1),
   /** Source agent ID to infect FROM (optional — defaults to user\'s primary) */
-  sourceAgentId: import_zod.z.string().optional(),
+  sourceAgentId: z.string().optional(),
   /** Identity package version to pull (optional — defaults to latest) */
-  version: import_zod.z.string().optional(),
+  version: z.string().optional(),
   /** Auto-refresh interval in ms (0 = no auto-refresh) */
-  refreshIntervalMs: import_zod.z.number().default(0),
+  refreshIntervalMs: z.number().default(0),
   /** Layers to apply from the package */
-  layers: import_zod.z.array(import_zod.z.enum(["identity", "semantic", "procedural"])).default(["identity"])
+  layers: z.array(z.enum(["identity", "semantic", "procedural"])).default(["identity"])
 });
 
 // src/embeddings.ts
-var import_crypto = require("crypto");
+import { randomUUID } from "crypto";
 var OLLAMA_EMBED_URL = "/api/embeddings";
 var EmbeddingService = class _EmbeddingService {
   config;
@@ -886,7 +748,7 @@ var EmbeddingService = class _EmbeddingService {
   async generateEmbedding(memoryId, text) {
     const vector = await this.embed(text);
     return {
-      id: (0, import_crypto.randomUUID)(),
+      id: randomUUID(),
       memoryId,
       vector,
       base64: _EmbeddingService.encodeVector(vector),
@@ -907,7 +769,7 @@ var MemoryStore = class {
   }
   async init() {
     if (this.initialized) return;
-    const SQL = await (0, import_sql.default)();
+    const SQL = await initSqlJs();
     if (this.dbPath === ":memory:") {
       this.db = new SQL.Database();
     } else {
@@ -1062,7 +924,7 @@ var MemoryStore = class {
     this.ensureInitialized();
     const now = Date.now();
     const entry = {
-      id: (0, import_crypto2.randomUUID)(),
+      id: randomUUID2(),
       content: input.content,
       topics: input.topics ?? [],
       metadata: input.metadata ?? {},
@@ -1309,7 +1171,7 @@ var MemoryStore = class {
     this.ensureInitialized();
     const validated = memoryLinkInputSchema.parse(input);
     const link = memoryLinkSchema.parse({
-      id: (0, import_crypto2.randomUUID)(),
+      id: randomUUID2(),
       fromId: validated.fromId,
       toId: validated.toId,
       type: validated.type,
@@ -1588,7 +1450,7 @@ var MemoryStore = class {
   async createSnapshot(label, opts) {
     this.ensureInitialized();
     const now = Date.now();
-    const id = (0, import_crypto2.randomUUID)();
+    const id = randomUUID2();
     const layerEntries = await this.loadAllLayerEntries(opts);
     const coreEntries = await this.loadAllMemoryEntries(opts);
     const snapshotData = {
@@ -1899,7 +1761,7 @@ var MemoryStore = class {
    */
   async storeEmbedding(memoryId, base64, dimension, model, type = "memory") {
     this.ensureInitialized();
-    const id = (0, import_crypto2.randomUUID)();
+    const id = randomUUID2();
     this.db.run(
       `INSERT OR REPLACE INTO embeddings (id, memory_id, vector_base64, dimension, model, created_at, embedding_type)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -2013,8 +1875,8 @@ var MemoryStore = class {
       const data = this.db.export();
       const buffer = Buffer.from(data);
       const tmpPath = `${this.dbPath}.tmp`;
-      (0, import_node_fs.writeFileSync)(tmpPath, buffer);
-      (0, import_node_fs.renameSync)(tmpPath, this.dbPath);
+      writeFileSync(tmpPath, buffer);
+      renameSync(tmpPath, this.dbPath);
     } catch {
     }
   }
@@ -2027,7 +1889,7 @@ var MemoryStore = class {
   }
   logEvent(type, payload) {
     const event = {
-      id: (0, import_crypto2.randomUUID)(),
+      id: randomUUID2(),
       type,
       timestamp: Date.now(),
       payload
@@ -2072,7 +1934,7 @@ var MemoryStore = class {
     return { conditions, params };
   }
   snapshotChecksum(snapshotData) {
-    return (0, import_crypto2.createHash)("sha256").update(JSON.stringify(snapshotData)).digest("hex");
+    return createHash("sha256").update(JSON.stringify(snapshotData)).digest("hex");
   }
   async loadAllLinks(opts) {
     this.ensureInitialized();
@@ -2199,7 +2061,7 @@ var MemoryStore = class {
 };
 
 // src/postgres-store.ts
-var import_crypto3 = require("crypto");
+import { createHash as createHash2, randomUUID as randomUUID3 } from "crypto";
 var PostgresMemoryStore = class {
   pool = null;
   ownsPool = false;
@@ -2349,7 +2211,7 @@ var PostgresMemoryStore = class {
   async store(input, opts) {
     const now = Date.now();
     const validated = memoryEntrySchema.parse({
-      id: (0, import_crypto3.randomUUID)(),
+      id: randomUUID3(),
       content: input.content,
       topics: input.topics ?? [],
       metadata: input.metadata ?? {},
@@ -2481,7 +2343,7 @@ var PostgresMemoryStore = class {
   async createLink(input, opts) {
     const validated = memoryLinkInputSchema.parse(input);
     const link = memoryLinkSchema.parse({
-      id: (0, import_crypto3.randomUUID)(),
+      id: randomUUID3(),
       fromId: validated.fromId,
       toId: validated.toId,
       type: validated.type,
@@ -2626,7 +2488,7 @@ var PostgresMemoryStore = class {
   }
   async createSnapshot(label, opts) {
     const now = Date.now();
-    const id = (0, import_crypto3.randomUUID)();
+    const id = randomUUID3();
     const layerEntries = await this.loadAllLayerEntries(opts);
     const coreEntries = await this.loadAllMemoryEntries(opts);
     const links = await this.loadAllLinks(opts);
@@ -2789,7 +2651,7 @@ var PostgresMemoryStore = class {
        VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT (id) DO UPDATE SET memory_id=EXCLUDED.memory_id, vector_base64=EXCLUDED.vector_base64,
         dimension=EXCLUDED.dimension, model=EXCLUDED.model, embedding_type=EXCLUDED.embedding_type`,
-      [(0, import_crypto3.randomUUID)(), memoryId, base64, dimension, model, Date.now(), type]
+      [randomUUID3(), memoryId, base64, dimension, model, Date.now(), type]
     );
     if (this.pgvectorAvailable && vectorValue) {
       await this.pgQuery(
@@ -3148,7 +3010,7 @@ var PostgresMemoryStore = class {
     return typeof value === "string" ? JSON.parse(value) : value;
   }
   snapshotChecksum(snapshotData) {
-    return (0, import_crypto3.createHash)("sha256").update(JSON.stringify(snapshotData)).digest("hex");
+    return createHash2("sha256").update(JSON.stringify(snapshotData)).digest("hex");
   }
   simpleRelevance(content, query) {
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -3157,7 +3019,7 @@ var PostgresMemoryStore = class {
     return terms.filter((term) => lower.includes(term)).length / terms.length;
   }
   async logEvent(type, payload) {
-    const event = { id: (0, import_crypto3.randomUUID)(), type, timestamp: Date.now(), payload };
+    const event = { id: randomUUID3(), type, timestamp: Date.now(), payload };
     this.eventLog.push(event);
     await this.pgQuery(
       `INSERT INTO ${this.table("events")} (id, type, timestamp, payload) VALUES ($1,$2,$3,$4::jsonb)`,
@@ -3534,7 +3396,7 @@ ${contextParts.join("\n---\n")}`
 };
 
 // src/identity.ts
-var import_crypto4 = require("crypto");
+import { randomUUID as randomUUID4 } from "crypto";
 var ConstitutionManager = class {
   constitution;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3576,7 +3438,7 @@ var ConstitutionManager = class {
         const lines = content.split(/\n|•|-|\*/).map((l) => l.trim()).filter((l) => l.length > 10);
         for (const line of lines) {
           const statement = {
-            id: (0, import_crypto4.randomUUID)(),
+            id: randomUUID4(),
             text: line,
             category,
             weight: 0.5,
@@ -3595,7 +3457,7 @@ var ConstitutionManager = class {
       const lines = text.split(/\n/).map((l) => l.replace(/^#+\s*/, "").trim()).filter((l) => l.length > 15 && !l.startsWith("["));
       for (const line of lines.slice(0, 20)) {
         const statement = {
-          id: (0, import_crypto4.randomUUID)(),
+          id: randomUUID4(),
           text: line,
           category: "values",
           weight: 0.3,
@@ -3617,7 +3479,7 @@ var ConstitutionManager = class {
    */
   addStatement(text, category, weight = 0.5, source) {
     const statement = {
-      id: (0, import_crypto4.randomUUID)(),
+      id: randomUUID4(),
       text,
       category,
       weight,
@@ -3929,7 +3791,7 @@ function createIdentitySystem(config) {
 }
 
 // src/layers.ts
-var import_crypto5 = require("crypto");
+import { randomUUID as randomUUID5 } from "crypto";
 var DEFAULT_LAYER_CONFIG = {
   episodic: { ttlMs: 36e5, maxEntries: 1e3, weight: 0.2 },
   // 1 hour
@@ -3977,7 +3839,7 @@ var LayerManager = class {
       }
     }
     const entry = {
-      id: (0, import_crypto5.randomUUID)(),
+      id: randomUUID5(),
       content: input.content,
       topics: input.topics ?? [],
       metadata: input.metadata ?? {},
@@ -4628,7 +4490,7 @@ async function infectFromServer(params) {
 }
 
 // src/repl.ts
-var import_node_vm = require("vm");
+import { Script, createContext } from "vm";
 var DEFAULT_SYSTEM_PROMPT2 = `You are a memory navigation assistant. The user has a large memory store containing thoughts, facts, preferences, and context.
 
 Your job is to navigate the memory store by writing JavaScript code. You NEVER see the full memory \u2014 you only see metadata and what you observe from your own queries.
@@ -4803,7 +4665,7 @@ Embeddings: ${this.store ? "available (semantic search enabled)" : "not configur
    */
   async executeCode(code) {
     const memAPI = Object.freeze(this.buildMemoryAPI());
-    const context = (0, import_node_vm.createContext)(
+    const context = createContext(
       /* @__PURE__ */ Object.create(null),
       {
         name: "remem-repl",
@@ -4817,7 +4679,7 @@ Embeddings: ${this.store ? "available (semantic search enabled)" : "not configur
       writable: false
     });
     try {
-      const script = new import_node_vm.Script(`"use strict"; (async () => (${code}))()`);
+      const script = new Script(`"use strict"; (async () => (${code}))()`);
       const result = script.runInContext(context, {
         timeout: 500,
         displayErrors: true
@@ -6967,7 +6829,7 @@ var HttpAdapter = class {
 };
 
 // src/episodic-capture.ts
-var import_crypto6 = require("crypto");
+import { randomUUID as randomUUID6 } from "crypto";
 var HIGH_IMPORTANCE_PATTERNS = [
   "decision",
   "agreed",
@@ -7105,7 +6967,7 @@ var EpisodicCapturePipeline = class {
     this.eventCount++;
     const enriched = {
       ...event,
-      id: event.id ?? (0, import_crypto6.randomUUID)(),
+      id: event.id ?? randomUUID6(),
       timestamp: event.timestamp ?? now
     };
     if (!enriched.noDedup) {
@@ -9647,109 +9509,109 @@ profile: ${profile}
     this._store.close();
   }
 };
-// Annotate the CommonJS export names for ESM import in node:
-0 && (module.exports = {
-  ConstitutionInjector,
-  ConstitutionManager,
-  DEFAULT_LAYER_CONFIG,
-  DriftDetector,
-  EpisodicCapturePipeline,
-  HttpAdapter,
-  LayerManager,
-  MemoryConsolidator,
-  MemoryREPL,
-  MemoryStore,
-  ModelAbstraction,
-  PostgresMemoryStore,
-  QueryEngine,
-  ReMEM,
-  authorizeKnowledgeResourceAccess,
-  buildIdentityPackage,
-  constitutionSchema,
-  constitutionStatementSchema,
-  contextPackOptionsSchema,
-  contextPackResponseSchema,
-  contextPackSectionSchema,
-  contextPackSectionTitlesSchema,
-  createCodebaseMemoryAdapter,
-  createHermesAdapter,
-  createIdentitySystem,
-  createLangGraphStoreAdapter,
-  createOpenClawAdapter,
-  createVercelAIAdapter,
+
+export {
+  memoryEntrySchema,
+  storeMemoryInputSchema,
+  rememberKindSchema,
+  rememberActionSchema,
+  rememberInputSchema,
+  rememberBatchInputSchema,
+  rememberResultSchema,
+  rememberBatchOptionsSchema,
+  rememberBatchItemResultSchema,
+  rememberBatchResultSchema,
+  metadataFilterValueSchema,
+  metadataFilterOperatorSchema,
+  metadataFilterSchema,
+  queryOptionsSchema,
+  queryResultSchema,
+  queryResponseSchema,
   defaultMemoryLinkTypes,
-  downloadPackage,
+  memoryLinkSchema,
+  memoryLinkInputSchema,
+  linkedMemoryQueryOptionsSchema,
+  queryWithNeighborsOptionsSchema,
+  neighborPathSchema,
+  smartRecallProfileSchema,
+  smartRecallOptionsSchema,
+  smartRecallProfileDefaultsSchema,
+  contextPackSectionTitlesSchema,
+  smartRecallProfileDescriptorSchema,
+  smartRecallResultSchema,
+  smartRecallResponseSchema,
   dreamMemoryLayerSchema,
   dreamOptionsSchema,
   dreamResponseSchema,
-  driftEventSchema,
-  driftResultSchema,
-  duplicate,
-  duplicationConfigSchema,
-  embeddingConfigSchema,
-  eventTypeSchema,
-  getSmartRecallProfile,
-  getSmartRecallProfiles,
-  identityCategorySchema,
-  identityConfigSchema,
-  identityPackageSchema,
-  infect,
-  infectFromServer,
-  infectionConfigSchema,
-  knowledgeArtifactRegistrationSchema,
+  contextPackOptionsSchema,
+  contextPackSectionSchema,
+  contextPackResponseSchema,
+  memoryHealthOptionsSchema,
+  memoryHealthCheckSchema,
+  memoryHealthRecommendationSchema,
+  memoryHealthResponseSchema,
+  namespaceInputSchema,
+  namespaceQueryScopeSchema,
+  knowledgeResourceUriSchema,
+  knowledgeResourceScopeSchema,
+  knowledgeResourceGrantSchema,
+  authorizeKnowledgeResourceAccess,
+  knowledgeNodeSchema,
   knowledgeEdgeSchema,
   knowledgeGraphArtifactSchema,
   knowledgeIngestOptionsSchema,
   knowledgeIngestResultSchema,
-  knowledgeNodeSchema,
-  knowledgeResourceGrantSchema,
-  knowledgeResourceScopeSchema,
-  knowledgeResourceUriSchema,
+  knowledgeArtifactRegistrationSchema,
+  modelConfigSchema,
+  embeddingConfigSchema,
+  postgresStorageConfigSchema,
+  storageScopeConfigSchema,
+  rememConfigSchema,
+  eventTypeSchema,
+  memoryEventSchema,
+  identityCategorySchema,
+  constitutionStatementSchema,
+  constitutionSchema,
+  driftResultSchema,
+  identityConfigSchema,
+  memoryLayerSchema,
   layerConfigSchema,
   layeredMemoryEntrySchema,
-  linkedMemoryQueryOptionsSchema,
-  memoryEntrySchema,
-  memoryEventSchema,
-  memoryHealthCheckSchema,
-  memoryHealthOptionsSchema,
-  memoryHealthRecommendationSchema,
-  memoryHealthResponseSchema,
-  memoryLayerSchema,
-  memoryLinkInputSchema,
-  memoryLinkSchema,
-  metadataFilterOperatorSchema,
-  metadataFilterSchema,
-  metadataFilterValueSchema,
-  modelConfigSchema,
-  namespaceInputSchema,
-  namespaceQueryScopeSchema,
-  neighborPathSchema,
-  normalizeSmartRecallProfileInput,
-  postgresStorageConfigSchema,
-  proceduralMatchSchema,
   proceduralTriggerSchema,
-  queryOptionsSchema,
-  queryResponseSchema,
-  queryResultSchema,
-  queryWithNeighborsOptionsSchema,
-  rememConfigSchema,
-  rememberActionSchema,
-  rememberBatchInputSchema,
-  rememberBatchItemResultSchema,
-  rememberBatchOptionsSchema,
-  rememberBatchResultSchema,
-  rememberInputSchema,
-  rememberKindSchema,
-  rememberResultSchema,
-  resolveRecallProfile,
+  proceduralMatchSchema,
+  driftEventSchema,
+  identityPackageSchema,
+  duplicationConfigSchema,
+  infectionConfigSchema,
+  MemoryStore,
+  PostgresMemoryStore,
+  ModelAbstraction,
+  QueryEngine,
+  ConstitutionManager,
+  DriftDetector,
+  ConstitutionInjector,
+  createIdentitySystem,
+  DEFAULT_LAYER_CONFIG,
+  LayerManager,
+  buildIdentityPackage,
+  uploadPackage,
+  duplicate,
+  downloadPackage,
+  infect,
+  infectFromServer,
+  MemoryREPL,
+  MemoryConsolidator,
+  normalizeSmartRecallProfileInput,
   resolveSmartRecallProfile,
-  smartRecallOptionsSchema,
-  smartRecallProfileDefaultsSchema,
-  smartRecallProfileDescriptorSchema,
-  smartRecallProfileSchema,
-  smartRecallResponseSchema,
-  smartRecallResultSchema,
-  storageScopeConfigSchema,
-  storeMemoryInputSchema,
-  uploadPackage
-});
+  createVercelAIAdapter,
+  createLangGraphStoreAdapter,
+  createOpenClawAdapter,
+  createHermesAdapter,
+  createCodebaseMemoryAdapter,
+  HttpAdapter,
+  EpisodicCapturePipeline,
+  getSmartRecallProfiles,
+  getSmartRecallProfile,
+  resolveRecallProfile,
+  ReMEM
+};
