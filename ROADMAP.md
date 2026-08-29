@@ -13,7 +13,6 @@ Keep pushing imported codebase/knowledge graphs from "can ingest" to "actually u
 Work items:
 
 - expand first-class graph inspection beyond `knowledge-overview` / `knowledge-subgraph`
-- add CLI / HTTP support for `Codebase Graph as memory` snapshot flows
 - tighten resource-grant examples for MCP and other scoped graph bridges
 - add richer graph filtering by node label, owner, and connection class
 

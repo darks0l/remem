@@ -187,6 +187,32 @@ describe('ReMEM CLI', () => {
     expect(overviewPayload.labels.Function).toBe(2);
     expect(Array.isArray(overviewPayload.hotspots)).toBe(true);
 
+    const allowedAccess = await invoke([
+      'knowledge-access',
+      '--resource-uri', 'memory://codebase/remem/imported',
+      '--required-scopes', 'codebase:read',
+      '--grant-resource-uri', 'memory://codebase/remem/imported',
+      '--grant-scopes', 'codebase:read',
+      '--json',
+    ]);
+    expect(allowedAccess.exitCode).toBe(0);
+    const allowedAccessPayload = JSON.parse(allowedAccess.stdout);
+    expect(allowedAccessPayload.command).toBe('knowledge-access');
+    expect(allowedAccessPayload.allowed).toBe(true);
+
+    const deniedAccess = await invoke([
+      'knowledge-access',
+      '--resource-uri', 'memory://codebase/remem/imported',
+      '--required-scopes', 'codebase:read,graph:snapshot',
+      '--grant-resource-uri', 'memory://codebase/remem/imported',
+      '--grant-scopes', 'codebase:read',
+      '--json',
+    ]);
+    expect(deniedAccess.exitCode).toBe(1);
+    const deniedAccessPayload = JSON.parse(deniedAccess.stdout);
+    expect(deniedAccessPayload.allowed).toBe(false);
+    expect(deniedAccessPayload.missingScopes).toEqual(['graph:snapshot']);
+
     const subgraph = await invoke([
       'knowledge-subgraph',
       '--db', db,
@@ -203,6 +229,53 @@ describe('ReMEM CLI', () => {
     expect(subgraphPayload.paths.length).toBeGreaterThanOrEqual(1);
     expect(subgraphPayload.linksTraversed).toBeGreaterThanOrEqual(1);
     expect(subgraphPayload.context).toContain('ProcessOrder');
+
+    const graphSnapshot = await invoke([
+      'knowledge-graph',
+      '--db', db,
+      '--query', 'ProcessOrder',
+      '--project', 'remem',
+      '--display', 'inventory',
+      '--connections', 'calls',
+      '--json',
+    ]);
+    expect(graphSnapshot.exitCode).toBe(0);
+    const graphSnapshotPayload = JSON.parse(graphSnapshot.stdout);
+    expect(graphSnapshotPayload.command).toBe('knowledge-graph');
+    expect(graphSnapshotPayload.name).toBe('Codebase Graph as memory');
+    expect(graphSnapshotPayload.displayType).toBe('inventory');
+    expect(graphSnapshotPayload.connections.every((item: { type: string }) => item.type === 'knowledge:calls')).toBe(true);
+    expect(graphSnapshotPayload.inventory.owners.some((item: { owner: string }) => item.owner === 'src')).toBe(true);
+
+    const deniedGraphSnapshot = await invoke([
+      'knowledge-graph',
+      '--db', db,
+      '--query', 'ProcessOrder',
+      '--project', 'remem',
+      '--display', 'inventory',
+      '--grant-resource-uri', 'memory://codebase/remem/imported',
+      '--grant-scopes', '',
+      '--json',
+    ]);
+    expect(deniedGraphSnapshot.exitCode).toBe(0);
+    const deniedGraphSnapshotPayload = JSON.parse(deniedGraphSnapshot.stdout);
+    expect(deniedGraphSnapshotPayload.nodes).toHaveLength(0);
+    expect(deniedGraphSnapshotPayload.connections).toHaveLength(0);
+    expect(deniedGraphSnapshotPayload.inventory.owners).toHaveLength(0);
+
+    const allowedSubgraph = await invoke([
+      'knowledge-subgraph',
+      '--db', db,
+      '--query', 'ProcessOrder',
+      '--project', 'remem',
+      '--grant-resource-uri', 'memory://codebase/remem/imported',
+      '--grant-scopes', 'codebase:read',
+      '--json',
+    ]);
+    expect(allowedSubgraph.exitCode).toBe(0);
+    const allowedSubgraphPayload = JSON.parse(allowedSubgraph.stdout);
+    expect(allowedSubgraphPayload.results.length).toBeGreaterThan(0);
+    expect(allowedSubgraphPayload.context).toContain('ProcessOrder');
 
     const explain = await invoke([
       'knowledge-explain',

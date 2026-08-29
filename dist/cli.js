@@ -7626,6 +7626,13 @@ profile: ${profile}
     return createCodebaseMemoryAdapter(this).explain(query, options);
   }
   /**
+   * Return a Codebase Graph as memory snapshot for prompt shaping, graph rendering,
+   * or inventory-style inspection without instantiating a custom adapter.
+   */
+  async knowledgeGraphAsMemory(query, options = {}) {
+    return createCodebaseMemoryAdapter(this).graphAsMemory(query, options);
+  }
+  /**
    * Return likely entrypoints from imported knowledge/codebase graph memories.
    */
   async knowledgeEntrypoints(options = {}) {
@@ -8967,6 +8974,19 @@ function parseMaybeJson(value) {
 function resolveProfileOption(value, fallback) {
   return resolveSmartRecallProfile(asString(value)) ?? fallback;
 }
+function buildKnowledgeResourceGrant(options) {
+  const resourceUri = asString(options["grant-resource-uri"]) || void 0;
+  const source = asString(options["grant-source"]) || void 0;
+  const project = asString(options["grant-project"]) || void 0;
+  const scopes = asCsv(options["grant-scopes"]);
+  if (!resourceUri && !source && !project && scopes.length === 0) return void 0;
+  return knowledgeResourceGrantSchema.parse({
+    ...resourceUri ? { resourceUri } : {},
+    ...source ? { source } : {},
+    ...project ? { project } : {},
+    scopes
+  });
+}
 function buildConfig(options) {
   const storage = asString(options.storage, "sqlite");
   const dbPath = asString(options.db, storage === "memory" ? ":memory:" : "./remem.db");
@@ -9033,13 +9053,15 @@ Usage:
   remem storage-maintenance [--dry-run] [--compact] [--json]
   remem knowledge-artifact --path <file> [--source codebase-memory-mcp] [--project <name>] [--resource-uri <uri>] [--required-scopes a,b] [--format sqlite] [--compression zstd] [--json]
   remem knowledge-ingest --artifact <graph.json|graph.json.gz> [--source <name>] [--project <name>] [--namespace team/code] [--visibility shared|private] [--json]
-  remem knowledge-overview [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
-  remem knowledge-explain --query <text> [--project <name>] [--limit 8] [--neighbor-limit 8] [--connections calls,imports] [--labels Function,Route] [--owners src,packages] [--max-context-chars 6000] [--json]
-  remem knowledge-subgraph --query <text> [--project <name>] [--limit 8] [--neighbor-limit 8] [--connections calls,imports] [--labels Function,Route] [--owners src,packages] [--max-context-chars 6000] [--json]
-  remem knowledge-entrypoints [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
-  remem knowledge-owners [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
-  remem knowledge-hotspots [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
-  remem knowledge-deadzones [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--json]
+  remem knowledge-overview [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--grant-resource-uri <uri>] [--grant-scopes a,b] [--json]
+  remem knowledge-access --resource-uri <uri> [--required-scopes a,b] [--grant-resource-uri <uri>] [--grant-scopes a,b] [--grant-source <name>] [--grant-project <name>] [--json]
+  remem knowledge-graph --query <text> [--project <name>] [--display memory|graph|context|inventory] [--limit 8] [--neighbor-limit 8] [--connections calls,imports] [--labels Function,Route] [--owners src,packages] [--grant-resource-uri <uri>] [--grant-scopes a,b] [--max-context-chars 6000] [--json]
+  remem knowledge-explain --query <text> [--project <name>] [--limit 8] [--neighbor-limit 8] [--connections calls,imports] [--labels Function,Route] [--owners src,packages] [--grant-resource-uri <uri>] [--grant-scopes a,b] [--max-context-chars 6000] [--json]
+  remem knowledge-subgraph --query <text> [--project <name>] [--limit 8] [--neighbor-limit 8] [--connections calls,imports] [--labels Function,Route] [--owners src,packages] [--grant-resource-uri <uri>] [--grant-scopes a,b] [--max-context-chars 6000] [--json]
+  remem knowledge-entrypoints [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--grant-resource-uri <uri>] [--grant-scopes a,b] [--json]
+  remem knowledge-owners [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--grant-resource-uri <uri>] [--grant-scopes a,b] [--json]
+  remem knowledge-hotspots [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--grant-resource-uri <uri>] [--grant-scopes a,b] [--json]
+  remem knowledge-deadzones [--project <name>] [--limit 10] [--labels Function,Route] [--owners src,packages] [--grant-resource-uri <uri>] [--grant-scopes a,b] [--json]
   remem store --content <text> [--topics a,b] [--metadata '{"kind":"note"}']
   remem remember --content <text> [--kind fact|preference|decision|procedure|recent-event|artifact-note] [--topics a,b] [--source <name>] [--dry-run]
   remem remember-batch --file <items.json> [--stop-on-error] [--json]
@@ -9086,6 +9108,10 @@ Common config flags:
   --llm-base-url <url>       Custom provider base URL
   --runtime <name>           openclaw | hermes | generic (for init artifacts)
   --out-dir <path>           Output directory for generated init artifacts
+  --grant-resource-uri <uri> Knowledge graph resource grant URI for scoped inspection
+  --grant-scopes <a,b>       Granted knowledge graph scopes for scoped inspection
+  --grant-source <name>      Optional grant source filter for scoped inspection
+  --grant-project <name>     Optional grant project filter for scoped inspection
   --json                     Emit machine-readable JSON output
 `;
 }
@@ -9616,7 +9642,8 @@ snapshots: ${payload.snapshots.length}
         project: asString(options.project) || void 0,
         limit: asNumber(options.limit, 10),
         nodeLabels: asCsv(options.labels),
-        owners: asCsv(options.owners)
+        owners: asCsv(options.owners),
+        resourceGrant: buildKnowledgeResourceGrant(options)
       });
       const payload = {
         ok: true,
@@ -9645,6 +9672,40 @@ snapshots: ${payload.snapshots.length}
     });
     return 0;
   }
+  if (command === "knowledge-access") {
+    const resourceUri = requireOption(options["resource-uri"], "resource-uri", jsonMode, runtime);
+    if (resourceUri === null) return 1;
+    const grant = buildKnowledgeResourceGrant(options) ?? { scopes: [] };
+    const result = authorizeKnowledgeResourceAccess({
+      resourceUri,
+      requiredScopes: asCsv(options["required-scopes"])
+    }, grant);
+    const payload = {
+      ok: result.allowed,
+      command,
+      resourceUri,
+      requiredScopes: asCsv(options["required-scopes"]),
+      grant: grant.scopes.length || grant.resourceUri || grant.source || grant.project ? grant : null,
+      ...result
+    };
+    if (jsonMode) {
+      emitJson(runtime, payload);
+    } else {
+      emitText(
+        runtime,
+        [
+          `access: ${result.allowed ? "allowed" : "denied"}`,
+          `resource: ${resourceUri}`,
+          `required scopes: ${payload.requiredScopes.join(", ") || "(none)"}`,
+          `granted scopes: ${payload.grant?.scopes?.join(", ") || "(none)"}`,
+          result.reason,
+          result.missingScopes.length ? `missing scopes: ${result.missingScopes.join(", ")}` : "",
+          ""
+        ].filter(Boolean).join("\n")
+      );
+    }
+    return result.allowed ? 0 : 1;
+  }
   if (command === "knowledge-subgraph") {
     await withMemory(options, async (memory, context) => {
       const query = requireOption(options.query, "query", jsonMode, runtime);
@@ -9657,7 +9718,8 @@ snapshots: ${payload.snapshots.length}
         connectionTypes: asCsv(options.connections),
         nodeLabels: asCsv(options.labels),
         owners: asCsv(options.owners),
-        minConnectionWeight: options["min-connection-weight"] ? asNumber(options["min-connection-weight"], 0) : void 0
+        minConnectionWeight: options["min-connection-weight"] ? asNumber(options["min-connection-weight"], 0) : void 0,
+        resourceGrant: buildKnowledgeResourceGrant(options)
       });
       const payload = {
         ok: true,
@@ -9685,6 +9747,52 @@ snapshots: ${payload.snapshots.length}
     });
     return 0;
   }
+  if (command === "knowledge-graph") {
+    await withMemory(options, async (memory, context) => {
+      const query = requireOption(options.query, "query", jsonMode, runtime);
+      if (query === null) return;
+      const display = asString(options.display);
+      const displayType = display === "graph" || display === "context" || display === "inventory" ? display : "memory";
+      const result = await memory.knowledgeGraphAsMemory(query, {
+        project: asString(options.project) || void 0,
+        displayType,
+        limit: asNumber(options.limit, 8),
+        neighborLimit: asNumber(options["neighbor-limit"], asNumber(options.limit, 8)),
+        maxContextChars: asNumber(options["max-context-chars"], 6e3),
+        connectionTypes: asCsv(options.connections),
+        includeConnections: asCsv(options["include-connections"]),
+        nodeLabels: asCsv(options.labels),
+        owners: asCsv(options.owners),
+        minConnectionWeight: options["min-connection-weight"] ? asNumber(options["min-connection-weight"], 0) : void 0,
+        resourceGrant: buildKnowledgeResourceGrant(options)
+      });
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        ...result
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else {
+        emitText(
+          runtime,
+          [
+            payload.summary,
+            `display: ${payload.displayType}`,
+            `nodes: ${payload.nodes.length}`,
+            `connections: ${payload.connections.length}`,
+            `paths: ${payload.paths.length}`,
+            "",
+            payload.context,
+            ""
+          ].join("\n")
+        );
+      }
+    });
+    return 0;
+  }
   if (command === "knowledge-explain") {
     await withMemory(options, async (memory, context) => {
       const query = requireOption(options.query, "query", jsonMode, runtime);
@@ -9697,7 +9805,8 @@ snapshots: ${payload.snapshots.length}
         connectionTypes: asCsv(options.connections),
         nodeLabels: asCsv(options.labels),
         owners: asCsv(options.owners),
-        minConnectionWeight: options["min-connection-weight"] ? asNumber(options["min-connection-weight"], 0) : void 0
+        minConnectionWeight: options["min-connection-weight"] ? asNumber(options["min-connection-weight"], 0) : void 0,
+        resourceGrant: buildKnowledgeResourceGrant(options)
       });
       const payload = {
         ok: true,
@@ -9728,7 +9837,8 @@ snapshots: ${payload.snapshots.length}
         project: asString(options.project) || void 0,
         limit: asNumber(options.limit, 10),
         nodeLabels: asCsv(options.labels),
-        owners: asCsv(options.owners)
+        owners: asCsv(options.owners),
+        resourceGrant: buildKnowledgeResourceGrant(options)
       });
       const payload = {
         ok: true,
@@ -9750,7 +9860,8 @@ snapshots: ${payload.snapshots.length}
         project: asString(options.project) || void 0,
         limit: asNumber(options.limit, 10),
         nodeLabels: asCsv(options.labels),
-        owners: asCsv(options.owners)
+        owners: asCsv(options.owners),
+        resourceGrant: buildKnowledgeResourceGrant(options)
       });
       const payload = {
         ok: true,
@@ -9772,7 +9883,8 @@ snapshots: ${payload.snapshots.length}
         project: asString(options.project) || void 0,
         limit: asNumber(options.limit, 10),
         nodeLabels: asCsv(options.labels),
-        owners: asCsv(options.owners)
+        owners: asCsv(options.owners),
+        resourceGrant: buildKnowledgeResourceGrant(options)
       });
       const payload = {
         ok: true,
@@ -9794,7 +9906,8 @@ snapshots: ${payload.snapshots.length}
         project: asString(options.project) || void 0,
         limit: asNumber(options.limit, 10),
         nodeLabels: asCsv(options.labels),
-        owners: asCsv(options.owners)
+        owners: asCsv(options.owners),
+        resourceGrant: buildKnowledgeResourceGrant(options)
       });
       const payload = {
         ok: true,

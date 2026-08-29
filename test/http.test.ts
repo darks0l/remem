@@ -346,6 +346,50 @@ describe('HttpAdapter', () => {
     expect(knowledgeOverviewJson.labels.Function).toBe(2);
     expect(Array.isArray(knowledgeOverviewJson.hotspots)).toBe(true);
 
+    const knowledgeAccessAllowed = await fetch('http://127.0.0.1:18913/knowledge/access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resource: {
+          resourceUri: 'memory://codebase/remem/imported',
+          requiredScopes: ['codebase:read'],
+        },
+        grant: {
+          resourceUri: 'memory://codebase/remem/imported',
+          scopes: ['codebase:read'],
+        },
+      }),
+    });
+    expect(knowledgeAccessAllowed.status).toBe(200);
+    const knowledgeAccessAllowedJson = await readJson(knowledgeAccessAllowed) as {
+      allowed: boolean;
+      missingScopes: string[];
+    };
+    expect(knowledgeAccessAllowedJson.allowed).toBe(true);
+    expect(knowledgeAccessAllowedJson.missingScopes).toEqual([]);
+
+    const knowledgeAccessDenied = await fetch('http://127.0.0.1:18913/knowledge/access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resource: {
+          resourceUri: 'memory://codebase/remem/imported',
+          requiredScopes: ['codebase:read', 'graph:snapshot'],
+        },
+        grant: {
+          resourceUri: 'memory://codebase/remem/imported',
+          scopes: ['codebase:read'],
+        },
+      }),
+    });
+    expect(knowledgeAccessDenied.status).toBe(403);
+    const knowledgeAccessDeniedJson = await readJson(knowledgeAccessDenied) as {
+      allowed: boolean;
+      missingScopes: string[];
+    };
+    expect(knowledgeAccessDeniedJson.allowed).toBe(false);
+    expect(knowledgeAccessDeniedJson.missingScopes).toEqual(['graph:snapshot']);
+
     const knowledgeSubgraph = await fetch('http://127.0.0.1:18913/knowledge/subgraph', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -365,6 +409,26 @@ describe('HttpAdapter', () => {
     expect(knowledgeSubgraphJson.paths.length).toBeGreaterThanOrEqual(1);
     expect(knowledgeSubgraphJson.linksTraversed).toBeGreaterThanOrEqual(1);
     expect(knowledgeSubgraphJson.context).toContain('ProcessOrder');
+
+    const knowledgeGraphMemory = await fetch('http://127.0.0.1:18913/knowledge/graph-memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: 'ProcessOrder',
+        options: { project: 'remem', displayType: 'inventory', connectionTypes: ['calls'], limit: 8, neighborLimit: 8 },
+      }),
+    });
+    expect(knowledgeGraphMemory.status).toBe(200);
+    const knowledgeGraphMemoryJson = await readJson(knowledgeGraphMemory) as {
+      name: string;
+      displayType: string;
+      connections: Array<{ type: string }>;
+      inventory?: { owners: Array<{ owner: string }> };
+    };
+    expect(knowledgeGraphMemoryJson.name).toBe('Codebase Graph as memory');
+    expect(knowledgeGraphMemoryJson.displayType).toBe('inventory');
+    expect(knowledgeGraphMemoryJson.connections.every((item) => item.type === 'knowledge:calls')).toBe(true);
+    expect(knowledgeGraphMemoryJson.inventory?.owners.some((item) => item.owner === 'src')).toBe(true);
 
     const knowledgeExplain = await fetch('http://127.0.0.1:18913/knowledge/explain', {
       method: 'POST',

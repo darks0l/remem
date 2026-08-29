@@ -6,10 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-08-29
+
+### Added
+
+- Added `remem knowledge-access` so operators can validate resource URI + required scope grants directly from the CLI before asking for scoped graph snapshots.
+- Added `POST /knowledge/access` so hosted bridges can return a simple allow/deny + missing-scope answer without having to trigger a full graph read first.
+
+### Changed
+
+- Expanded README examples for scoped codebase graph flows so grant debugging can start with an explicit access check before `knowledge-subgraph` or `knowledge-graph`.
+
+## [0.28.0] - 2026-08-28
+
 ### Added
 
 - Added first-class imported-graph inspection helpers on the core runtime: `knowledgeExplain()`, `knowledgeEntrypoints()`, `knowledgeOwners()`, `knowledgeHotspots()`, and `knowledgeDeadzones()`.
 - Added matching CLI commands and HTTP routes so agents can inspect imported codebase graphs without instantiating custom adapter glue.
+- Added first-class `knowledgeGraphAsMemory()` plus matching `remem knowledge-graph` and `POST /knowledge/graph-memory` surfaces so callers can request prompt-ready, graph, or inventory snapshots directly from imported codebase memory.
+- Added CLI knowledge-inspection grant flags (`--grant-resource-uri`, `--grant-scopes`, `--grant-source`, `--grant-project`) so scoped graph access can be exercised locally before wiring MCP or hosted bridges.
 - Added request-scoped HTTP runtime resolution so one adapter can route requests into isolated workspace/agent/user ReMEM runtimes for hosted multi-tenant service deployments.
 
 ### Changed

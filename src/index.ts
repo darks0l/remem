@@ -25,6 +25,7 @@ import { MemoryConsolidator, type ConsolidationWorkflowOptions, type Consolidati
 import { resolveSmartRecallProfile } from './recall-profiles.js';
 import {
   createCodebaseMemoryAdapter,
+  type CodebaseGraphAsMemoryOptions,
   type CodebaseGraphInventoryOptions,
   type CodebaseGraphNodeHealth,
   type CodebaseGraphOwnerSummary,
@@ -2084,6 +2085,17 @@ export class ReMEM {
     options: CodebaseSubgraphOptions = {}
   ): Promise<CodebaseGraphSubgraph & { summary: string }> {
     return createCodebaseMemoryAdapter(this).explain(query, options);
+  }
+
+  /**
+   * Return a Codebase Graph as memory snapshot for prompt shaping, graph rendering,
+   * or inventory-style inspection without instantiating a custom adapter.
+   */
+  async knowledgeGraphAsMemory(
+    query: string,
+    options: CodebaseGraphAsMemoryOptions = {}
+  ): Promise<import('./adapters.js').CodebaseGraphMemorySnapshot> {
+    return createCodebaseMemoryAdapter(this).graphAsMemory(query, options);
   }
 
   /**

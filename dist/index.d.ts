@@ -66,14 +66,14 @@ declare const rememberInputSchema: z.ZodObject<{
     content: string;
     dryRun: boolean;
     forceStore: boolean;
-    kind?: "fact" | "preference" | "decision" | "procedure" | "recent-event" | "artifact-note" | undefined;
     source?: string | undefined;
+    kind?: "fact" | "preference" | "decision" | "procedure" | "recent-event" | "artifact-note" | undefined;
 }, {
     content: string;
     topics?: string[] | undefined;
     metadata?: Record<string, unknown> | undefined;
-    kind?: "fact" | "preference" | "decision" | "procedure" | "recent-event" | "artifact-note" | undefined;
     source?: string | undefined;
+    kind?: "fact" | "preference" | "decision" | "procedure" | "recent-event" | "artifact-note" | undefined;
     dryRun?: boolean | undefined;
     forceStore?: boolean | undefined;
 }>;
@@ -93,14 +93,14 @@ declare const rememberBatchInputSchema: z.ZodArray<z.ZodObject<{
     content: string;
     dryRun: boolean;
     forceStore: boolean;
-    kind?: "fact" | "preference" | "decision" | "procedure" | "recent-event" | "artifact-note" | undefined;
     source?: string | undefined;
+    kind?: "fact" | "preference" | "decision" | "procedure" | "recent-event" | "artifact-note" | undefined;
 }, {
     content: string;
     topics?: string[] | undefined;
     metadata?: Record<string, unknown> | undefined;
-    kind?: "fact" | "preference" | "decision" | "procedure" | "recent-event" | "artifact-note" | undefined;
     source?: string | undefined;
+    kind?: "fact" | "preference" | "decision" | "procedure" | "recent-event" | "artifact-note" | undefined;
     dryRun?: boolean | undefined;
     forceStore?: boolean | undefined;
 }>, "many">;
@@ -1969,13 +1969,13 @@ declare const knowledgeResourceGrantSchema: z.ZodObject<{
     scopes: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
 }, "strip", z.ZodTypeAny, {
     scopes: string[];
+    resourceUri?: string | undefined;
     source?: string | undefined;
     project?: string | undefined;
-    resourceUri?: string | undefined;
 }, {
+    resourceUri?: string | undefined;
     source?: string | undefined;
     project?: string | undefined;
-    resourceUri?: string | undefined;
     scopes?: string[] | undefined;
 }>;
 type KnowledgeResourceGrant = z.infer<typeof knowledgeResourceGrantSchema>;
@@ -2130,19 +2130,19 @@ declare const knowledgeGraphArtifactSchema: z.ZodObject<{
         to: string;
         weight?: number | undefined;
     }[];
+    resourceUri?: string | undefined;
     project?: string | undefined;
     version?: string | undefined;
     generatedAt?: number | undefined;
     artifactPath?: string | undefined;
-    resourceUri?: string | undefined;
 }, {
     metadata?: Record<string, unknown> | undefined;
+    resourceUri?: string | undefined;
     source?: string | undefined;
     project?: string | undefined;
     version?: string | undefined;
     generatedAt?: number | undefined;
     artifactPath?: string | undefined;
-    resourceUri?: string | undefined;
     requiredScopes?: string[] | undefined;
     nodes?: {
         id: string;
@@ -2231,18 +2231,18 @@ declare const knowledgeArtifactRegistrationSchema: z.ZodObject<{
     artifactPath: string;
     requiredScopes: string[];
     format: string;
+    resourceUri?: string | undefined;
     project?: string | undefined;
     generatedAt?: number | undefined;
-    resourceUri?: string | undefined;
     compression?: string | undefined;
     checksum?: string | undefined;
 }, {
     artifactPath: string;
     metadata?: Record<string, unknown> | undefined;
+    resourceUri?: string | undefined;
     source?: string | undefined;
     project?: string | undefined;
     generatedAt?: number | undefined;
-    resourceUri?: string | undefined;
     requiredScopes?: string[] | undefined;
     format?: string | undefined;
     compression?: string | undefined;
@@ -4941,6 +4941,7 @@ interface AdvancedMemoryRuntime {
     knowledgeExplain(query: string, options?: CodebaseSubgraphOptions): Promise<CodebaseGraphSubgraph & {
         summary: string;
     }>;
+    knowledgeGraphAsMemory(query: string, options?: CodebaseGraphAsMemoryOptions): Promise<CodebaseGraphMemorySnapshot>;
     knowledgeEntrypoints(options?: {
         project?: string;
         limit?: number;
@@ -5609,6 +5610,11 @@ declare class ReMEM {
     knowledgeExplain(query: string, options?: CodebaseSubgraphOptions): Promise<CodebaseGraphSubgraph & {
         summary: string;
     }>;
+    /**
+     * Return a Codebase Graph as memory snapshot for prompt shaping, graph rendering,
+     * or inventory-style inspection without instantiating a custom adapter.
+     */
+    knowledgeGraphAsMemory(query: string, options?: CodebaseGraphAsMemoryOptions): Promise<CodebaseGraphMemorySnapshot>;
     /**
      * Return likely entrypoints from imported knowledge/codebase graph memories.
      */

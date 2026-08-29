@@ -7,6 +7,7 @@
 [![npm](https://img.shields.io/npm/v/@darksol/remem?color=gold&style=flat-square)](https://www.npmjs.com/package/@darksol/remem)
 [![license](https://img.shields.io/npm/l/@darksol/remem?color=green&style=flat-square)](./LICENSE)
 [![node](https://img.shields.io/node/v/@darksol/remem?style=flat-square)](https://nodejs.org)
+![tests](https://img.shields.io/badge/tests-passing-00e676)
 
 # ReMEM - Recursive Memory for AI Agents
 
@@ -82,6 +83,8 @@ remem storage-maintenance --db ./remem.db --dry-run --json
 remem knowledge-artifact --db ./remem.db --path .codebase-memory/graph.db.zst --source codebase-memory-mcp --project remem --format sqlite --compression zstd --json
 remem knowledge-ingest --db ./remem.db --artifact ./code-graph.json --source codebase-memory-mcp --project remem --json
 remem knowledge-overview --db ./remem.db --project remem --labels Function,Route --json
+remem knowledge-access --resource-uri memory://codebase/remem/graph --required-scopes codebase:read,graph:snapshot --grant-resource-uri memory://codebase/remem/graph --grant-scopes codebase:read --json
+remem knowledge-graph --db ./remem.db --query "ProcessOrder" --project remem --display inventory --connections calls,imports --json
 remem knowledge-explain --db ./remem.db --query "ProcessOrder" --project remem --connections calls --json
 remem knowledge-subgraph --db ./remem.db --query "ProcessOrder" --project remem --connections calls,imports --owners src --json
 remem knowledge-entrypoints --db ./remem.db --project remem --json
@@ -199,6 +202,46 @@ Portable graph nodes and edges may include `weight` values from `0` to `2`. When
 - `graph` - visualization-friendly nodes and connections for dense screenshots or UI rendering
 - `context` - LLM-ready context text backed by the selected graph neighborhood
 - `inventory` - graph snapshot plus owners, entrypoints, hotspots, deadzone diagnostics, clusters, bridges, and explicit `analysisScope`
+
+That snapshot lane is now exposed directly through the public runtime surfaces too:
+
+```bash
+remem knowledge-graph \
+  --db ./remem.db \
+  --query "ProcessOrder" \
+  --project remem \
+  --display inventory \
+  --connections calls,http_calls \
+  --labels Function,Route \
+  --owners src \
+  --json
+```
+
+Remote runtimes can call the same shape at `POST /knowledge/graph-memory` with `{ query, options }`.
+
+When you need to debug scoped graph access locally before wiring an MCP or HTTP bridge, the CLI can now simulate a caller grant too:
+
+```bash
+remem knowledge-graph \
+  --db ./remem.db \
+  --query "ProcessOrder" \
+  --project remem \
+  --display inventory \
+  --grant-resource-uri memory://codebase/remem/graph \
+  --grant-scopes codebase:read,graph:snapshot \
+  --json
+```
+
+Or validate the grant itself before you even ask for a graph snapshot:
+
+```bash
+remem knowledge-access \
+  --resource-uri memory://codebase/remem/graph \
+  --required-scopes codebase:read,graph:snapshot \
+  --grant-resource-uri memory://codebase/remem/graph \
+  --grant-scopes codebase:read \
+  --json
+```
 
 ```bash
 # Register a compressed code graph produced by another local tool.
@@ -1251,6 +1294,7 @@ Additional advanced routes:
 - `POST /knowledge/artifact` - register an external compressed or tool-owned knowledge graph artifact
 - `POST /knowledge/ingest` - ingest portable graph nodes/edges as ReMEM memories and links
 - `POST /knowledge/overview` - summarize an imported graph by labels, owners, hotspots, deadzones, and structure
+- `POST /knowledge/access` - validate whether a caller grant satisfies a scoped knowledge resource before graph reads
 - `POST /knowledge/subgraph` - return a prompt-ready scoped graph neighborhood around a query
 - `POST /knowledge/explain` - return one focused graph explanation with a compact summary
 - `POST /knowledge/entrypoints` - list likely entrypoint nodes in the imported graph scope

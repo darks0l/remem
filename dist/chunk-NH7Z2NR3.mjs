@@ -6571,6 +6571,28 @@ var HttpAdapter = class {
       });
       return { status: 200, body: result };
     }
+    if (method === "POST" && path === "/knowledge/access") {
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.resource?.resourceUri !== "string" || !parsed.resource.resourceUri.trim()) {
+        return { status: 400, body: { error: "resource.resourceUri string required" } };
+      }
+      const grant = parsed.grant ?? { scopes: [] };
+      const result = authorizeKnowledgeResourceAccess({
+        resourceUri: parsed.resource.resourceUri,
+        requiredScopes: Array.isArray(parsed.resource.requiredScopes) ? parsed.resource.requiredScopes : []
+      }, grant);
+      return {
+        status: result.allowed ? 200 : 403,
+        body: {
+          resourceUri: parsed.resource.resourceUri,
+          requiredScopes: Array.isArray(parsed.resource.requiredScopes) ? parsed.resource.requiredScopes : [],
+          grant: parsed.grant ?? null,
+          ...result
+        }
+      };
+    }
     if (method === "POST" && path === "/knowledge/subgraph") {
       if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
       if (!req) return { status: 400, body: { error: "Request body unavailable" } };
@@ -6591,6 +6613,17 @@ var HttpAdapter = class {
         return { status: 400, body: { error: "query string required" } };
       }
       const result = await memory.knowledgeExplain(parsed.query, parsed.options);
+      return { status: 200, body: result };
+    }
+    if (method === "POST" && path === "/knowledge/graph-memory") {
+      if (!memory) return { status: 501, body: { error: "Advanced memory runtime not configured" } };
+      if (!req) return { status: 400, body: { error: "Request body unavailable" } };
+      const body = await this.readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      if (typeof parsed.query !== "string" || !parsed.query.trim()) {
+        return { status: 400, body: { error: "query string required" } };
+      }
+      const result = await memory.knowledgeGraphAsMemory(parsed.query, parsed.options);
       return { status: 200, body: result };
     }
     if (method === "POST" && path === "/knowledge/entrypoints") {
@@ -8685,6 +8718,13 @@ profile: ${profile}
    */
   async knowledgeExplain(query, options = {}) {
     return createCodebaseMemoryAdapter(this).explain(query, options);
+  }
+  /**
+   * Return a Codebase Graph as memory snapshot for prompt shaping, graph rendering,
+   * or inventory-style inspection without instantiating a custom adapter.
+   */
+  async knowledgeGraphAsMemory(query, options = {}) {
+    return createCodebaseMemoryAdapter(this).graphAsMemory(query, options);
   }
   /**
    * Return likely entrypoints from imported knowledge/codebase graph memories.
