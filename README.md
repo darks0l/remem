@@ -21,6 +21,8 @@ ReMEM is a lightweight, framework-agnostic memory substrate for AI agents. It gi
 
 For hosted/service-style deployments, ReMEM now has a first-class `workspaceId` scope lane alongside `agentId` and `userId`, which makes it much easier to isolate memory by tenant or project before the deeper service extraction work begins.
 
+As of `0.29.0`, ReMEM also ships a first-class server bootstrap and CLI serve lane, so you can stand up the HTTP surface directly instead of wiring `HttpAdapter` by hand every time.
+
 It applies the core insight from [Recursive Language Models (RLMs)](https://arxiv.org/pdf/2512.24601) - that prompts should be external environment variables, not direct context - to the problem of persistent, queryable agent memory.
 
 Built with TypeScript. Node-first, with storage and adapter surfaces designed to stay framework-agnostic.
@@ -59,6 +61,7 @@ ReMEM now has a terminal-native setup surface too:
 ```bash
 remem ui --db ./remem.db
 remem init --db ./remem.db --runtime openclaw --out-dir ./.remem
+remem serve --db ./remem.db --port 8787 --auth-token local-dev-token
 ```
 
 The terminal UI is intentionally scoped for humans doing setup and integration work:
@@ -110,6 +113,56 @@ remem snapshots --action create --label before-upgrade
 That makes it usable in setup scripts, harness bootstraps, and CI-prep lanes instead of only as a human console.
 
 The split is deliberate: the UI helps a human wire ReMEM into OpenClaw/Hermes cleanly, while actual memory operations stay scriptable for agents.
+
+### Serve ReMEM as a deployable service
+
+When you want a real process you can run under Docker, PM2, Fly, Railway, or a plain VM, use the built-in server bootstrap:
+
+```bash
+remem serve \
+  --storage postgres \
+  --postgres-url "$DATABASE_URL" \
+  --workspace-id tenant-default \
+  --port 8787 \
+  --host 0.0.0.0 \
+  --auth-token "$REMEM_TOKEN" \
+  --trust-scope-headers
+```
+
+That boots the same advanced HTTP adapter surface documented below, with layers enabled by default.
+
+You can also load constitution files so `/identity/audit` has real source text:
+
+```bash
+remem serve \
+  --db ./remem.db \
+  --soul-file ./SOUL.md \
+  --identity-file ./IDENTITY.md
+```
+
+Need a programmatic entrypoint instead of CLI flags?
+
+```typescript
+import { startReMEMHttpServer } from '@darksol/remem';
+
+const server = await startReMEMHttpServer({
+  memory: {
+    storage: 'postgres',
+    postgres: { connectionString: process.env.DATABASE_URL },
+    storageConfig: { workspaceId: 'tenant-default' },
+  },
+  http: {
+    host: '0.0.0.0',
+    port: 8787,
+    authToken: process.env.REMEM_TOKEN,
+    trustScopeHeaders: true,
+  },
+});
+
+process.on('SIGTERM', () => {
+  void server.stop();
+});
+```
 
 For release/setup hygiene, ReMEM also ships diagnostics:
 

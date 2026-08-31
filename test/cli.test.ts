@@ -38,6 +38,25 @@ describe('ReMEM CLI', () => {
     expect(payload.scope).toContain('workspace:team-alpha');
   });
 
+  it('validates serve configuration without starting the server', async () => {
+    const result = await invoke([
+      'serve',
+      '--storage', 'memory',
+      '--db', ':memory:',
+      '--port', '18999',
+      '--trust-scope-headers',
+      '--check',
+      '--json',
+    ]);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.command).toBe('serve');
+    expect(payload.server.port).toBe(18999);
+    expect(payload.server.trustScopeHeaders).toBe(true);
+    expect(payload.server.layersEnabled).toBe(true);
+  });
+
   it('returns memory stats through the CLI JSON contract', async () => {
     const db = './.tmp-cli-stats.db';
     await fs.rm(db, { force: true });

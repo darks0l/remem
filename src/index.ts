@@ -3139,6 +3139,7 @@ export { ModelAbstraction } from './model.js';
 export { QueryEngine } from './query.js';
 export { MemoryREPL } from './repl.js';
 export { HttpAdapter } from './http.js';
+export { readIdentityConstitutionFiles, startReMEMHttpServer } from './server.js';
 export { MemoryConsolidator } from './consolidate.js';
 export { EpisodicCapturePipeline } from './episodic-capture.js';
 export { normalizeSmartRecallProfileInput, resolveSmartRecallProfile } from './recall-profiles.js';
@@ -3149,6 +3150,17 @@ export {
   createOpenClawAdapter,
   createCodebaseMemoryAdapter,
 } from './adapters.js';
+export type {
+  HttpAdapterConfig,
+  HttpRequestLifecycleContext,
+  HttpRequestScope,
+  ResolvedHttpRuntime,
+} from './http.js';
+export type {
+  ReMEMHttpServerConfig,
+  ReMEMHttpServerHandle,
+  ReMEMIdentityText,
+} from './server.js';
 export type {
   CodebaseGraphAsMemoryOptions,
   CodebaseGraphConnection,

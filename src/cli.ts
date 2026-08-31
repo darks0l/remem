@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { ReMEM, getSmartRecallProfiles, type StorageMaintenanceOptions } from './index.js';
 import { resolveSmartRecallProfile } from './recall-profiles.js';
 import { runSmokeChecks } from './smoke.js';
+import { readIdentityConstitutionFiles, startReMEMHttpServer } from './server.js';
 import { generateInitArtifacts, type RuntimeFocus } from './setup.js';
 import { launchTerminalUi } from './ui.js';
 import { authorizeKnowledgeResourceAccess, contextPackOptionsSchema, knowledgeArtifactRegistrationSchema, knowledgeGraphArtifactSchema, knowledgeResourceGrantSchema, rememConfigSchema, smartRecallOptionsSchema, type ContextPackOptions, type MemoryHealthOptions, type MemoryLayer, type QueryOptions, type ReMEMConfig, type SmartRecallOptions, type RememberInput, type RememberKind } from './types.js';
@@ -66,6 +67,12 @@ function asNamespace(value: string | boolean | undefined) {
 function parseMaybeJson(value: string | boolean | undefined) {
   if (typeof value !== 'string' || !value.trim()) return {};
   return JSON.parse(value) as Record<string, unknown>;
+}
+
+function asOptionalNumber(value: string | boolean | undefined) {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function resolveProfileOption(value: string | boolean | undefined, fallback: ContextPackOptions['profile'] | SmartRecallOptions['profile']) {
@@ -150,6 +157,7 @@ function helpText() {
 Usage:
   remem ui [--db <path>] [--storage sqlite|memory|postgres] [--workspace-id <id>] [--agent-id <id>] [--user-id <id>]
   remem init [same flags as ui] [--runtime openclaw|hermes|generic] [--out-dir <path>] [--json]
+  remem serve [same flags as status] [--port 8787] [--host 127.0.0.1] [--auth-token <token>] [--cors-origin <origin>] [--trust-scope-headers] [--soul-file <path>] [--identity-file <path>] [--check] [--json]
   remem status [--db <path>]
   remem stats [--db <path>] [--json]
   remem graph [--query <text>] [--limit 100] [--dot] [--json]
@@ -212,6 +220,15 @@ Common config flags:
   --llm-base-url <url>       Custom provider base URL
   --runtime <name>           openclaw | hermes | generic (for init artifacts)
   --out-dir <path>           Output directory for generated init artifacts
+  --port <number>            HTTP adapter port for remem serve (default 8787)
+  --host <host>              HTTP adapter host for remem serve (default 127.0.0.1)
+  --auth-token <token>       Optional bearer token required by remem serve
+  --cors-origin <origin>     Access-Control-Allow-Origin value for remem serve
+  --trust-scope-headers      Trust X-ReMEM-* scope headers for remem serve
+  --max-body-bytes <bytes>   Max accepted request body for remem serve
+  --soul-file <path>         Load SOUL/constitution text into identity audit routes
+  --identity-file <path>     Load IDENTITY/constitution text into identity audit routes
+  --check                    Validate serve configuration and exit without starting
   --grant-resource-uri <uri> Knowledge graph resource grant URI for scoped inspection
   --grant-scopes <a,b>       Granted knowledge graph scopes for scoped inspection
   --grant-source <name>      Optional grant source filter for scoped inspection
@@ -563,6 +580,85 @@ export async function runCli(argv: string[] = process.argv, runtime: CliRuntime 
         emitText(runtime, `Generated init artifacts in ${outDir}\n${written.map((file) => `- ${file}`).join('\n')}\n${checkOutput}`);
       }
     });
+    return 0;
+  }
+
+  if (command === 'serve') {
+    const context = buildConfig(options);
+    const constitutionFiles = [
+      asString(options['soul-file']),
+      asString(options['identity-file']),
+      ...asCsv(options['constitution-files']),
+    ].filter(Boolean);
+    const identityTexts = constitutionFiles.length
+      ? await readIdentityConstitutionFiles(constitutionFiles)
+      : [];
+    const serverConfig = {
+      memory: context.config,
+      enableLayers: !Boolean(options['skip-layers']),
+      identity: identityTexts.length
+        ? {
+            constitutionTexts: identityTexts,
+          }
+        : undefined,
+      http: {
+        port: asNumber(options.port, 8787),
+        host: asString(options.host, '127.0.0.1'),
+        authToken: asString(options['auth-token']) || undefined,
+        corsOrigin: asString(options['cors-origin']) || undefined,
+        trustScopeHeaders: Boolean(options['trust-scope-headers']),
+        maxBodyBytes: asOptionalNumber(options['max-body-bytes']),
+      },
+    };
+
+    if (options.check) {
+      const payload = {
+        ok: true,
+        command,
+        storage: context.storageLabel,
+        db: context.dbLabel,
+        scope: context.scopeLabel,
+        server: {
+          host: serverConfig.http.host,
+          port: serverConfig.http.port,
+          authEnabled: Boolean(serverConfig.http.authToken),
+          corsOrigin: serverConfig.http.corsOrigin ?? 'http://localhost',
+          trustScopeHeaders: serverConfig.http.trustScopeHeaders,
+          maxBodyBytes: serverConfig.http.maxBodyBytes ?? 1024 * 1024,
+          layersEnabled: serverConfig.enableLayers,
+          identitySources: identityTexts.map((item) => item.source),
+        },
+      };
+      if (jsonMode) emitJson(runtime, payload);
+      else emitText(runtime, `Ready to serve ReMEM on http://${serverConfig.http.host}:${serverConfig.http.port}\n`);
+      return 0;
+    }
+
+    const handle = await startReMEMHttpServer(serverConfig);
+    const stop = async () => {
+      await handle.stop();
+      process.exit(0);
+    };
+    process.once('SIGINT', () => { void stop(); });
+    process.once('SIGTERM', () => { void stop(); });
+
+    const payload = {
+      ok: true,
+      command,
+      storage: context.storageLabel,
+      db: context.dbLabel,
+      scope: context.scopeLabel,
+      host: serverConfig.http.host,
+      port: serverConfig.http.port,
+      authEnabled: Boolean(serverConfig.http.authToken),
+      trustScopeHeaders: serverConfig.http.trustScopeHeaders,
+      identitySources: identityTexts.map((item) => item.source),
+    };
+
+    if (jsonMode) emitJson(runtime, payload);
+    else emitText(runtime, `ReMEM HTTP server listening on http://${serverConfig.http.host}:${serverConfig.http.port}\n`);
+
+    await new Promise(() => undefined);
     return 0;
   }
 

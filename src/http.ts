@@ -3,6 +3,7 @@
  * Framework-agnostic HTTP interface for remote memory access
  */
 
+import crypto from 'node:crypto';
 import type {
   DriftResult,
   NamespaceInput,
@@ -97,6 +98,16 @@ export interface ResolvedHttpRuntime {
   memory?: AdvancedMemoryRuntime;
 }
 
+export interface HttpRequestLifecycleContext {
+  requestId: string;
+  method: string;
+  path: string;
+  headers: Record<string, string>;
+  status?: number;
+  durationMs?: number;
+  error?: unknown;
+}
+
 export interface HttpAdapterConfig {
   port?: number;
   host?: string;
@@ -120,11 +131,34 @@ export interface HttpAdapterConfig {
   corsOrigin?: string;
   /** Max request body size in bytes. Default: 1MiB. */
   maxBodyBytes?: number;
+  /** Response/request header used for request correlation. Default: X-Request-Id. */
+  requestIdHeader?: string;
+  /** Optional request-start hook for observability. */
+  onRequestStart?: (context: HttpRequestLifecycleContext) => void;
+  /** Optional request-complete hook for observability. */
+  onRequestComplete?: (context: HttpRequestLifecycleContext) => void;
+  /** Optional request-error hook for observability. */
+  onRequestError?: (context: HttpRequestLifecycleContext) => void;
+  /** Optional readiness handler; liveness remains /health. */
+  readinessCheck?: () => Promise<unknown> | unknown;
 }
 
 interface RouteResult {
   status: number;
   body: unknown;
+}
+
+function getHttpErrorStatus(error: unknown): number | null {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+
+  const statusCode = (error as { statusCode?: unknown }).statusCode;
+  if (typeof statusCode === 'number' && Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599) {
+    return statusCode;
+  }
+
+  return null;
 }
 
 export class HttpAdapter {
@@ -140,6 +174,11 @@ export class HttpAdapter {
   private authToken?: string;
   private corsOrigin: string;
   private maxBodyBytes: number;
+  private requestIdHeader: string;
+  private onRequestStart?: HttpAdapterConfig['onRequestStart'];
+  private onRequestComplete?: HttpAdapterConfig['onRequestComplete'];
+  private onRequestError?: HttpAdapterConfig['onRequestError'];
+  private readinessCheck?: HttpAdapterConfig['readinessCheck'];
 
   constructor(config: HttpAdapterConfig) {
     this.store = config.store;
@@ -153,6 +192,11 @@ export class HttpAdapter {
     this.authToken = config.authToken;
     this.corsOrigin = config.corsOrigin ?? 'http://localhost';
     this.maxBodyBytes = config.maxBodyBytes ?? 1024 * 1024;
+    this.requestIdHeader = config.requestIdHeader ?? 'X-Request-Id';
+    this.onRequestStart = config.onRequestStart;
+    this.onRequestComplete = config.onRequestComplete;
+    this.onRequestError = config.onRequestError;
+    this.readinessCheck = config.readinessCheck;
   }
 
   async start(): Promise<void> {
@@ -161,24 +205,52 @@ export class HttpAdapter {
     this.server = http.createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', `http://localhost:${this.port}`);
       const method = req.method ?? 'GET';
+      const requestId = this.readRequestId(req);
+      const startedAt = Date.now();
+      const headers = this.buildHeaderMap(req);
+
+      res.setHeader(this.requestIdHeader, requestId);
 
       // CORS headers
       res.setHeader('Access-Control-Allow-Origin', this.corsOrigin);
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       res.setHeader(
         'Access-Control-Allow-Headers',
-        'Content-Type, Authorization, X-ReMEM-Workspace-Id, X-ReMEM-Agent-Id, X-ReMEM-User-Id, X-ReMEM-Session-Id, X-ReMEM-Subject'
+        `Content-Type, Authorization, ${this.requestIdHeader}, X-ReMEM-Workspace-Id, X-ReMEM-Agent-Id, X-ReMEM-User-Id, X-ReMEM-Session-Id, X-ReMEM-Subject, X-ReMEM-Scope-Timestamp, X-ReMEM-Scope-Signature`
       );
+
+      this.onRequestStart?.({
+        requestId,
+        method,
+        path: url.pathname,
+        headers,
+      });
 
       if (method === 'OPTIONS') {
         res.writeHead(204);
         res.end();
+        this.onRequestComplete?.({
+          requestId,
+          method,
+          path: url.pathname,
+          headers,
+          status: 204,
+          durationMs: Date.now() - startedAt,
+        });
         return;
       }
 
       if (!this.isAuthorized(req)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Unauthorized' }));
+        this.onRequestComplete?.({
+          requestId,
+          method,
+          path: url.pathname,
+          headers,
+          status: 401,
+          durationMs: Date.now() - startedAt,
+        });
         return;
       }
 
@@ -186,10 +258,38 @@ export class HttpAdapter {
         const result = await this.handleRequest(method, url, req);
         res.writeHead(result.status, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(result.body));
+        this.onRequestComplete?.({
+          requestId,
+          method,
+          path: url.pathname,
+          headers,
+          status: result.status,
+          durationMs: Date.now() - startedAt,
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        const status = getHttpErrorStatus(err) ?? 500;
+        res.writeHead(status, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: message }));
+        const durationMs = Date.now() - startedAt;
+        this.onRequestError?.({
+          requestId,
+          method,
+          path: url.pathname,
+          headers,
+          status,
+          durationMs,
+          error: err,
+        });
+        this.onRequestComplete?.({
+          requestId,
+          method,
+          path: url.pathname,
+          headers,
+          status,
+          durationMs,
+          error: err,
+        });
       }
     });
 
@@ -708,6 +808,13 @@ export class HttpAdapter {
       };
     }
 
+    if (method === 'GET' && path === '/readyz') {
+      return {
+        status: 200,
+        body: this.readinessCheck ? await this.readinessCheck() : { ok: true, ready: true },
+      };
+    }
+
     return { status: 404, body: { error: 'Not found', path, method } };
   }
 
@@ -751,11 +858,7 @@ export class HttpAdapter {
   }
 
   private buildRequestScope(method: string, path: string, req: import('http').IncomingMessage): HttpRequestScope {
-    const headers: Record<string, string> = {};
-    for (const [key, value] of Object.entries(req.headers)) {
-      if (typeof value === 'string') headers[key] = value;
-      else if (Array.isArray(value)) headers[key] = value.join(', ');
-    }
+    const headers = this.buildHeaderMap(req);
 
     const scope: HttpRequestScope = {
       method,
@@ -777,6 +880,30 @@ export class HttpAdapter {
     scope.sessionId = getHeader('x-remem-session-id');
     scope.subject = getHeader('x-remem-subject');
     return scope;
+  }
+
+  private buildHeaderMap(req: import('http').IncomingMessage): Record<string, string> {
+    const headers: Record<string, string> = {};
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (typeof value === 'string') headers[key] = value;
+      else if (Array.isArray(value)) headers[key] = value.join(', ');
+    }
+    return headers;
+  }
+
+  private readRequestId(req: import('http').IncomingMessage): string {
+    const headerName = this.requestIdHeader.toLowerCase();
+    const value = req.headers[headerName];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+    if (Array.isArray(value)) {
+      const trimmed = value.join(', ').trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+    return crypto.randomUUID();
   }
 
   private async readBody(req: import('http').IncomingMessage): Promise<string> {
